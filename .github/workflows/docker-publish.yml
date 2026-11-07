@@ -65,16 +65,22 @@ jobs:
   release:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # one release at a time; a queued one sees the previous release commit and compares against that tag
+    concurrency:
+      group: release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
       version: ${{ steps.bump.outputs.version }}
     steps:
+      # the current main (not the pushed sha) with all tags: another merge may have landed meanwhile
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          ref: main
+          fetch-depth: 0
 
       - name: Bump version if dependencies changed
         id: bump
@@ -89,7 +95,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.bump.outputs.version }}
         run: |
-          git push origin HEAD:main "v$V"
+          git push --atomic origin HEAD:main "v$V"
           gh release create "v$V" --title "v$V" --notes-file release-notes.md
 
   build-and-push:

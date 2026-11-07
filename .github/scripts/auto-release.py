@@ -1,9 +1,11 @@
 """Runs on every push to main (docker-publish.yml, release job), normally after a Renovate merge.
 
-If a base image (Dockerfile FROM), a Go module (server/go.mod) or an npm package (ui/package.json or
-ui/package-lock.json) changed in HEAD: bump the patch version in VERSION, commit, tag, write
-release-notes.md and version=X.Y.Z to $GITHUB_OUTPUT. Pushing and the GitHub Release are done by the
-workflow. Anything else (docs, workflows, tests): no release.
+Compares the current main with the last v* release tag. If a base image (Dockerfile FROM), a Go module
+(server/go.mod) or an npm package (ui/package.json or ui/package-lock.json) changed since then: bump the
+patch version in VERSION (skipping tags that already exist), commit, tag, write release-notes.md and
+version=X.Y.Z to $GITHUB_OUTPUT. Pushing and the GitHub Release are done by the workflow.
+Anything else (docs, workflows, tests): no release.
+Comparing with the last release, not HEAD~1, makes several quick merges one release instead of a race.
 """
 import json, os, re, subprocess, sys
 
@@ -12,9 +14,12 @@ def git(*args):
     return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
 
 
+BASE = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "HEAD").strip()
+
+
 def old(path):
     try:
-        return git("show", f"HEAD~1:{path}")
+        return git("show", f"{BASE}:{path}")
     except subprocess.CalledProcessError:
         return ""
 
@@ -64,30 +69,36 @@ if not changes and old("server/go.sum") != new("server/go.sum"):
     changes.append("Go indirect dependency updates")
 
 if not changes:
-    print("Dependencies unchanged: no release")
+    print(f"Dependencies unchanged since {BASE}: no release")
     sys.exit(0)
 
-cur = new("VERSION").strip()
-major, minor, patch = map(int, cur.split("."))
-ver = f"{major}.{minor}.{patch + 1}"
+major, minor, patch = map(int, new("VERSION").strip().split("."))
+taken = set(git("tag", "-l", "v*").split())
+patch += 1
+while f"v{major}.{minor}.{patch}" in taken:  # e.g. a tag left by a failed release
+    patch += 1
+ver = f"{major}.{minor}.{patch}"
 open("VERSION", "w").write(ver + "\n")
 
 git("add", "VERSION")
 git("commit", "-q", "-m", f"release: v{ver} — {changes[0]}")
 git("tag", "-a", f"v{ver}", "-m", f"v{ver}")
 
-# a PR merged by hand is a merge commit: show the PR title, not "Merge pull request #N from ..."
-src = git("log", "-1", "--format=%s", "HEAD~1").strip()
-m = re.match(r"Merge pull request #(\d+)", src)
-if m:
-    src = f'{git("log", "-1", "--format=%b", "HEAD~1").splitlines()[0]} (#{m.group(1)})'
+# merged PRs since the last release, by title: "Update dependency x to v2 (#5)"
+prs = []
+for sha in git("log", "--merges", "--format=%H", f"{BASE}..HEAD~1").split():
+    subj, _, body = git("log", "-1", "--format=%s%n%b", sha).partition("\n")
+    m = re.match(r"Merge pull request #(\d+)", subj)
+    if m:
+        prs.append(f"{(body.strip().splitlines() or [subj])[0]} (#{m.group(1)})")
+src = ", ".join(prs) or git("log", "-1", "--format=%s", "HEAD~1").strip()
 
 repo = os.environ.get("GITHUB_REPOSITORY", "nenchi/hammond")
 open("release-notes.md", "w").write(
-    "Automatic release after a dependency update. The end-to-end test (setup, login, JWT checks, vehicles, "
-    "fill-ups, stats, UI assets) passed before the merge.\n\n## Changed\n"
+    "Automatic release after a dependency update. The API end-to-end test (setup, login, JWT checks, vehicles, "
+    "fill-ups, stats) and the Cypress UI test passed before the merge.\n\n## Changed\n"
     + "".join(f"- {c}\n" for c in changes)
-    + f"- From: {src}\n\nImage: `ghcr.io/{repo}:{ver}`\n")
+    + f"- Since {BASE}: {src}\n\nImage: `ghcr.io/{repo}:{ver}`\n")
 with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as f:
     f.write(f"version={ver}\n")
 print(f"Released v{ver}:\n" + "\n".join(changes))

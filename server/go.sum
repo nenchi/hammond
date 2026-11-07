@@ -15,8 +15,7 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gabriel-vasile/mimetype v1.4.16 h1:5izNFuvA37st1dDRAcA7TtmngBmRgiIPDmTtiEvjx1E=
 github.com/gabriel-vasile/mimetype v1.4.16/go.mod h1:3oFFwxX8kTklZwzIl2aQEDZT0lKY8xH92ST88bAwba4=
-github.com/gin-contrib/location v1.0.3 h1:iy5FY2JsunZ73Lnq8YZsx7wkGFY1xcyRdKiRh/8Uptg=
-github.com/gin-contrib/location v1.0.3/go.mod h1:fMoqRQxX0d5ycvxzP7e5VtqfID00RPb4jMGDh3oT0pk=
+github.com/gin-contrib/location/v2 v2.0.4 h1:jgvaz2XJ6IXT1NBT5AgiwVkdhki9VXz1uv1UQ+bULjU=
 github.com/gin-contrib/location/v2 v2.0.4/go.mod h1:cjCvSGslS3Gw7VycUWUIhSx8le8jfliWhrh1k/Kf9kg=
 github.com/gin-contrib/sse v1.2.0 h1:AeYPE9hukQvAU1y7+eNvTC67PuBLK4BOduG08yv7L28=
 github.com/gin-contrib/sse v1.2.0/go.mod h1:9ivB3pROCxcwnwHvAoYaHLwNQMGmzCjgriA04TuNIAc=

@@ -9,7 +9,7 @@ import (
 	"github.com/akhilrex/hammond/controllers"
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/service"
-	"github.com/gin-contrib/location"
+	"github.com/gin-contrib/location/v2"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	_ "github.com/joho/godotenv/autoload"
