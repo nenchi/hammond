@@ -9,7 +9,8 @@
   "platformAutomerge": false,
   "dependencyDashboard": false,
   "postUpdateOptions": [
-    "gomodTidy"
+    "gomodTidy",
+    "gomodUpdateImportPaths"
   ],
   "lockFileMaintenance": {
     "description": "Weekly npm lock refresh (indirect deps): merged once the test is green, automatic release",
@@ -103,6 +104,14 @@
         "major"
       ],
       "enabled": false
+    },
+    {
+      "description": "Font Awesome: vue-fontawesome 2.x (the Vue 2 component) only supports core ~1 || ~6, so stay below 7",
+      "matchPackageNames": [
+        "@fortawesome/fontawesome-svg-core",
+        "@fortawesome/free-solid-svg-icons"
+      ],
+      "allowedVersions": "<7"
     },
     {
       "description": "One PR for vue + vue-template-compiler, they must match exactly",
