@@ -10,11 +10,14 @@ const visit = (url) =>
   cy.visit(url, { onBeforeLoad: (win) => cy.spy(win.console, 'error').as('consoleError') })
 const noConsoleErrors = () => cy.get('@consoleError').should('not.have.been.called')
 
-const loginUI = (pw) => {
-  visit('/login')
-  cy.get('input[name=username]').clear().type(email)
+const fillLogin = (pw) => {
+  cy.get('input[name=username]', { timeout: 10000 }).clear().type(email)
   cy.get('input[name=password]').clear().type(pw, { log: false })
   cy.get('form input[type=submit]').click()
+}
+const loginUI = (pw) => {
+  visit('/login')
+  fillLogin(pw)
 }
 
 before(() => {
@@ -101,7 +104,8 @@ describe('hammond UI', () => {
   it('logs out, and a wrong password is refused', () => {
     visit('/logout')
     cy.location('pathname').should('eq', '/login')
-    loginUI('wrong-password')
+    // use the login page logout landed on; reloading /login right away raced the logout (flaky in CI)
+    fillLogin('wrong-password')
     cy.contains('There was an error logging in')
     cy.location('pathname').should('eq', '/login')
   })
