@@ -1,6 +1,5 @@
 // https://date-fns.org/docs/format
-import format from 'date-fns/format'
-import parseISO from 'date-fns/parseISO'
+import { format, parseISO } from 'date-fns'
 
 export default function formatDate(date) {
   return format(date, 'MMM do, yyyy')

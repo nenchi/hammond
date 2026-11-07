@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { filter } from 'lodash'
 
-import parseISO from 'date-fns/parseISO'
+import { parseISO } from 'date-fns'
 export const state = {
   vehicles: [],
   roleMasters: [],
