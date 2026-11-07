@@ -59,7 +59,8 @@ describe('hammond UI', () => {
   })
 
   it('vehicle page shows fill-ups with formatted dates', () => {
-    cy.contains('Cypress - CY 1234').click()
+    // the card title only expands/collapses the card; the link is "Details" in its footer
+    cy.get(`a.card-footer-item[href="/vehicles/${vehicleId}"]`).contains('Details').click()
     cy.location('pathname').should('eq', `/vehicles/${vehicleId}`)
     cy.contains('p.title', 'Cypress - CY 1234')
     cy.contains('h1', 'Past Fillups')
