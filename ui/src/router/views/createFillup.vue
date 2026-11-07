@@ -108,7 +108,8 @@ export default {
       axios
         .get(`/api/vehicles/${this.selectedVehicle.id}/fillups`)
         .then(({ data }) => {
-          const last = (data || [])[0]
+          // highest odometer, not the first by date: same-day or back-dated entries sort ambiguously
+          const last = (data || []).reduce((a, b) => (!a || b.odoReading > a.odoReading ? b : a), null)
           if (!last || this.fillup.id) return
           this.lastOdoReading = last.odoReading
           if (this.me.prefillFillup === false) return
