@@ -16,6 +16,16 @@ func GetMileageByVehicleId(vehicleId string, since time.Time) (mileage []models.
 
 	fillups := make([]db.Fillup, len(*data))
 	copy(fillups, *data)
+	// Mileage needs the previous fill-up's odometer. Without the last fill-up before `since`, the first
+	// fill-up in the range had nothing to compare with ("past 30 days" with one fill-up showed nothing).
+	// It sorts last (lowest odometer), so the loop below uses it only as the baseline, never as a point.
+	prev, err := db.GetLastFillupBefore(vehicleId, since)
+	if err != nil {
+		return nil, err
+	}
+	if prev != nil {
+		fillups = append(fillups, *prev)
+	}
 	sort.Slice(fillups, func(i, j int) bool {
 		return fillups[i].OdoReading > fillups[j].OdoReading
 	})
