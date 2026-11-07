@@ -51,6 +51,11 @@ export default {
     }
   },
   computed: {
+    // cached until dateRangeOption changes; calling getStartDate() in the template made a new Date
+    // on every render, which made the chart refetch and redraw in a loop
+    startDate() {
+      return this.getStartDate()
+    },
     ...mapState('users', ['me']),
     ...mapState('auth', ['currentUser']),
     ...mapState('utils', ['isMobile']),
@@ -536,7 +541,7 @@ export default {
           </b-select></div
         >
       </div>
-      <MileageChart :vehicle="vehicle" :since="getStartDate()" :user="me" :height="300" />
+      <MileageChart :vehicle="vehicle" :since="startDate" :user="me" :styles="{ position: 'relative', height: '300px' }" />
     </div>
   </Layout>
 </template>

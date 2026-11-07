@@ -11,7 +11,7 @@ export default {
   },
   watch: {
     since(newOne, old) {
-      if (newOne === old) {
+      if (newOne && old && newOne.getTime() === old.getTime()) {
         return
       }
       this.fetchMileage()
