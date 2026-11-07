@@ -46,7 +46,7 @@ jobs:
       # real browser: Vue/buefy/date-fns/chart.js runtime errors an API test can't see
       - name: UI test (Cypress)
         run: |
-          docker run --rm --network host -v "$PWD/tests/cypress:/e2e" -w /e2e "$CYPRESS_IMAGE"
+          docker run --rm --network host -v "$PWD/tests/cypress:/e2e" -w /e2e "$CYPRESS_IMAGE" --browser chrome
 
       - name: Cypress video
         if: always()

@@ -1,7 +1,8 @@
 // UI smoke test in a real browser: catches what the API smoke test can't (Vue/buefy/date-fns/chart.js
 // breaking at runtime after a dependency update). Seeds its own data through the API.
-const email = Cypress.env('email')
-const password = Cypress.env('password')
+// throwaway credentials of the CI container (Cypress.env() was removed in Cypress 16)
+const email = 'admin@example.com'
+const password = 'smoke-test-pass'
 let vehicleId
 
 // Vue logs render errors with console.error instead of throwing: fail on any of them.

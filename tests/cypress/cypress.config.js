@@ -9,5 +9,4 @@ module.exports = defineConfig({
     viewportHeight: 900,
   },
   video: true,
-  env: { email: 'admin@example.com', password: 'smoke-test-pass' },
 })
