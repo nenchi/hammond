@@ -35,7 +35,7 @@ func FindOneUser(condition interface{}) (User, error) {
 }
 func SetDisabledStatusForUser(userId string, isDisabled bool) error {
 	//Cannot do this for admin
-	tx := DB.Debug().Model(&User{}).Where("id= ? and role=?", userId, USER).Update("is_disabled", isDisabled)
+	tx := DB.Model(&User{}).Where("id= ? and role=?", userId, USER).Update("is_disabled", isDisabled)
 	return tx.Error
 }
 func GetAllUsers() (*[]User, error) {
@@ -73,7 +73,7 @@ func GetVehicleOwner(vehicleId string) (string, error) {
 func GetVehicleUsers(vehicleId string) (*[]UserVehicle, error) {
 	var mapping []UserVehicle
 
-	tx := DB.Debug().Preload("User").Where("vehicle_id = ?", vehicleId).Find(&mapping)
+	tx := DB.Preload("User").Where("vehicle_id = ?", vehicleId).Find(&mapping)
 
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -275,7 +275,7 @@ func GetVehicleAttachments(vehicleId string) (*[]Attachment, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = DB.Debug().Model(vehicle).Select("attachments.*,vehicle_attachments.title").Preload("User").Association("Attachments").Find(&attachments)
+	err = DB.Model(vehicle).Select("attachments.*,vehicle_attachments.title").Preload("User").Association("Attachments").Find(&attachments)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func GetUnprocessedAlertOccurances() (*[]AlertOccurance, error) {
 	return &alertOccurance, result.Error
 }
 func MarkAlertOccuranceAsProcessed(id string, alertProcessType AlertType, date time.Time) error {
-	tx := DB.Debug().Model(&AlertOccurance{}).Where("id= ?", id).
+	tx := DB.Model(&AlertOccurance{}).Where("id= ?", id).
 		Update("alert_process_type", alertProcessType).
 		Update("process_date", date)
 	return tx.Error

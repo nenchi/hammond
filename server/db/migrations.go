@@ -34,7 +34,7 @@ func ExecuteAndSaveMigration(name string, query string) error {
 	result := DB.Where("name=?", name).First(&migration)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		fmt.Println(query)
-		result = DB.Debug().Exec(query)
+		result = DB.Exec(query)
 		if result.Error == nil {
 			DB.Save(&Migration{
 				Date: time.Now(),
