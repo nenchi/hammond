@@ -170,6 +170,15 @@ func GetFillupsByVehicleIdSince(id string, since time.Time) (*[]Fillup, error) {
 	result := DB.Where("date >= ? AND vehicle_id = ?", since, id).Preload(clause.Associations).Order("date desc").Find(&obj)
 	return &obj, result.Error
 }
+// GetLastFillupBefore returns the newest fill-up before `before`, or nil if there is none.
+func GetLastFillupBefore(id string, before time.Time) (*Fillup, error) {
+	var obj []Fillup
+	result := DB.Where("date < ? AND vehicle_id = ?", before, id).Order("date desc").Limit(1).Find(&obj)
+	if result.Error != nil || len(obj) == 0 {
+		return nil, result.Error
+	}
+	return &obj[0], nil
+}
 func FindFillups(condition interface{}) (*[]Fillup, error) {
 
 	var model []Fillup

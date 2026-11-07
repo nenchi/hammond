@@ -32,6 +32,12 @@ export default {
         steppedLine: true,
         label: `Mileage (${this.user.distanceUnitDetail.short}/${this.vehicle.fuelUnitDetail.short})`,
         fill: true,
+        // Chart.js 2 defaults to rgba(0,0,0,0.1): barely visible, and gone when a phone browser darkens the page
+        borderColor: '#39a275',
+        backgroundColor: 'rgba(57, 162, 117, 0.25)',
+        borderWidth: 2,
+        pointBackgroundColor: '#39a275',
+        pointRadius: 3,
         data: this.chartData.map((x) => x.mileage),
       }
       this.renderChart({ labels, datasets: [dataset] }, { maintainAspectRatio: false })
