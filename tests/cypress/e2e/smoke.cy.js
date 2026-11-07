@@ -4,6 +4,8 @@
 const email = 'admin@example.com'
 const password = 'smoke-test-pass'
 let vehicleId
+let apiHeaders
+const baseSettings = { currency: 'EUR', distanceUnit: 1, dateFormat: 'dd/MM/yyyy' }
 
 // Vue logs render errors with console.error instead of throwing: fail on any of them.
 const visit = (url) =>
@@ -30,6 +32,7 @@ before(() => {
   })
   cy.request('POST', '/api/login', { email, password }).then(({ body }) => {
     const headers = { Authorization: body.token }
+    apiHeaders = headers
     cy.request({ url: '/api/me', headers }).then(({ body: me }) => {
       cy.request({
         method: 'POST', url: '/api/vehicles', headers,
@@ -74,11 +77,42 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
-  it('new fill-up form renders with a date', () => {
+  it('new fill-up form renders with a date, pre-filled from the last fill-up', () => {
     visit(`/vehicles/${vehicleId}/fillup`)
     cy.get('input[name=username]').should('not.exist')
     cy.get('.datepicker input').invoke('val').should('match', /\d/)
+    // price + station copied, odometer only as a hint (a copied odometer would make the mileage wrong)
+    cy.contains('.field', 'Price per').find('input').should('have.value', '1.55')
+    cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'Cypress Station')
+    cy.contains('.field', 'Odometer Reading').find('input').should('have.value', '').and('have.attr', 'placeholder', 'last: 20640')
+    cy.contains('Last fill-up: 20640')
     noConsoleErrors()
+  })
+
+  it('pre-fill can be turned off in the settings', () => {
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, prefillFillup: false } })
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('Last fill-up: 20640') // the hint stays
+    cy.contains('.field', 'Price per').find('input').should('have.value', '')
+    cy.contains('.field', 'Filling Station Name').should('not.exist') // not pre-filled, section stays closed
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, prefillFillup: true } })
+  })
+
+  it('dark theme can be chosen in the settings and colours the app', () => {
+    visit('/settings')
+    cy.contains('.field', 'Theme').find('select').select('dark')
+    cy.get('form input[type=submit][value=Save]').first().click()
+    cy.contains('Settings saved successfully')
+    cy.get('html').should('have.class', 'theme-dark')
+    visit(`/vehicles/${vehicleId}`)
+    cy.get('html').should('have.class', 'theme-dark')
+    cy.get('body').should('have.css', 'background-color', 'rgb(22, 25, 29)')
+    cy.get('.box').first().should('have.css', 'background-color', 'rgb(31, 35, 40)')
+    cy.get('canvas').should('be.visible')
+    noConsoleErrors()
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, theme: 'light' } })
+    visit('/')
+    cy.get('html').should('not.have.class', 'theme-dark')
   })
 
   // upstream bug: on a phone the Stats chart kept reloading and growing forever

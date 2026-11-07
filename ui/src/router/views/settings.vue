@@ -25,6 +25,8 @@ export default {
         currency: this.me.currency,
         distanceUnit: this.me.distanceUnit,
         dateFormat: this.me.dateFormat,
+        theme: this.me.theme || 'auto',
+        prefillFillup: this.me.prefillFillup !== false,
       },
       tryingToSave: false,
       changePassModel: {
@@ -166,6 +168,16 @@ export default {
             </b-select>
           </b-field>
           <br />
+          <b-field label="Theme">
+            <b-select v-model="settingsModel.theme" expanded>
+              <option value="auto">Auto (follow this device)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </b-select>
+          </b-field>
+          <b-field>
+            <b-checkbox v-model="settingsModel.prefillFillup">Pre-fill new fill-ups with the last price and station</b-checkbox>
+          </b-field>
           <b-field>
             <b-button tag="input" native-type="submit" :disabled="tryingToSave" type="is-primary" value="Save" expanded> </b-button>
           </b-field>

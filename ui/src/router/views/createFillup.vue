@@ -38,6 +38,7 @@ export default {
       selectedVehicle: this.vehicle,
       fillupModel: this.fillup,
       processQuickEntry: false,
+      lastOdoReading: null,
     }
   },
 
@@ -77,6 +78,7 @@ export default {
     if (!this.fillup.id) {
       this.fillupModel = this.getEmptyFillup()
       this.fillupModel.userId = this.me.id
+      this.prefillFromLastFillup()
     }
   },
   methods: {
@@ -97,6 +99,25 @@ export default {
         .dispatch('vehicles/fetchFuelSubtypesByVehicleId', { vehicleId: this.selectedVehicle.id })
         .then((data) => {
           this.fuelSubTypes = data
+        })
+        .catch((err) => console.log(err))
+    },
+    // last price, station and fuel subtype (setting "pre-fill"); the odometer only as a hint, a copied
+    // value that isn't changed would make the mileage wrong
+    prefillFromLastFillup() {
+      axios
+        .get(`/api/vehicles/${this.selectedVehicle.id}/fillups`)
+        .then(({ data }) => {
+          const last = (data || [])[0]
+          if (!last || this.fillup.id) return
+          this.lastOdoReading = last.odoReading
+          if (this.me.prefillFillup === false) return
+          if (!this.fillupModel.perUnitPrice) this.fillupModel.perUnitPrice = last.perUnitPrice
+          if (!this.fillupModel.fillingStation && last.fillingStation) {
+            this.fillupModel.fillingStation = last.fillingStation
+            this.showMore = true // show what was pre-filled
+          }
+          if (!this.fillupModel.fuelSubType) this.fillupModel.fuelSubType = last.fuelSubType || ''
         })
         .catch((err) => console.log(err))
     },
@@ -251,11 +272,18 @@ export default {
         </p>
         <b-input v-model.number="fillupModel.totalAmount" type="number" min="0" step=".001" expanded required></b-input>
       </b-field>
-      <b-field label="Odometer Reading">
+      <b-field label="Odometer Reading" :message="lastOdoReading ? `Last fill-up: ${lastOdoReading} ${me.distanceUnitDetail.short}` : ''">
         <p class="control">
           <span class="button is-static">{{ me.distanceUnitDetail.short }}</span>
         </p>
-        <b-input v-model.number="fillupModel.odoReading" type="number" min="0" expanded required></b-input>
+        <b-input
+          v-model.number="fillupModel.odoReading"
+          type="number"
+          min="0"
+          :placeholder="lastOdoReading ? `last: ${lastOdoReading}` : ''"
+          expanded
+          required
+        ></b-input>
       </b-field>
       <b-field>
         <b-checkbox v-model="fillupModel.isTankFull">Did you get a full tank?</b-checkbox>

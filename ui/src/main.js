@@ -32,6 +32,8 @@ import '@components/_globals'
 
 import 'buefy/dist/buefy.css'
 import 'nprogress/nprogress.css'
+import './design/theme-dark.css'
+import '@utils/theme'
 
 Vue.component('vue-fontawesome', FontAwesomeIcon)
 library.add(

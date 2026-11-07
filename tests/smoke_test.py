@@ -104,6 +104,26 @@ check("vehicle stats", s == 200, (s, stats))
 s, mv = call("GET", "/api/me/vehicles", token=tok)
 check("my vehicles", s == 200 and any(x["id"] == vid for x in mv), (s, mv))
 
+base_settings = {"currency": "EUR", "distanceUnit": 1, "dateFormat": "dd/MM/yyyy"}
+s, _ = call("POST", "/api/me/settings", {**base_settings, "theme": "dark", "prefillFillup": False}, token=tok)
+s2, me2 = call("GET", "/api/me", token=tok)
+check("settings: theme + prefill saved", s == 200 and me2.get("theme") == "dark" and me2.get("prefillFillup") is False, (s, me2))
+s, _ = call("POST", "/api/me/settings", base_settings, token=tok)
+s2, me2 = call("GET", "/api/me", token=tok)
+check("settings: old clients (no theme field) keep the stored theme", s == 200 and me2.get("theme") == "dark", (s, me2))
+s, _ = call("POST", "/api/me/settings", {**base_settings, "theme": "pink"}, token=tok)
+check("settings: invalid theme refused", s == 422, s)
+s, _ = call("POST", "/api/me/settings", {"currency": "EUR"}, token=tok)
+check("settings: missing distanceUnit is 422 (upstream crashed)", s == 422, s)
+req = urllib.request.Request(BASE + "/api/me/settings", method="POST", data=b"{not json", headers={
+    "Content-Type": "application/json", "Authorization": "Bearer " + tok})
+try:
+    urllib.request.urlopen(req, timeout=10); s = 200
+except urllib.error.HTTPError as e:
+    s = e.code
+check("malformed JSON is 422, not a crash", s == 422, s)
+s, _ = call("POST", "/api/me/settings", {**base_settings, "theme": "auto", "prefillFillup": True}, token=tok)
+
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))
 s, _ = call("POST", "/api/refresh", {"refreshToken": "garbage"}, token=tok)

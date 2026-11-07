@@ -2,6 +2,7 @@
 import { Line } from 'vue-chartjs'
 
 import axios from 'axios'
+import { isDark } from '@utils/theme'
 import { mapState } from 'vuex'
 export default {
   extends: Line,
@@ -40,7 +41,14 @@ export default {
         pointRadius: 3,
         data: this.chartData.map((x) => x.mileage),
       }
-      this.renderChart({ labels, datasets: [dataset] }, { maintainAspectRatio: false })
+      // axis text and grid readable on the dark theme too
+      const text = isDark() ? '#d6dbe1' : '#666'
+      const grid = isDark() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
+      const axis = [{ ticks: { fontColor: text }, gridLines: { color: grid, zeroLineColor: grid } }]
+      this.renderChart(
+        { labels, datasets: [dataset] },
+        { maintainAspectRatio: false, legend: { labels: { fontColor: text } }, scales: { xAxes: axis, yAxes: axis } }
+      )
     },
     fetchMileage() {
       axios
