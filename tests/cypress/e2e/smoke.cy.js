@@ -66,7 +66,7 @@ describe('hammond UI', () => {
     cy.contains('h1', 'Past Fillups')
     // date-fns parseISO + format('MMM dd, yyyy')
     cy.contains('td', 'Nov 07, 2026')
-    cy.contains('td', '20640 km')
+    cy.contains('td', /^\s*20640 km\s*$/i) // app shows "Km"
     cy.contains('td', 'Cypress Station')
     noConsoleErrors()
   })
