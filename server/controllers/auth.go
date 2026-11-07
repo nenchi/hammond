@@ -10,8 +10,8 @@ import (
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
 	"github.com/akhilrex/hammond/service"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func RegisterAnonController(router *gin.RouterGroup) {

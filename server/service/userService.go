@@ -26,7 +26,7 @@ func CreateUser(userModel *models.RegisterRequest, role db.Role) error {
 
 func GetUserById(id string) (*db.User, error) {
 	var myUserModel db.User
-	tx := db.DB.Debug().Preload("Vehicles").First(&myUserModel, map[string]string{
+	tx := db.DB.Preload("Vehicles").First(&myUserModel, map[string]string{
 		"ID": id,
 	})
 	return &myUserModel, tx.Error

@@ -10,6 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  CYPRESS_IMAGE: cypress/included:16.2.1@sha256:f1f257405a482bdf95358cd30202d9c3ac69f907d5e96342ae377b8111ff7a15
 
 jobs:
   test:
@@ -41,6 +42,20 @@ jobs:
         run: |
           docker run -d --name hammond -p 3000:3000 hammond:test
           python3 tests/smoke_test.py http://127.0.0.1:3000
+
+      # real browser: Vue/buefy/date-fns/chart.js runtime errors an API test can't see
+      - name: UI test (Cypress)
+        run: |
+          docker run --rm --network host -v "$PWD/tests/cypress:/e2e" -w /e2e "$CYPRESS_IMAGE" --browser chrome
+
+      - name: Cypress video
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cypress-video
+          path: tests/cypress/cypress/videos
+          retention-days: 10
+          if-no-files-found: ignore
 
       - name: Container log
         if: always()

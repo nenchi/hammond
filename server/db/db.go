@@ -6,15 +6,17 @@ import (
 	"os"
 	"path"
 
-	"gorm.io/driver/sqlite"
+	"time"
 
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-//DB is
+// DB is
 var DB *gorm.DB
 
-//Init is used to Initialize Database
+// Init is used to Initialize Database
 func Init() (*gorm.DB, error) {
 	// github.com/mattn/go-sqlite3
 	configPath := os.Getenv("CONFIG")
@@ -22,6 +24,12 @@ func Init() (*gorm.DB, error) {
 	log.Println(dbPath)
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
+		// "record not found" is a normal empty lookup here (pending migration, first start), not an error
+		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+		}),
 	})
 	if err != nil {
 		fmt.Println("db err: ", err)
@@ -35,7 +43,7 @@ func Init() (*gorm.DB, error) {
 	return DB, nil
 }
 
-//Migrate Database
+// Migrate Database
 func Migrate() {
 	err := DB.AutoMigrate(&Attachment{}, &QuickEntry{}, &User{}, &Vehicle{}, &UserVehicle{}, &VehicleAttachment{}, &Fillup{}, &Expense{}, &Setting{}, &JobLock{}, &Migration{})
 	if err != nil {
