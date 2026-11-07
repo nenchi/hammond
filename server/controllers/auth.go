@@ -4,14 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/akhilrex/hammond/common"
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
 	"github.com/akhilrex/hammond/service"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,6 +43,7 @@ func me(c *gin.Context) {
 	user, err := service.GetUserById(c.MustGet("userId").(string))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{})
+		return
 	}
 	c.JSON(http.StatusOK, user)
 }
@@ -64,9 +64,11 @@ func userRegister(c *gin.Context) {
 }
 func initializeSystem(c *gin.Context) {
 
-	canInitialize, err := service.CanInitializeSystem()
+	canInitialize, _ := service.CanInitializeSystem()
 	if !canInitialize {
-		c.JSON(http.StatusUnprocessableEntity, err)
+		// upstream fell through here, so anyone could create another admin after setup
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "system already initialized"})
+		return
 	}
 
 	var registerRequest models.RegisterRequest
@@ -127,19 +129,24 @@ func refresh(c *gin.Context) {
 	tokenReq := tokenReqBody{}
 	c.Bind(&tokenReq)
 
-	token, _ := jwt.Parse(tokenReq.RefreshToken, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenReq.RefreshToken, func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 
 		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
+		return common.JWTSecret(), nil
+	}, jwt.WithValidMethods([]string{"HS256"}))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{})
+		return
+	}
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		// Get the user record from database or
 		// run through your business logic to verify if the user can log in
-		user, err := service.GetUserById(claims["id"].(string))
+		id, _ := claims["id"].(string)
+		user, err := service.GetUserById(id)
 		if err == nil {
 
 			token, refreshToken := common.GenToken(user.ID, user.Role)

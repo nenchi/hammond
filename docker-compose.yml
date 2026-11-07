@@ -1,9 +1,9 @@
-version: "2.1"
 services:
   hammond:
-    image: akhilrex/hammond
+    image: ghcr.io/nenchi/hammond:latest
     container_name: hammond
     environment:
+      # optional: without it a random secret is generated once and kept in /config/jwt_secret
       - JWT_SECRET=somethingverystrong
     volumes:
       - /path/to/config:/config

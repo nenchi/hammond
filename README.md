@@ -1,5 +1,18 @@
 [![Contributors][contributors-shield]][contributors-url] [![Forks][forks-shield]][forks-url] [![Stargazers][stars-shield]][stars-url] [![Issues][issues-shield]][issues-url] [![MIT License][license-shield]][license-url] [![LinkedIn][linkedin-shield]][linkedin-url]
 
+> **Maintained fork** of [akhilrex/hammond](https://github.com/akhilrex/hammond) (unmaintained since 2023).
+> Same app and data format; dependencies are kept patched automatically (Renovate → end-to-end test → patch release).
+> Image: `ghcr.io/nenchi/hammond`. Changes from upstream 1.0.0:
+>
+> - Go 1.16 → 1.27, all Go modules updated; `dgrijalva/jwt-go` → `golang-jwt/jwt/v5`, `satori/go.uuid` → `google/uuid`,
+>   archived `gin-gonic/contrib` → `gin-contrib/static`, `gocron` → stdlib ticker
+> - UI built on Node 24 with vue-cli 5 (Vue 2.7, axios 1.x); dev-only tooling removed
+> - **Security:** `POST /api/auth/initialize` no longer creates an admin after setup (upstream fell through the check)
+> - **Security:** an unset `JWT_SECRET` no longer means an empty signing key: a random one is generated in `/config/jwt_secret`;
+>   tokens must be HS256. After upgrading, everyone logs in once more.
+> - `Authorization: Bearer <token>` works (the prefix check was off by one)
+> - Base images pinned by digest, end-to-end smoke test in CI (`tests/smoke_test.py`)
+
 <!-- PROJECT LOGO -->
 <br />
 <p align="center">
@@ -8,7 +21,7 @@
   </a> -->
 
   <h1 align="center" style="margin-bottom:0">Hammond</h1>
-  <p align="center">Current Version - 2022.07.06</p>
+  <p align="center">Current Version - see <a href="VERSION">VERSION</a></p>
 
   <p align="center">
     A self-hosted vehicle expense tracking system with support for multiple users.
@@ -131,7 +144,7 @@ Although personally I feel that using the docker container is the best way of us
 
 | Name | Description                                                                                                                | Default |
 | ---- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| JWT_SECRET | The secret used to sign the JWT token. There is a default value but it is important that you change it to something else| A super strong secret that needs to be changed | 
+| JWT_SECRET | The secret used to sign the JWT token. Optional. If unset, a random secret is generated once and stored in `/config/jwt_secret`| A super strong secret that needs to be changed | 
 | PORT | Change the internal port of the application. If you change this you might have to change your docker configuration as well | (empty) |
 
 ### Setup

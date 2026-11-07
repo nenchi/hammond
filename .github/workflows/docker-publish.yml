@@ -1,0 +1,124 @@
+name: Test, build and publish Docker image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:          # Renovate PRs: tests only, nothing published
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Release tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          [ "v$(cat VERSION)" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME but VERSION says $(cat VERSION)"; exit 1; }
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: hammond:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: End-to-end test the container
+        run: |
+          docker run -d --name hammond -p 3000:3000 hammond:test
+          python3 tests/smoke_test.py http://127.0.0.1:3000
+
+      - name: Container log
+        if: always()
+        run: docker logs hammond || true
+
+  # A dependency update merged to main (by Renovate after the test passed on its PR, or by hand) → patch release.
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Bump version if dependencies changed
+        id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 .github/scripts/auto-release.py
+
+      - name: Push release commit + tag, create GitHub Release
+        if: steps.bump.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.bump.outputs.version }}
+        run: |
+          git push origin HEAD:main "v$V"
+          gh release create "v$V" --title "v$V" --notes-file release-notes.md
+
+  build-and-push:
+    needs: [test, release]
+    # release is skipped on normal pushes and tags; publishing still runs then
+    if: always() && needs.test.result == 'success' && github.event_name != 'pull_request' && needs.release.result != 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # a push by github.token starts no new workflow run, so an automatic release is built here, from its tag
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.version && format('v{0}', needs.release.outputs.version) || github.ref }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=${{ needs.release.outputs.version }},enable=${{ needs.release.outputs.version != '' }}
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # ponytail: amd64 only (the NAS); add platforms + setup-qemu-action if an ARM host ever runs it
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

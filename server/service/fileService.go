@@ -16,7 +16,7 @@ import (
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/internal/sanitize"
 	"github.com/akhilrex/hammond/models"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 )
 
 func CreateAttachment(path, originalName string, size int64, contentType, userId string) (*db.Attachment, error) {
@@ -113,7 +113,7 @@ func GetFilePath(originalName string) string {
 func getFileName(orig string) string {
 
 	ext := filepath.Ext(orig)
-	return uuid.NewV4().String() + ext
+	return uuid.NewString() + ext
 
 }
 

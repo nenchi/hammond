@@ -2,19 +2,19 @@ package controllers
 
 import (
 	"net/http"
-	"os"
 	"strings"
 
+	"github.com/akhilrex/hammond/common"
 	"github.com/akhilrex/hammond/db"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/dgrijalva/jwt-go/request"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v5/request"
 	"github.com/gin-gonic/gin"
 )
 
 // Strips 'BEARER ' prefix from token string
 func stripBearerPrefixFromTokenString(tok string) (string, error) {
 	// Should be a bearer token
-	if len(tok) > 6 && strings.ToUpper(tok[0:6]) == "BEARER " {
+	if len(tok) > 7 && strings.ToUpper(tok[0:7]) == "BEARER " {
 		return tok[7:], nil
 	}
 	return tok, nil
@@ -53,9 +53,8 @@ func AuthMiddleware(auto401 bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		UpdateContextUserModel(c, "")
 		token, err := request.ParseFromRequest(c.Request, MyAuth2Extractor, func(token *jwt.Token) (interface{}, error) {
-			b := ([]byte(os.Getenv("JWT_SECRET")))
-			return b, nil
-		})
+			return common.JWTSecret(), nil
+		}, request.WithParser(jwt.NewParser(jwt.WithValidMethods([]string{"HS256"}))))
 		if err != nil {
 			if auto401 {
 				c.AbortWithError(http.StatusUnauthorized, err)
@@ -63,7 +62,7 @@ func AuthMiddleware(auto401 bool) gin.HandlerFunc {
 			return
 		}
 		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			my_user_id := claims["id"].(string)
+			my_user_id, _ := claims["id"].(string)
 			//fmt.Println(my_user_id,claims["id"])
 			UpdateContextUserModel(c, my_user_id)
 		}

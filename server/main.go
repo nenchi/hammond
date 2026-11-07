@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/akhilrex/hammond/controllers"
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/service"
 	"github.com/gin-contrib/location"
-	"github.com/gin-gonic/contrib/static"
+	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
-	"github.com/jasonlvhit/gocron"
 	_ "github.com/joho/godotenv/autoload"
 )
 
@@ -71,9 +71,10 @@ func setupSettings() gin.HandlerFunc {
 
 func intiCron() {
 
-	//gocron.Every(uint64(checkFrequency)).Minutes().Do(service.DownloadMissingEpisodes)
-	gocron.Every(2).Days().Do(service.CreateBackup)
-	<-gocron.Start()
+	// ponytail: stdlib ticker replaces the abandoned gocron; same schedule (every 2 days, first run 2 days after start)
+	for range time.Tick(48 * time.Hour) {
+		service.CreateBackup()
+	}
 }
 
 func assetEnv() {

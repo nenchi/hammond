@@ -2,13 +2,19 @@
 package common
 
 import (
+	crand "crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
+	"path"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/akhilrex/hammond/db"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
@@ -25,6 +31,36 @@ func RandString(n int) string {
 	return string(b)
 }
 
+var (
+	jwtSecret     []byte
+	jwtSecretOnce sync.Once
+)
+
+// JWTSecret returns JWT_SECRET, or a random secret generated once and kept in CONFIG/jwt_secret.
+// Upstream signed tokens with an empty key when JWT_SECRET was unset.
+func JWTSecret() []byte {
+	jwtSecretOnce.Do(func() {
+		if s := os.Getenv("JWT_SECRET"); s != "" {
+			jwtSecret = []byte(s)
+			return
+		}
+		file := path.Join(os.Getenv("CONFIG"), "jwt_secret")
+		if b, err := os.ReadFile(file); err == nil && len(strings.TrimSpace(string(b))) >= 32 {
+			jwtSecret = []byte(strings.TrimSpace(string(b)))
+			return
+		}
+		buf := make([]byte, 32)
+		if _, err := crand.Read(buf); err != nil {
+			log.Fatal("cannot generate JWT secret: ", err)
+		}
+		jwtSecret = []byte(hex.EncodeToString(buf))
+		if err := os.WriteFile(file, jwtSecret, 0600); err != nil {
+			log.Println("JWT_SECRET not set and could not save generated secret (logins reset on restart): ", err)
+		}
+	})
+	return jwtSecret
+}
+
 // A Util function to generate jwt_token which can be used in the request header
 func GenToken(id string, role db.Role) (string, string) {
 	jwt_token := jwt.New(jwt.GetSigningMethod("HS256"))
@@ -35,14 +71,14 @@ func GenToken(id string, role db.Role) (string, string) {
 		"exp":  time.Now().Add(time.Hour * 24 * 3).Unix(),
 	}
 	// Sign and get the complete encoded token as a string
-	token, _ := jwt_token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	token, _ := jwt_token.SignedString(JWTSecret())
 
 	refreshToken := jwt.New(jwt.SigningMethodHS256)
 	rtClaims := refreshToken.Claims.(jwt.MapClaims)
 	rtClaims["id"] = id
 	rtClaims["exp"] = time.Now().Add(time.Hour * 24 * 20).Unix()
 
-	rt, _ := refreshToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	rt, _ := refreshToken.SignedString(JWTSecret())
 
 	return token, rt
 }

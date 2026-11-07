@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "platformAutomerge": false,
+  "dependencyDashboard": false,
+  "postUpdateOptions": ["gomodTidy"],
+  "lockFileMaintenance": {
+    "description": "Weekly npm lock refresh (indirect deps): merged once the test is green, automatic release",
+    "enabled": true,
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Go modules + npm minor/patch: Renovate merges once the end-to-end test is green; the merge makes an automatic patch release",
+      "matchManagers": ["gomod", "npm"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Base image patch (alpine 3.24.4 → 3.24.5, node 24.22.2 → 24.22.3, go 1.27.3 → 1.27.4) and digest updates: automerge after the test, automatic release",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Keep the Go toolchain in go.mod and the golang image in step: one PR",
+      "matchPackageNames": ["go", "golang"],
+      "groupName": "go toolchain"
+    },
+    {
+      "description": "Base image minor (alpine 3.25, go 1.28, node 24.x minor) and every major: PR only, merged by hand",
+      "matchManagers": ["dockerfile", "gomod", "npm"],
+      "matchUpdateTypes": ["minor", "major"],
+      "matchPackageNames": ["alpine", "golang", "node", "go"],
+      "automerge": false
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Node: only even (LTS) majors",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["node"],
+      "allowedVersions": "/^\\d*[02468]\\./"
+    },
+    {
+      "description": "UI is Vue 2 + buefy: Vue 3, vue-router 4, vuex 4, chart.js 3+, vue-chartjs 4+, vue-fontawesome 3 need a rewrite, not a bump",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["vue", "vue-template-compiler", "vue-router", "vuex", "chart.js", "vue-chartjs", "@fortawesome/vue-fontawesome", "buefy"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "One PR for vue + vue-template-compiler, they must match exactly",
+      "matchPackageNames": ["vue", "vue-template-compiler"],
+      "groupName": "vue"
+    },
+    {
+      "description": "GitHub Actions minor/patch: merged once CI is green, no release (the image doesn't change); major by hand",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ]
+}

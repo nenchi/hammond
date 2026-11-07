@@ -3,7 +3,7 @@ package db
 import (
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +17,6 @@ type Base struct {
 
 //BeforeCreate
 func (base *Base) BeforeCreate(tx *gorm.DB) error {
-	tx.Statement.SetColumn("ID", uuid.NewV4().String())
+	tx.Statement.SetColumn("ID", uuid.NewString())
 	return nil
 }
