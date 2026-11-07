@@ -78,6 +78,26 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  // upstream bug: on a phone the Stats chart kept reloading and growing forever
+  it('mobile: stats chart loads once and keeps its size', () => {
+    cy.viewport(375, 667)
+    cy.intercept('GET', '/api/vehicles/*/mileage*').as('mileage')
+    visit(`/vehicles/${vehicleId}`)
+    cy.contains('h1', 'Stats').scrollIntoView()
+    cy.wait('@mileage')
+    cy.get('canvas').should('be.visible').then(($c) => {
+      const first = $c[0].getBoundingClientRect().height
+      cy.wait(3000) // give a resize/refetch loop time to show itself
+      cy.get('canvas').then(($c2) => {
+        const later = $c2[0].getBoundingClientRect().height
+        expect(later, 'chart height after 3 s').to.be.within(first - 1, first + 1)
+        expect(later, 'chart height').to.be.lessThan(400)
+      })
+    })
+    cy.get('@mileage.all').should('have.length.at.most', 1)
+    noConsoleErrors()
+  })
+
   it('logs out, and a wrong password is refused', () => {
     visit('/logout')
     cy.location('pathname').should('eq', '/login')
