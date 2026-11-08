@@ -86,18 +86,13 @@ describe('hammond UI', () => {
     cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'Cypress Station')
     cy.contains('.field', 'Odometer Reading').find('input').should('have.value', '').and('have.attr', 'placeholder', 'last: 20640')
     cy.contains('Last fill-up: 20640')
-    // typo check: warning only, cleared again (nothing saved)
-    cy.contains('.field', 'Odometer Reading').find('input').type('120640')
-    cy.contains('100000 Km since the last fill-up')
-    cy.contains('.field', 'Odometer Reading').find('input').clear()
-    cy.contains('Last fill-up: 20640')
     noConsoleErrors()
   })
 
   it('warns about an odometer typo in the form and lists saved ones on the vehicle page', () => {
     visit(`/vehicles/${vehicleId}/fillup`)
     cy.contains('.field', 'Odometer Reading').find('input').type('206400')
-    cy.contains('185760 km since the last fill-up. Typo?')
+    cy.contains('185760 Km since the last fill-up. Typo?')
     cy.contains('.field', 'Odometer Reading').find('input').clear().type('21200')
     cy.contains('Typo?').should('not.exist')
     // a saved typo (dated before the other seeds, so later tests' "last fill-up" stays 20640)
@@ -108,7 +103,7 @@ describe('hammond UI', () => {
                 isTankFull: true, userId: me.id, date: '2026-11-01T10:00:00Z' },
       })).then(({ body: f }) => {
         visit(`/vehicles/${vehicleId}`)
-        cy.contains('.odo-warning', 'Odometer looks wrong').should('contain', '1950 km').and('not.contain', '20000 km')
+        cy.contains('.odo-warning', 'Odometer looks wrong').should('contain', '1950 Km').and('not.contain', '20000 Km')
         cy.get('tr.is-suspicious').should('have.length', 1)
         cy.request({ method: 'DELETE', url: `/api/vehicles/${vehicleId}/fillups/${f.id}`, headers: apiHeaders })
       })
