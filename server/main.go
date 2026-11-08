@@ -56,6 +56,7 @@ func main() {
 	controllers.RegisterDetectionController(router)
 	controllers.RegisterExportController(router)
 	controllers.RegisterFuelPriceController(router)
+	controllers.RegisterHomeAssistantController(router)
 
 	go assetEnv()
 	go intiCron()

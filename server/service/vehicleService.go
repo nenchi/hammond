@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/akhilrex/hammond/db"
@@ -14,6 +15,9 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 	if err != nil {
 		return nil, err
 	}
+	if !ValidEntityID(model.OdometerEntity) {
+		return nil, errors.New("odometer entity must look like sensor.car_odometer")
+	}
 	vehicle := db.Vehicle{
 		Nickname:          model.Nickname,
 		Registration:      model.Registration,
@@ -26,6 +30,7 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 		TankCapacity:      model.TankCapacity,
 		FuelGrade:         grades,
 		GaugeSegments:     model.GaugeSegments,
+		OdometerEntity:    model.OdometerEntity,
 	}
 
 	tx := db.DB.Create(&vehicle)
@@ -119,6 +124,10 @@ func UpdateVehicle(vehicleID string, model models.UpdateVehicleRequest) error {
 		return err
 	}
 	toUpdate.FuelGrade = grades
+	if !ValidEntityID(model.OdometerEntity) {
+		return errors.New("odometer entity must look like sensor.car_odometer")
+	}
+	toUpdate.OdometerEntity = model.OdometerEntity
 	if model.GaugeSegments != 0 {
 		toUpdate.GaugeSegments = model.GaugeSegments
 	}

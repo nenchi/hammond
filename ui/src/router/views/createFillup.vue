@@ -42,6 +42,8 @@ export default {
       fillupModel: this.fillup,
       processQuickEntry: false,
       lastOdoReading: null,
+      // the car's odometer from Home Assistant: { value, unit, updatedAt } or { error }
+      haOdometer: null,
       typicalGap: null,
       gapLimit: 1500,
       detection: null,
@@ -67,6 +69,15 @@ export default {
     subtypeOptions() {
       const custom = ((this.me && this.me.customFuelSubtypes) || '').split('\n').filter(Boolean)
       return fuelSubtypes(this.selectedVehicle.fuelType, this.fillupModel.fuelSubType, custom)
+    },
+    haOdometerHint() {
+      const o = this.haOdometer
+      if (!o) return ''
+      if (o.error) return o.error
+      if (Math.round(o.value) !== this.fillupModel.odoReading) return ''
+      const min = Math.max(0, Math.round((Date.now() - new Date(o.updatedAt)) / 60000))
+      const ago = min < 60 ? `${min} min` : min < 2880 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} days`
+      return `From Home Assistant, updated ${ago} ago`
     },
     // soft warning only (typo check), saving still works: back-dated entries and long trips are legit
     odoWarning() {
@@ -115,6 +126,7 @@ export default {
       this.fillupModel.userId = this.me.id
       this.prefillFromLastFillup()
       if (this.$route.query.detection) this.prefillFromDetection(this.$route.query.detection)
+      else this.prefillFromHomeAssistant() // a detection brings its own odometer
     }
   },
   methods: {
@@ -181,6 +193,26 @@ export default {
           if (!this.fillupModel.fuelSubType) this.fillupModel.fuelSubType = last.fuelSubType || defaultFuelSubtype(this.selectedVehicle)
         })
         .catch((err) => console.log(err))
+    },
+    // the car's current odometer (Admin → Home Assistant + the vehicle's entity); only into an empty field
+    prefillFromHomeAssistant() {
+      axios
+        .get(`/api/vehicles/${this.selectedVehicle.id}/odometer`)
+        .then(({ data }) => {
+          if (!data.configured) return
+          const mine = (this.me.distanceUnitDetail.short || '').toLowerCase()
+          const theirs = (data.unit || '').toLowerCase()
+          // ponytail: no km↔mi conversion, a different unit is only shown
+          if (theirs && mine && theirs !== mine) {
+            this.haOdometer = { error: `Car reports ${data.value} ${data.unit}, not ${this.me.distanceUnitDetail.short}: not pre-filled.` }
+            return
+          }
+          this.haOdometer = data
+          if (!this.fillupModel.odoReading) this.fillupModel.odoReading = Math.round(data.value)
+        })
+        .catch((ex) => {
+          this.haOdometer = { error: 'Home Assistant: ' + ((ex.response && ex.response.data && ex.response.data.error) || ex.message) }
+        })
     },
     getEmptyFillup() {
       return {
@@ -354,7 +386,7 @@ export default {
       <b-field
         label="Odometer Reading"
         :type="odoWarning ? 'is-warning' : ''"
-        :message="odoWarning || (lastOdoReading ? `Last fill-up: ${lastOdoReading} ${me.distanceUnitDetail.short}` : '')"
+        :message="[odoWarning, haOdometerHint, lastOdoReading ? `Last fill-up: ${lastOdoReading} ${me.distanceUnitDetail.short}` : ''].filter(Boolean).join(' · ')"
       >
         <p class="control">
           <span class="button is-static">{{ me.distanceUnitDetail.short }}</span>

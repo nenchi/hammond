@@ -46,6 +46,7 @@ func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, d
 
 func GetSettings() *db.Setting {
 	s := db.GetOrCreateSetting()
-	s.FuelPriceKeySet = s.FuelPriceAPIKey != ""
+	s.PriceProfiles = PublicPriceProfiles(s)
+	s.HATokenSet = s.HAToken != ""
 	return s
 }

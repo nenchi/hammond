@@ -8,17 +8,24 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/akhilrex/hammond/db"
+	"github.com/google/uuid"
 )
 
-// Station prices from a Tankerkönig-compatible API (list.php). Profiles: "tankerkoenig" (Germany,
-// creativecommons.tankerkoenig.de, free key) or "custom" (any URL speaking the same format).
+// Station prices from a list of profiles (Admin → Site settings), tried in order: the first one with
+// stations near the position wins, so no country borders are needed (each API only knows its country).
+// Kinds: "tankerkoenig" (Germany, free key), "econtrol" (Austria, no key) and "custom" (any URL speaking
+// the Tankerkönig list.php format).
 
-const TankerkoenigURL = "https://creativecommons.tankerkoenig.de/json"
+const (
+	TankerkoenigURL = "https://creativecommons.tankerkoenig.de/json"
+	EControlURL     = "https://api.e-control.at/sprit/1.0"
+)
 
 type Station struct {
 	ID      string             `json:"id"`
@@ -33,6 +40,8 @@ type Station struct {
 }
 
 type StationsResult struct {
+	Profile     string    `json:"profile"` // id of the profile that answered
+	ProfileName string    `json:"profileName"`
 	Grades      []string  `json:"grades"` // accepted, preferred first
 	Attribution string    `json:"attribution"`
 	Stations    []Station `json:"stations"`
@@ -93,16 +102,224 @@ var (
 	priceClient    = &http.Client{Timeout: 8 * time.Second}
 )
 
+// one station as every kind delivers it: prices per grade (e5/e10/diesel) it sells
+type rawStation struct {
+	ID, Name, Brand, Address string
+	Dist                     float64
+	Prices                   map[string]float64
+	IsOpen                   bool
+}
+
 type cachedStations struct {
 	at  time.Time
-	res []tkStation
+	res []rawStation
 	lic string
 }
 
-// ponytail: in-memory cache keyed by rounded position, 5 min (Tankerkönig asks not to poll faster);
-// grows only with distinct places looked up, fine for a self-hosted app
-func cacheKey(base string, lat, lng, rad float64) string {
-	return fmt.Sprintf("%s|%.3f|%.3f|%.0f", base, lat, lng, rad)
+// ponytail: in-memory cache keyed by profile + rounded position, 5 min (Tankerkönig asks not to poll
+// faster); grows only with distinct places looked up, fine for a self-hosted app
+func cacheKey(p db.PriceProfile, extra string, lat, lng, rad float64) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%.3f|%.3f|%.0f", p.ID, p.Kind, p.URL, extra, lat, lng, rad)
+}
+
+func clearStationCache() {
+	stationCacheMu.Lock()
+	stationCache = map[string]cachedStations{}
+	stationCacheMu.Unlock()
+}
+
+// PriceProfiles: the stored list with keys. A v1.5 single provider becomes the first profile.
+func PriceProfiles(s *db.Setting) []db.PriceProfile {
+	var list []db.PriceProfile
+	if s.FuelPriceProfiles != "" {
+		json.Unmarshal([]byte(s.FuelPriceProfiles), &list)
+		return list
+	}
+	switch s.FuelPriceProvider {
+	case "tankerkoenig":
+		return []db.PriceProfile{{ID: "tankerkoenig", Name: "Germany – Tankerkönig", Kind: "tankerkoenig", URL: s.FuelPriceURL, APIKey: s.FuelPriceAPIKey}}
+	case "custom":
+		return []db.PriceProfile{{ID: "custom", Name: "Custom", Kind: "custom", URL: s.FuelPriceURL, APIKey: s.FuelPriceAPIKey}}
+	}
+	return nil
+}
+
+// PublicPriceProfiles: the list for the browser, keys replaced by keySet
+func PublicPriceProfiles(s *db.Setting) []db.PriceProfile {
+	out := []db.PriceProfile{}
+	for _, p := range PriceProfiles(s) {
+		p.KeySet, p.APIKey = p.APIKey != "", ""
+		out = append(out, p)
+	}
+	return out
+}
+
+var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "custom": ""}
+
+// UpdatePriceProfiles (admin) replaces the list. Keys: "" keeps the stored one of the same id, "-" removes it.
+func UpdatePriceProfiles(in []db.PriceProfile) error {
+	s := db.GetOrCreateSetting()
+	old := map[string]db.PriceProfile{}
+	for _, p := range PriceProfiles(s) {
+		old[p.ID] = p
+	}
+	out := []db.PriceProfile{}
+	for _, p := range in {
+		p.Name, p.URL = strings.TrimSpace(p.Name), strings.TrimSpace(p.URL)
+		if _, ok := priceKinds[p.Kind]; !ok {
+			return fmt.Errorf("unknown profile kind %q", p.Kind)
+		}
+		if p.Name == "" || len([]rune(p.Name)) > 40 {
+			return errors.New("every profile needs a name (up to 40 characters)")
+		}
+		if p.Kind == "custom" && p.URL == "" {
+			return fmt.Errorf("profile %q needs a URL", p.Name)
+		}
+		if p.URL != "" {
+			if u, err := url.Parse(p.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(p.URL) > 300 {
+				return fmt.Errorf("profile %q: invalid URL", p.Name)
+			}
+		}
+		if len(p.APIKey) > 200 {
+			return fmt.Errorf("profile %q: key too long", p.Name)
+		}
+		if p.ID == "" {
+			p.ID = uuid.NewString()
+		}
+		switch p.APIKey {
+		case "":
+			p.APIKey = old[p.ID].APIKey
+		case "-":
+			p.APIKey = ""
+		}
+		p.KeySet = false
+		out = append(out, p)
+	}
+	if len(out) > 10 {
+		return errors.New("at most 10 profiles")
+	}
+	b, _ := json.Marshal(out)
+	s.FuelPriceProfiles = string(b)
+	if len(out) == 0 {
+		s.FuelPriceProfiles = "[]" // not "" — that would bring back a v1.5 provider
+	}
+	s.FuelPriceProvider, s.FuelPriceURL, s.FuelPriceAPIKey = "", "", ""
+	clearStationCache()
+	return db.UpdateSettings(s)
+}
+
+// NearbyStations: with profileID that profile, else the first profile with stations nearby.
+func NearbyStations(vehicle *db.Vehicle, lat, lng, radiusKm float64, profileID string) (*StationsResult, error) {
+	profiles := PriceProfiles(db.GetOrCreateSetting())
+	if profileID != "" {
+		var only []db.PriceProfile
+		for _, p := range profiles {
+			if p.ID == profileID {
+				only = append(only, p)
+			}
+		}
+		if len(only) == 0 {
+			return nil, errors.New("unknown price profile")
+		}
+		profiles = only
+	}
+	if len(profiles) == 0 {
+		return nil, errors.New("station prices are not set up (Admin → Site settings → Fuel prices)")
+	}
+	grades := VehicleFuelGrades(vehicle)
+	if len(grades) == 0 {
+		return nil, errors.New("no station prices for this vehicle's fuel type")
+	}
+	if math.IsNaN(lat) || lat < -90 || lat > 90 || math.IsNaN(lng) || lng < -180 || lng > 180 {
+		return nil, errors.New("invalid position")
+	}
+	radiusKm = math.Min(math.Max(radiusKm, 1), 25) // Tankerkönig: max 25 km
+
+	var firstErr error
+	var empty *StationsResult
+	for _, p := range profiles {
+		res, err := profileStations(p, grades, lat, lng, radiusKm)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s: %w", p.Name, err)
+			}
+			continue
+		}
+		if len(res.Stations) > 0 {
+			return res, nil
+		}
+		if empty == nil {
+			empty = res
+		}
+	}
+	if empty != nil {
+		return empty, nil // answered, but nothing here: "no stations within 2 km"
+	}
+	return nil, firstErr
+}
+
+func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) (*StationsResult, error) {
+	base := p.URL
+	if base == "" {
+		base = priceKinds[p.Kind]
+	}
+	base = strings.TrimRight(base, "/")
+	extra := ""
+	if p.Kind == "econtrol" {
+		extra = strings.Join(eControlTypes(grades), ",") // one request per fuel type there
+	}
+	key := cacheKey(p, extra, lat, lng, rad)
+	stationCacheMu.Lock()
+	c, ok := stationCache[key]
+	stationCacheMu.Unlock()
+	if !ok || time.Since(c.at) > 5*time.Minute {
+		var err error
+		if p.Kind == "econtrol" {
+			c.res, err = fetchEControl(base, grades, lat, lng, rad)
+			c.lic = "Prices: E-Control Spritpreisrechner (only the 5 cheapest stations show a price)"
+		} else {
+			c.res, c.lic, err = fetchTankerkoenig(base, p.APIKey, lat, lng, rad)
+			if p.Kind == "tankerkoenig" {
+				c.lic = "Prices: MTS-K via Tankerkönig (CC BY 4.0)"
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+		c.at = time.Now()
+		stationCacheMu.Lock()
+		stationCache[key] = c
+		stationCacheMu.Unlock()
+	}
+
+	res := &StationsResult{Profile: p.ID, ProfileName: p.Name, Grades: grades, Attribution: c.lic, Stations: []Station{}}
+	for _, st := range c.res {
+		prices := map[string]float64{}
+		var price *float64
+		chosen := ""
+		for _, g := range grades {
+			if v, ok := st.Prices[g]; ok {
+				prices[g] = v
+				if price == nil {
+					v := v
+					price, chosen = &v, g
+				}
+			}
+		}
+		res.Stations = append(res.Stations, Station{ID: st.ID, Name: st.Name, Brand: st.Brand, Address: st.Address,
+			Dist: st.Dist, Prices: prices, Price: price, Grade: chosen, IsOpen: st.IsOpen})
+	}
+	// stations that sell the grade first, then by distance
+	sort.SliceStable(res.Stations, func(i, j int) bool {
+		if (res.Stations[i].Price == nil) != (res.Stations[j].Price == nil) {
+			return res.Stations[i].Price != nil
+		}
+		return res.Stations[i].Dist < res.Stations[j].Dist
+	})
+	if len(res.Stations) > 10 {
+		res.Stations = res.Stations[:10]
+	}
+	return res, nil
 }
 
 type tkStation struct {
@@ -129,134 +346,147 @@ func rawPrice(r json.RawMessage) *float64 {
 	return nil
 }
 
-func NearbyStations(vehicle *db.Vehicle, lat, lng, radiusKm float64) (*StationsResult, error) {
-	s := db.GetOrCreateSetting()
-	base := ""
-	switch s.FuelPriceProvider {
-	case "tankerkoenig":
-		base = TankerkoenigURL
-		if s.FuelPriceURL != "" {
-			base = s.FuelPriceURL
+func fetchTankerkoenig(base, apiKey string, lat, lng, rad float64) ([]rawStation, string, error) {
+	q := url.Values{"lat": {fmt.Sprint(lat)}, "lng": {fmt.Sprint(lng)}, "rad": {fmt.Sprint(rad)},
+		"sort": {"dist"}, "type": {"all"}, "apikey": {apiKey}}
+	resp, err := priceClient.Get(base + "/list.php?" + q.Encode())
+	if err != nil {
+		msg := err.Error()
+		if apiKey != "" {
+			msg = strings.ReplaceAll(msg, apiKey, "***")
 		}
-	case "custom":
-		base = s.FuelPriceURL
+		return nil, "", fmt.Errorf("price service not reachable: %s", msg)
 	}
-	if base == "" {
-		return nil, errors.New("station prices are not set up (Admin → Site settings → Fuel prices)")
+	defer resp.Body.Close()
+	var body struct {
+		OK       bool        `json:"ok"`
+		Message  string      `json:"message"`
+		License  string      `json:"license"`
+		Data     string      `json:"data"`
+		Stations []tkStation `json:"stations"`
 	}
-	grades := VehicleFuelGrades(vehicle)
-	if len(grades) == 0 {
-		return nil, errors.New("no station prices for this vehicle's fuel type")
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, "", fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
 	}
-	if math.IsNaN(lat) || lat < -90 || lat > 90 || math.IsNaN(lng) || lng < -180 || lng > 180 {
-		return nil, errors.New("invalid position")
+	if !body.OK {
+		return nil, "", fmt.Errorf("price service: %s", body.Message)
 	}
-	radiusKm = math.Min(math.Max(radiusKm, 1), 25) // Tankerkönig: max 25 km
-	base = strings.TrimRight(base, "/")
-
-	key := cacheKey(base, lat, lng, radiusKm)
-	stationCacheMu.Lock()
-	c, ok := stationCache[key]
-	stationCacheMu.Unlock()
-	if !ok || time.Since(c.at) > 5*time.Minute {
-		q := url.Values{"lat": {fmt.Sprint(lat)}, "lng": {fmt.Sprint(lng)}, "rad": {fmt.Sprint(radiusKm)},
-			"sort": {"dist"}, "type": {"all"}, "apikey": {s.FuelPriceAPIKey}}
-		resp, err := priceClient.Get(base + "/list.php?" + q.Encode())
-		if err != nil {
-			return nil, fmt.Errorf("price service not reachable: %s", strings.ReplaceAll(err.Error(), s.FuelPriceAPIKey, "***"))
-		}
-		defer resp.Body.Close()
-		var body struct {
-			OK       bool        `json:"ok"`
-			Message  string      `json:"message"`
-			License  string      `json:"license"`
-			Data     string      `json:"data"`
-			Stations []tkStation `json:"stations"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			return nil, fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
-		}
-		if !body.OK {
-			return nil, fmt.Errorf("price service: %s", body.Message)
-		}
-		lic := strings.TrimSpace(strings.Join([]string{body.Data, body.License}, " · "))
-		c = cachedStations{at: time.Now(), res: body.Stations, lic: strings.Trim(lic, " ·")}
-		stationCacheMu.Lock()
-		stationCache[key] = c
-		stationCacheMu.Unlock()
-	}
-
-	res := &StationsResult{Grades: grades, Attribution: c.lic, Stations: []Station{}}
-	if s.FuelPriceProvider == "tankerkoenig" {
-		res.Attribution = "Prices: MTS-K via Tankerkönig (CC BY 4.0)"
-	}
-	for _, st := range c.res {
+	out := []rawStation{}
+	for _, st := range body.Stations {
 		prices := map[string]float64{}
-		var p *float64
-		chosen := ""
-		for _, g := range grades {
-			var v *float64
-			switch g {
-			case "e5":
-				v = rawPrice(st.E5)
-			case "e10":
-				v = rawPrice(st.E10)
-			case "diesel":
-				v = rawPrice(st.Diesel)
-			}
-			if v != nil {
+		for g, r := range map[string]json.RawMessage{"e5": st.E5, "e10": st.E10, "diesel": st.Diesel} {
+			if v := rawPrice(r); v != nil {
 				prices[g] = *v
-				if p == nil {
-					p, chosen = v, g
-				}
 			}
 		}
 		addr := strings.TrimSpace(st.Street + " " + st.HouseNumber)
 		if st.Place != "" {
 			addr = strings.Trim(addr+", "+strings.TrimSpace(strings.Trim(string(st.PostCode), `"`)+" "+st.Place), ", ")
 		}
-		res.Stations = append(res.Stations, Station{ID: st.ID, Name: strings.TrimSpace(st.Name), Brand: strings.TrimSpace(st.Brand),
-			Address: addr, Dist: st.Dist, Prices: prices, Price: p, Grade: chosen, IsOpen: st.IsOpen})
+		out = append(out, rawStation{ID: st.ID, Name: strings.TrimSpace(st.Name), Brand: strings.TrimSpace(st.Brand),
+			Address: addr, Dist: st.Dist, Prices: prices, IsOpen: st.IsOpen})
 	}
-	// stations that sell the grade first, then by distance
-	sort.SliceStable(res.Stations, func(i, j int) bool {
-		if (res.Stations[i].Price == nil) != (res.Stations[j].Price == nil) {
-			return res.Stations[i].Price != nil
+	lic := strings.Trim(strings.TrimSpace(strings.Join([]string{body.Data, body.License}, " · ")), " ·")
+	return out, lic, nil
+}
+
+// E-Control knows "SUP" (Super 95) and "DIE" per request. ponytail: Super 95 goes to the first petrol
+// grade the vehicle accepts (Austria sells one 95 grade); Super Plus isn't asked for.
+func eControlTypes(grades []string) []string {
+	var out []string
+	for _, t := range []string{"SUP", "DIE"} {
+		if eControlGrade(t, grades) != "" {
+			out = append(out, t)
 		}
-		return res.Stations[i].Dist < res.Stations[j].Dist
-	})
-	if len(res.Stations) > 10 {
-		res.Stations = res.Stations[:10]
 	}
-	return res, nil
+	return out
 }
 
-// UpdateFuelPriceSettings (admin). apiKey "" keeps the stored key, "-" removes it.
-func UpdateFuelPriceSettings(provider, rawURL, apiKey string) error {
-	s := db.GetOrCreateSetting()
-	if provider == "custom" && rawURL == "" {
-		return errors.New("a custom provider needs a URL")
+func eControlGrade(fuelType string, grades []string) string {
+	for _, g := range grades {
+		if (fuelType == "DIE") == (g == "diesel") {
+			return g
+		}
 	}
-	s.FuelPriceProvider, s.FuelPriceURL = provider, rawURL
-	switch apiKey {
-	case "":
-	case "-":
-		s.FuelPriceAPIKey = ""
-	default:
-		s.FuelPriceAPIKey = apiKey
-	}
-	stationCacheMu.Lock()
-	stationCache = map[string]cachedStations{}
-	stationCacheMu.Unlock()
-	return db.UpdateSettings(s)
+	return ""
 }
 
-// TestFuelPriceProvider (admin "Test connection"): asks the stored provider with the stored key for
-// stations around a fixed point (Frankfurt city centre for the German default, or the given position).
-func TestFuelPriceProvider(lat, lng float64) (*StationsResult, error) {
-	stationCacheMu.Lock()
-	stationCache = map[string]cachedStations{} // always a real request
-	stationCacheMu.Unlock()
+func fetchEControl(base string, grades []string, lat, lng, rad float64) ([]rawStation, error) {
+	byID := map[string]*rawStation{}
+	var order []string
+	for _, t := range eControlTypes(grades) {
+		q := url.Values{"latitude": {fmt.Sprint(lat)}, "longitude": {fmt.Sprint(lng)}, "fuelType": {t}, "includeClosed": {"true"}}
+		resp, err := priceClient.Get(base + "/search/gas-stations/by-address?" + q.Encode())
+		if err != nil {
+			return nil, fmt.Errorf("price service not reachable: %s", err)
+		}
+		var list []struct {
+			ID       int    `json:"id"`
+			Name     string `json:"name"`
+			Location struct {
+				Address    string `json:"address"`
+				PostalCode string `json:"postalCode"`
+				City       string `json:"city"`
+			} `json:"location"`
+			Open     bool    `json:"open"`
+			Distance float64 `json:"distance"`
+			Prices   []struct {
+				FuelType string  `json:"fuelType"`
+				Amount   float64 `json:"amount"`
+			} `json:"prices"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&list)
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
+		}
+		for _, st := range list {
+			if st.Distance > rad { // it answers the 10 nearest, however far
+				continue
+			}
+			id := strconv.Itoa(st.ID)
+			r, ok := byID[id]
+			if !ok {
+				addr := strings.Trim(st.Location.Address+", "+strings.TrimSpace(st.Location.PostalCode+" "+st.Location.City), ", ")
+				r = &rawStation{ID: id, Name: strings.TrimSpace(st.Name), Address: addr, Dist: st.Distance, Prices: map[string]float64{}, IsOpen: st.Open}
+				byID[id] = r
+				order = append(order, id)
+			}
+			for _, p := range st.Prices {
+				if g := eControlGrade(p.FuelType, grades); g != "" && p.FuelType == t && p.Amount > 0 {
+					r.Prices[g] = p.Amount
+				}
+			}
+		}
+	}
+	out := []rawStation{}
+	for _, id := range order {
+		out = append(out, *byID[id])
+	}
+	return out, nil
+}
+
+// TestFuelPriceProvider (admin "Test connection"): asks one saved profile (the first without id) with
+// its stored key around the given position, or a fixed point in its country.
+func TestFuelPriceProvider(profileID string, lat, lng *float64) (*StationsResult, error) {
+	profiles := PriceProfiles(db.GetOrCreateSetting())
+	if len(profiles) == 0 {
+		return nil, errors.New("no profile saved yet")
+	}
+	p := profiles[0]
+	for _, x := range profiles {
+		if x.ID == profileID {
+			p = x
+		}
+	}
+	la, ln := 50.1109, 8.6821 // Frankfurt am Main
+	if p.Kind == "econtrol" {
+		la, ln = 48.2082, 16.3738 // Vienna
+	}
+	if lat != nil && lng != nil {
+		la, ln = *lat, *lng
+	}
+	clearStationCache() // always a real request
 	probe := &db.Vehicle{FuelGrade: "e10,e5,diesel"}
-	return NearbyStations(probe, lat, lng, 5)
+	return NearbyStations(probe, la, ln, 5, p.ID)
 }
