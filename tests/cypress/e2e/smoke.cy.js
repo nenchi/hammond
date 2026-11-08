@@ -133,16 +133,18 @@ describe('hammond UI', () => {
   })
 
   it('tank size can be set on the vehicle', () => {
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}`).as('saveVehicle')
     visit(`/vehicles/${vehicleId}/edit`)
-    cy.contains('.field', 'Tank size').find('input').clear().type('43')
+    cy.contains('.field', 'Tank size').find('input.input').clear().type('43')
     cy.get('form [type=submit]').first().click()
+    cy.wait('@saveVehicle').its('response.statusCode').should('eq', 200)
     cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).its('body.tankCapacity').should('eq', 43)
   })
 
   it('detected fill-up: API key in settings, detection via API, complete it in the UI', () => {
     visit('/settings')
     cy.get('.api-keys').within(() => {
-      cy.contains('.field', 'Name').find('input').clear().type('Cypress HA')
+      cy.contains('.field', 'Name').find('input.input').clear().type('Cypress HA') // not the button next to it
       cy.get('form [type=submit]').click()
       cy.get('.created-key input').invoke('val').should('match', /^hmd_[0-9a-f]{48}$/).as('key')
       cy.contains('td', 'Cypress HA')
