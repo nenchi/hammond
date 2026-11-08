@@ -154,9 +154,17 @@ export default {
         .catch((ex) => this.$buefy.toast.open({ duration: 5000, message: ex.message, position: 'is-bottom', type: 'is-danger' }))
     },
     copyKey() {
-      navigator.clipboard.writeText(this.createdKey).then(() =>
-        this.$buefy.toast.open({ message: 'API key copied', type: 'is-success', duration: 2000 })
-      )
+      // clipboard API needs https; otherwise select the text so it can be copied by hand
+      const done = () => this.$buefy.toast.open({ message: 'API key copied', type: 'is-success', duration: 2000 })
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(this.createdKey).then(done)
+      } else {
+        const r = document.createRange()
+        r.selectNodeContents(this.$el.querySelector('.created-key'))
+        window.getSelection().removeAllRanges()
+        window.getSelection().addRange(r)
+        document.execCommand('copy') && done()
+      }
     },
     revokeApiKey(k) {
       this.$buefy.dialog.confirm({
@@ -284,11 +292,12 @@ export default {
             else.</p
           >
           <b-notification v-if="createdKey" type="is-success" :closable="false">
-            Copy the key now, it won't be shown again:
-            <b-field class="mt-2">
-              <b-input :value="createdKey" readonly expanded class="created-key"></b-input>
-              <p class="control"><b-button type="is-primary" @click="copyKey">Copy</b-button></p>
-            </b-field>
+            Copy the key now: only a fingerprint is stored, so it can't be shown again (lost → create a new one).
+            <!-- the whole key, wrapping, instead of a narrow input that cut it off -->
+            <div class="is-flex is-align-items-center mt-2" style="gap: 0.5rem">
+              <code class="created-key" style="word-break: break-all; flex: 1">{{ createdKey }}</code>
+              <b-button type="is-primary" icon-left="copy" @click="copyKey">Copy</b-button>
+            </div>
           </b-notification>
           <form @submit.prevent="createApiKey">
             <b-field label="Name">

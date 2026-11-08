@@ -195,7 +195,7 @@ describe('hammond UI', () => {
     cy.get('.api-keys').within(() => {
       cy.contains('.field', 'Name').find('input.input').clear().type('Cypress HA') // not the button next to it
       cy.get('form [type=submit]').click()
-      cy.get('.created-key input').invoke('val').should('match', /^hmd_[0-9a-f]{48}$/).as('key')
+      cy.get('.created-key').invoke('text').should('match', /^hmd_[0-9a-f]{48}$/).as('key') // shown in full
       cy.contains('td', 'Cypress HA')
     })
     cy.get('@key').then((key) => {
