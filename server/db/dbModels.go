@@ -206,7 +206,8 @@ type Setting struct {
 }
 
 // PriceProfile: one station price source, tried in list order (the first with stations nearby wins).
-// Kind "tankerkoenig" (Germany), "econtrol" (Austria) or "custom" (Tankerkönig-compatible URL).
+// Kind "tankerkoenig" (Germany), "econtrol" (Austria), "goriva" (Slovenia), "mzoe" (Croatia) or "custom"
+// (Tankerkönig-compatible URL).
 type PriceProfile struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
