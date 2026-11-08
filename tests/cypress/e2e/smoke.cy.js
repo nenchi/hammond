@@ -122,15 +122,12 @@ describe('hammond UI', () => {
     visit(`/vehicles/${vehicleId}`)
     cy.contains('h1', 'Stats').scrollIntoView()
     cy.wait('@mileage')
-    cy.get('canvas').should('be.visible').then(($c) => {
-      const first = $c[0].getBoundingClientRect().height
-      cy.wait(3000) // give a resize/refetch loop time to show itself
-      cy.get('canvas').then(($c2) => {
-        const later = $c2[0].getBoundingClientRect().height
-        expect(later, 'chart height after 3 s').to.be.within(first - 1, first + 1)
-        expect(later, 'chart height').to.be.lessThan(400)
-      })
-    })
+    // Chart.js starts at its default 400px canvas and then sizes to the 300px box: wait until it has
+    // settled (measuring right away was flaky), then make sure it stays (the old bug kept growing)
+    const height = ($c) => $c[0].getBoundingClientRect().height
+    cy.get('canvas').should(($c) => expect(height($c), 'chart settled at its 300px box').to.be.within(299, 301))
+    cy.wait(3000) // give a resize/refetch loop time to show itself
+    cy.get('canvas').then(($c) => expect(height($c), 'chart height after 3 s').to.be.within(299, 301))
     cy.get('@mileage.all').should('have.length.at.most', 1)
     noConsoleErrors()
   })
