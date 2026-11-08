@@ -63,6 +63,29 @@ func RegisterDetectionController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gin.H{})
 	})
+	router.GET("/vehicles/:id/gauge", func(c *gin.Context) {
+		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		v, err := service.GetVehicleById(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		c.JSON(http.StatusOK, service.Calibrate(v))
+	})
+	router.POST("/vehicles/:id/gauge/reset", func(c *gin.Context) {
+		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		if err := service.ResetGaugeCalibration(c.Param("id")); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{})
+	})
 	router.GET("/vehicles/:id/tankSuggestion", func(c *gin.Context) {
 		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
 			c.JSON(http.StatusNotFound, gin.H{})

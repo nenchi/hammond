@@ -25,6 +25,7 @@ export default {
       myVehicles: [],
       vehicleModel: {},
       tankSuggestion: null,
+      gauge: null,
       gradeChoices: [
         { value: 'e10', text: '95 E10' },
         { value: 'e5', text: '95 (E5)' },
@@ -60,6 +61,10 @@ export default {
     this.myVehicles = this.vehicles
     if (this.vehicle && this.vehicle.id) {
       axios
+        .get(`/api/vehicles/${this.vehicle.id}/gauge`)
+        .then(({ data }) => (this.gauge = data))
+        .catch(() => {})
+      axios
         .get(`/api/vehicles/${this.vehicle.id}/tankSuggestion`)
         .then(({ data }) => {
           if (data.samples >= 2 && data.tankCapacity > 0) this.tankSuggestion = data
@@ -68,6 +73,19 @@ export default {
     }
   },
   methods: {
+    resetGauge() {
+      this.$buefy.dialog.confirm({
+        title: 'Reset gauge calibration',
+        message: 'Forget what was learned from earlier fill-ups and start linear again?',
+        confirmText: 'Reset',
+        type: 'is-danger',
+        onConfirm: () =>
+          axios
+            .post(`/api/vehicles/${this.vehicle.id}/gauge/reset`)
+            .then(() => axios.get(`/api/vehicles/${this.vehicle.id}/gauge`))
+            .then(({ data }) => (this.gauge = data)),
+      })
+    },
     getEmptyVehicle(veh) {
       if (!veh || !veh.id) {
         return {
@@ -78,6 +96,7 @@ export default {
           engineSize: null,
           tankCapacity: null,
           fuelGrade: '',
+          gaugeSegments: 4,
           make: '',
           model: '',
           yearOfManufacture: null,
@@ -91,6 +110,7 @@ export default {
           engineSize: veh.engineSize,
           tankCapacity: veh.tankCapacity || null,
           fuelGrade: veh.fuelGrade || '',
+          gaugeSegments: veh.gaugeSegments || 4,
           make: veh.make,
           model: veh.model,
           yearOfManufacture: veh.yearOfManufacture,
@@ -203,6 +223,44 @@ export default {
           <b-checkbox v-for="g in gradeChoices" :key="g.value" v-model="acceptedGrades" :native-value="g.value">{{ g.text }}</b-checkbox>
         </div>
       </b-field>
+      <b-field
+        label="Gauge segments"
+        message="How many parts the fuel gauge has (4 = quarters). Each part learns its own litres per % from your confirmed detections."
+      >
+        <b-input v-model.number="vehicleModel.gaugeSegments" type="number" min="1" max="10" step="1"></b-input>
+      </b-field>
+      <div v-if="gauge" class="box gauge-calibration mb-4">
+        <p class="heading">
+          Gauge calibration ·
+          <span v-if="gauge.calibrated" class="has-text-success">learned from {{ gauge.samples }} fill-ups</span>
+          <span v-else>linear (needs 2 confirmed detections, has {{ gauge.samples }})</span>
+        </p>
+        <div class="is-flex is-align-items-flex-end" style="gap: 4px; height: 90px">
+          <div
+            v-for="(litres, i) in gauge.segmentLitres"
+            :key="i"
+            class="gauge-segment has-text-centered"
+            :title="`${(i * 100) / gauge.segments}–${((i + 1) * 100) / gauge.segments} %: ${litres} ${tankUnit}`"
+            :style="{
+              flex: 1,
+              height: Math.max(12, (litres / Math.max(...gauge.segmentLitres)) * 70) + 'px',
+              background: 'rgba(57, 162, 117, 0.6)',
+              borderRadius: '3px 3px 0 0',
+            }"
+          >
+            <small>{{ litres }}</small>
+          </div>
+        </div>
+        <div class="is-flex" style="gap: 4px">
+          <small v-for="i in gauge.segments" :key="i" class="has-text-centered" style="flex: 1"
+            >{{ ((i - 1) * 100) / gauge.segments }}–{{ (i * 100) / gauge.segments }} %</small
+          >
+        </div>
+        <p class="help"
+          >Litres per segment, empty (0 %) on the left. Sum {{ gauge.tankCapacity }} {{ tankUnit }}.
+          <a v-if="gauge.samples" class="has-text-danger reset-gauge" @click="resetGauge">Reset</a></p
+        >
+      </div>
       <b-field label="Make / Company*">
         <b-input v-model="vehicleModel.make" type="text" required expanded></b-input>
       </b-field>

@@ -204,6 +204,13 @@ call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SM
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
 check("stations nearby with E10 prices", s == 200 and r["grades"] == ["e10"] and r["stations"][0]["price"] == 1.739
       and r["stations"][1]["price"] is None and "MTS-K" in r["attribution"], (s, r))
+s, g = call("GET", f"/api/vehicles/{vid}/gauge", token=tok)
+check("gauge calibration: 4 segments, linear until 2 confirmed detections", s == 200 and g["segments"] == 4
+      and len(g["segmentLitres"]) == 4 and g["samples"] <= 1 and not g["calibrated"], (s, g))
+s, _ = call("POST", f"/api/vehicles/{vid}/gauge/reset", token=tok)
+check("gauge calibration reset", s == 200, s)
+s, _ = call("GET", "/api/vehicles/00000000-0000-0000-0000-000000000000/gauge", token=tok)
+check("gauge of a foreign vehicle is 404", s == 404, s)
 s, r = call("GET", "/api/settings/fuelPrices/test", token=tok)
 check("admin: test connection", s == 200 and r["ok"] and r["stations"] == 2, (s, r))
 s, _ = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",

@@ -25,6 +25,7 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 		FuelType:          *model.FuelType,
 		TankCapacity:      model.TankCapacity,
 		FuelGrade:         grades,
+		GaugeSegments:     model.GaugeSegments,
 	}
 
 	tx := db.DB.Create(&vehicle)
@@ -118,6 +119,9 @@ func UpdateVehicle(vehicleID string, model models.UpdateVehicleRequest) error {
 		return err
 	}
 	toUpdate.FuelGrade = grades
+	if model.GaugeSegments != 0 {
+		toUpdate.GaugeSegments = model.GaugeSegments
+	}
 	//}).Error
 
 	return db.DB.Omit(clause.Associations).Save(toUpdate).Error
