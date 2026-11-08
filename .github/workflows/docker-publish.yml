@@ -38,9 +38,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # host network: hammond reaches the fake fuel price service on 127.0.0.1:3999
       - name: End-to-end test the container
         run: |
-          docker run -d --name hammond -p 3000:3000 hammond:test
+          python3 tests/fake_fuelprices.py 3999 &
+          docker run -d --name hammond --network host hammond:test
           python3 tests/smoke_test.py http://127.0.0.1:3000
 
       # real browser: Vue/buefy/date-fns/chart.js runtime errors an API test can't see

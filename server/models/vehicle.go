@@ -26,6 +26,7 @@ type CreateVehicleRequest struct {
 	FuelType *db.FuelType `form:"fuelType" json:"fuelType" binding:"required"`
 
 	TankCapacity float32 `form:"tankCapacity" json:"tankCapacity" binding:"min=0"`
+	FuelGrade    string  `form:"fuelGrade" json:"fuelGrade" binding:"omitempty,oneof=e5 e10 diesel"`
 }
 
 type UpdateVehicleRequest struct {

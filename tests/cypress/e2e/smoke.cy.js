@@ -290,6 +290,48 @@ describe('hammond UI', () => {
     cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showFillupTime: true } })
   })
 
+  it('stations nearby: admin sets the provider, the form lists E10 prices and fills one in', () => {
+    // fake Tankerkönig on 127.0.0.1:3999 (tests/fake_fuelprices.py, started by the workflow)
+    cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
+      body: { provider: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' } })
+    cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
+      cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, fuelGrade: 'e10' } }))
+
+    visit('/admin/settings')
+    cy.get('.fuel-prices select').should('have.value', 'custom')
+    cy.get('.fuel-prices input[type=password]').should('have.attr', 'placeholder', '••••••••').and('have.value', '')
+    cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-key')
+
+    // the phone is in Offenbach
+    cy.visit(`/vehicles/${vehicleId}/fillup`, {
+      onBeforeLoad(win) {
+        cy.stub(win.navigator.geolocation, 'getCurrentPosition').callsFake((ok) => ok({ coords: { latitude: 50.1, longitude: 8.76 } }))
+      },
+    })
+    cy.contains('Last fill-up:')
+    cy.contains('button', 'Stations nearby').click()
+    cy.get('.station-picker').within(() => {
+      cy.contains('Stations nearby · Super E10')
+      cy.contains('.station', 'Freie Tankstelle').should('contain', 'no Super E10') // sells no E10: listed last
+      cy.contains('.station', 'ARAL').should('contain', '1.739').click()
+    })
+    cy.contains('.field', 'Price per').find('input').should('have.value', '1.739')
+    cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'ARAL, Frankfurter Str. 12, 63067 Offenbach')
+    cy.contains('.field', 'Fuel Subtype').find('input').should('have.value', 'Super E10')
+  })
+
+  it('detected fill-up with a location: the form lists stations near it right away', () => {
+    cy.request({ method: 'POST', url: '/api/me/apikeys', headers: apiHeaders, body: { name: 'location test' } }).then(({ body: k }) =>
+      cy.request({ method: 'POST', url: `/api/v1/vehicles/${vehicleId}/detections`, headers: { 'X-Api-Key': k.key },
+        body: { odoReading: 22100, fuelQuantity: 30, lat: 50.1, lng: 8.76, date: '2026-11-07T16:00:00Z' } }))
+      .its('body.detection.id').then((id) => {
+        visit(`/vehicles/${vehicleId}/fillup?detection=${id}`)
+        cy.get('.station-picker').contains('Stations near the detected location · Super E10')
+        cy.get('.station-picker .station').first().should('contain', 'ARAL')
+        cy.request({ method: 'POST', url: `/api/detections/${id}/discard`, headers: apiHeaders })
+      })
+  })
+
   it('logs out, and a wrong password is refused', () => {
     // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
     // and typing into the first login page raced the second (flaky in CI)

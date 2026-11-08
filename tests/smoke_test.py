@@ -190,6 +190,21 @@ check("non-admin can't create users (upstream could)", s == 401 and s2 != 200, (
 s, _ = call("POST", "/api/settings", {"currency": "USD", "distanceUnit": 0}, token=ptok)
 check("non-admin can't change site settings", s == 401, s)
 
+# ---- station prices (fake Tankerkönig on 127.0.0.1:3999 in CI) ----
+s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
+check("stations: clear error while no provider is set up", s == 422 and "not set up" in r, (s, r))
+s, st = call("POST", "/api/settings/fuelPrices", {"provider": "custom", "url": "http://127.0.0.1:3999/json", "apiKey": "ci-key"}, token=tok)
+check("admin sets the price provider; key not echoed", s == 200 and st.get("fuelPriceKeySet") is True and "ci-key" not in json.dumps(st), (s, st))
+s, pub = call("GET", "/api/settings", token=ptok)
+check("site settings readable by users without the key", s == 200 and "ci-key" not in json.dumps(pub) and pub.get("fuelPriceProvider") == "custom", pub)
+s, _ = call("POST", "/api/settings/fuelPrices", {"provider": "tankerkoenig", "apiKey": "x"}, token=ptok)
+check("non-admin can't change the price provider", s == 401, s)
+call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
+     "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10"}, token=tok)
+s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
+check("stations nearby with E10 prices", s == 200 and r["grade"] == "e10" and r["stations"][0]["price"] == 1.739
+      and r["stations"][1]["price"] is None and "MTS-K" in r["attribution"], (s, r))
+
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))
 s, _ = call("POST", "/api/refresh", {"refreshToken": "garbage"}, token=tok)

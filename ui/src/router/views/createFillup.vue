@@ -1,6 +1,7 @@
 <script>
 import Layout from '@layouts/main.vue'
 import QuickEntryDisplay from '@components/quickEntryDisplay.vue'
+import StationPicker from '@components/stationPicker.vue'
 import store from '@state/store'
 
 import { mapState } from 'vuex'
@@ -13,7 +14,7 @@ export default {
   page: {
     title: 'Create Fillup',
   },
-  components: { Layout, QuickEntryDisplay },
+  components: { Layout, QuickEntryDisplay, StationPicker },
   props: {
     vehicle: {
       type: Object,
@@ -111,6 +112,12 @@ export default {
           this.fuelSubTypes = data
         })
         .catch((err) => console.log(err))
+    },
+    pickStation({ name, price, grade }) {
+      this.fillupModel.fillingStation = name
+      if (price) this.fillupModel.perUnitPrice = price
+      if (grade) this.fillupModel.fuelSubType = grade
+      this.showMore = true
     },
     // "Complete" on a detected fill-up (Home Assistant etc.): odometer, quantity, date and tank-full from
     // the detection; saving links it (detectionId) so it's marked confirmed
@@ -310,6 +317,7 @@ export default {
           </option>
         </b-select>
       </b-field>
+      <StationPicker :vehicle="selectedVehicle" :detection="detection" @pick="pickStation" />
       <b-field :label="'Price per ' + vehicle.fuelUnitDetail.short + '*'"
         ><p class="control">
           <span class="button is-static">{{ me.currency }}</span>

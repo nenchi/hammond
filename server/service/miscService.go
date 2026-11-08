@@ -14,7 +14,7 @@ func UpdateSettings(currency string, distanceUnit db.DistanceUnit) error {
 	setting.DistanceUnit = distanceUnit
 	return db.UpdateSettings(setting)
 }
-func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, dateFormat string, theme *string, prefillFillup *bool, duplicateMode *string, showFillupTime *bool) error {
+func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, dateFormat string, theme *string, prefillFillup *bool, duplicateMode *string, showFillupTime *bool, stationSuggestions *string) error {
 	user, err := db.GetUserById(userId)
 	if err != nil {
 		return err
@@ -35,9 +35,14 @@ func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, d
 	if showFillupTime != nil {
 		user.ShowFillupTime = *showFillupTime
 	}
+	if stationSuggestions != nil {
+		user.StationSuggestions = *stationSuggestions
+	}
 	return db.UpdateUser(user)
 }
 
 func GetSettings() *db.Setting {
-	return db.GetOrCreateSetting()
+	s := db.GetOrCreateSetting()
+	s.FuelPriceKeySet = s.FuelPriceAPIKey != ""
+	return s
 }

@@ -2,6 +2,7 @@
 import Layout from '@layouts/main.vue'
 import { mapState } from 'vuex'
 import store from '@state/store'
+import axios from 'axios'
 
 export default {
   components: { Layout },
@@ -25,12 +26,34 @@ export default {
         distanceUnit: this.settings.distanceUnit,
       },
       tryingToSave: false,
+      // station prices; the key is write-only (the server only says whether one is set)
+      priceModel: {
+        provider: this.settings.fuelPriceProvider || '',
+        url: this.settings.fuelPriceUrl || '',
+        apiKey: '',
+      },
+      priceKeySet: !!this.settings.fuelPriceKeySet,
+      tankerkoenigUrl: 'https://creativecommons.tankerkoenig.de/json',
     }
   },
   computed: {
     ...mapState('vehicles', ['currencyMasters', 'distanceUnitMasters']),
   },
   methods: {
+    savePriceSettings() {
+      axios
+        .post('/api/settings/fuelPrices', this.priceModel)
+        .then(({ data }) => {
+          this.priceKeySet = data.fuelPriceKeySet
+          this.priceModel.apiKey = ''
+          store.dispatch('utils/getSettings')
+          this.$buefy.toast.open({ message: 'Fuel price settings saved', type: 'is-success', duration: 3000 })
+        })
+        .catch((ex) => {
+          const msg = (ex.response && ex.response.data && (ex.response.data.error || JSON.stringify(ex.response.data.errors))) || ex.message
+          this.$buefy.toast.open({ duration: 5000, message: msg, position: 'is-bottom', type: 'is-danger' })
+        })
+    },
     saveSettings() {
       this.tryingToSave = true
       store
@@ -89,6 +112,38 @@ export default {
       <br />
       <b-field>
         <b-button tag="input" native-type="submit" :disabled="tryingToSave" type="is-primary" value="Save" expanded> </b-button>
+      </b-field>
+    </form>
+    <br />
+    <form class="box fuel-prices" @submit.prevent="savePriceSettings">
+      <h1 class="subtitle">Fuel prices</h1>
+      <p class="mb-3"
+        >Shows stations nearby with their current price in the fill-up form. Germany: get a free key at
+        <a href="https://creativecommons.tankerkoenig.de" target="_blank" rel="noopener">creativecommons.tankerkoenig.de</a>.
+        "Custom" works with any service that answers in the same format (e.g. your own proxy).</p
+      >
+      <b-field label="Provider">
+        <b-select v-model="priceModel.provider" expanded>
+          <option value="">Off</option>
+          <option value="tankerkoenig">Germany – Tankerkönig</option>
+          <option value="custom">Custom (Tankerkönig-compatible)</option>
+        </b-select>
+      </b-field>
+      <template v-if="priceModel.provider">
+        <b-field label="URL" :message="priceModel.provider === 'tankerkoenig' ? 'Empty = ' + tankerkoenigUrl : ''">
+          <b-input
+            v-model="priceModel.url"
+            type="url"
+            :placeholder="priceModel.provider === 'tankerkoenig' ? tankerkoenigUrl : 'https://…/json'"
+            :required="priceModel.provider === 'custom'"
+          ></b-input>
+        </b-field>
+        <b-field label="API key" :message="priceKeySet ? 'A key is set; leave empty to keep it, enter - to remove it.' : ''">
+          <b-input v-model="priceModel.apiKey" type="password" password-reveal :placeholder="priceKeySet ? '••••••••' : ''"></b-input>
+        </b-field>
+      </template>
+      <b-field>
+        <b-button tag="input" native-type="submit" type="is-primary" value="Save fuel prices" expanded></b-button>
       </b-field>
     </form>
   </Layout>

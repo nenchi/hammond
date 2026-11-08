@@ -118,7 +118,7 @@ func CreateDetection(userID, vehicleID string, req models.CreateDetectionRequest
 	}
 	d := db.FillupDetection{
 		VehicleID: vehicleID, UserID: userID, Source: req.Source, OdoReading: req.OdoReading,
-		LevelBefore: req.LevelBefore, LevelAfter: req.LevelAfter, OdoAtBefore: req.OdoAtBefore,
+		LevelBefore: req.LevelBefore, LevelAfter: req.LevelAfter, OdoAtBefore: req.OdoAtBefore, Lat: req.Lat, Lng: req.Lng,
 		Date: time.Now(), Status: db.DetectionPending,
 	}
 	if d.Source == "" {

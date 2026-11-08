@@ -63,6 +63,7 @@ export default {
           nickname: '',
           engineSize: null,
           tankCapacity: null,
+          fuelGrade: '',
           make: '',
           model: '',
           yearOfManufacture: null,
@@ -75,6 +76,7 @@ export default {
           nickname: veh.nickname,
           engineSize: veh.engineSize,
           tankCapacity: veh.tankCapacity || null,
+          fuelGrade: veh.fuelGrade || '',
           make: veh.make,
           model: veh.model,
           yearOfManufacture: veh.yearOfManufacture,
@@ -179,6 +181,14 @@ export default {
         Suggested from {{ tankSuggestion.samples }} confirmed detections: {{ tankSuggestion.tankCapacity }} {{ tankUnit }} ·
         <a @click="vehicleModel.tankCapacity = tankSuggestion.tankCapacity">use it</a>
       </p>
+      <b-field label="Fuel grade for station prices" message="Which price to show for nearby stations">
+        <b-select v-model="vehicleModel.fuelGrade" expanded>
+          <option value="">From the fuel type (petrol → E5, diesel → Diesel)</option>
+          <option value="e5">Super E5</option>
+          <option value="e10">Super E10</option>
+          <option value="diesel">Diesel</option>
+        </b-select>
+      </b-field>
       <b-field label="Make / Company*">
         <b-input v-model="vehicleModel.make" type="text" required expanded></b-input>
       </b-field>

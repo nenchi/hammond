@@ -58,6 +58,13 @@ level jumps by at least 10 % it waits until the value is stable, sends the detec
 to complete it. If the last reading before the fill-up was taken many km earlier, hammond marks the estimate
 *check quantity*.
 
+**Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
+[Tankerkönig](https://creativecommons.tankerkoenig.de), or any Tankerkönig-compatible URL), the fill-up form has a
+**Stations nearby** button (uses the phone's location) and, if the detection sent a position (blueprint input
+*Location*: your phone's `device_tracker`, or the car's), lists the stations near it. Picking one fills in station,
+price and grade (per vehicle: E5 / E10 / Diesel). Prices are the current ones: a suggestion, check the receipt.
+Prices: MTS-K via Tankerkönig (CC BY 4.0).
+
 **3. Any other system**
 
 ```bash
@@ -71,7 +78,7 @@ curl -X POST -H "Authorization: Bearer hmd_..." -H "Content-Type: application/js
 # … or the quantity directly: {"odoReading": 81068, "fuelQuantity": 11.2}
 ```
 
-Fields: `odoReading` (required), `fuelQuantity` *or* `levelBefore` + `levelAfter`, optional `odoAtBefore`,
+Fields: `odoReading` (required), `fuelQuantity` *or* `levelBefore` + `levelAfter`, optional `odoAtBefore`, `lat` + `lng`,
 `isTankFull` (default: level after ≥ 97 %), `date` (ISO 8601, default now), `source`. The response has `result`
 (`pending`, `duplicate`, `ignored`, `applied`), a ready-to-use notification `message` and the `path` to open.
 
