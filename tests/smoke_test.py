@@ -192,7 +192,10 @@ check("non-admin can't change site settings", s == 401, s)
 
 # ---- station prices (fake Tankerkönig on 127.0.0.1:3999 in CI) ----
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
-check("stations: clear error while no provider is set up", s == 422 and "not set up" in r, (s, r))
+# no profiles in Germany: the free sources (AT/SI/HR/FR/PT) are built in, Germany needs its key. With
+# Nominatim reachable it says "add Germany – Tankerkönig"; without, the built-ins answer "no stations".
+check("stations in Germany without a profile: says Tankerkönig is needed (or nothing nearby)",
+      (s == 422 and "Tankerkönig" in r) or (s == 200 and r["stations"] == []), (s, r))
 s, st = call("POST", "/api/settings/fuelPrices", {"profiles": [
     {"name": "Austria", "kind": "econtrol", "url": "http://127.0.0.1:3999/nothing-here"},  # fails: next profile answers
     {"name": "CI fake", "kind": "custom", "url": "http://127.0.0.1:3999/json", "apiKey": "ci-key"}]}, token=tok)
@@ -212,9 +215,12 @@ check("users don't see private site profiles", [p["name"] for p in pub["fuelPric
 s, own = call("POST", "/api/me/fuelPrices", {"profiles": [{"name": "Mine", "kind": "custom", "url": "http://127.0.0.1:3999/json", "apiKey": "ci-key"}]}, token=ptok)
 check("users add their own profile; key not echoed", s == 200 and len(own) == 1 and own[0]["keySet"] and "ci-key" not in json.dumps(own), (s, own))
 s, av = call("GET", "/api/fuelPrices/available", token=ptok)
-check("available for a user: own first, then shared", s == 200 and [(p["name"], p["own"]) for p in av] == [("Mine", True), ("CI fake", False)], (s, av))
+check("available for a user: own first, then shared, then the built-in free sources",
+      s == 200 and [(p["name"], p["own"]) for p in av if not p["builtin"]] == [("Mine", True), ("CI fake", False)]
+      and [p["kind"] for p in av if p["builtin"]] == ["econtrol", "goriva", "mzoe", "france", "portugal"], (s, av))
 s, av = call("GET", "/api/fuelPrices/available", token=tok)
-check("available for the admin: all site profiles", s == 200 and [p["name"] for p in av] == ["Austria", "CI fake"], (s, av))
+check("available for the admin: all site profiles (+ built-ins of other kinds)", s == 200
+      and [p["name"] for p in av if not p["builtin"]] == ["Austria", "CI fake"] and "econtrol" not in [p["kind"] for p in av if p["builtin"]], (s, av))
 s, r = call("GET", f"/api/settings/fuelPrices/test?profile={own[0]['id']}", token=ptok)
 check("users test their own profile", s == 200 and r["ok"] and r["stations"] == 2, (s, r))
 call("POST", "/api/me/fuelPrices", {"profiles": []}, token=ptok)

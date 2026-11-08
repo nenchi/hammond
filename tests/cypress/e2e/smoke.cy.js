@@ -312,12 +312,12 @@ describe('hammond UI', () => {
   })
 
   it('stations nearby: admin sets the provider, the form lists E10 prices and fills one in', () => {
-    // not set up yet (the API smoke test set one up before Cypress runs: switch it off first): the form
-    // says where to add one instead of showing nothing
+    // no profiles at all (the API smoke test set some up before Cypress runs: remove them): the free
+    // sources (Austria, Slovenia, Croatia, France, Portugal) are built in, so the button is there anyway
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders, body: { profiles: [] } })
     visit(`/vehicles/${vehicleId}/fillup`)
-    cy.get('.station-setup-hint').contains('a', 'Settings → My fuel price profiles').should('have.attr', 'href', '/settings')
-    cy.contains('button', 'Stations nearby').should('not.exist')
+    cy.contains('button', 'Stations nearby').should('exist')
+    cy.get('.station-setup-hint').should('not.exist')
     // fake Tankerkönig on 127.0.0.1:3999 (tests/fake_fuelprices.py, started by the workflow)
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
       body: { profiles: [{ name: 'CI fake', kind: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' }] } })
@@ -385,7 +385,7 @@ describe('hammond UI', () => {
     })
     cy.contains('button', 'Stations nearby').click()
     cy.get('.station-picker .station').first().should('contain', 'ARAL')
-    cy.get('.price-profile-switch select').find('option').should('have.length', 2)
+    cy.get('.price-profile-switch select').find('option').should('have.length.at.least', 2) // + built-in free sources
     cy.get('.price-profile-switch select').should('contain', 'CI fake')
     cy.get('.station-picker').should('contain', 'CI fake ·')
     // back to one profile for the tests after this

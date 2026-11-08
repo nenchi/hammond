@@ -219,7 +219,8 @@ type PriceProfile struct {
 	KeySet bool   `json:"keySet"`
 	// site profiles: only admins use it (zero value = shared, so v1.6 profiles stay shared)
 	Private bool `json:"private"`
-	Own     bool `json:"own"` // in lists for a user: their own profile (not stored)
+	Own     bool `json:"own"`     // in lists for a user: their own profile (not stored)
+	Builtin bool `json:"builtin"` // a free source hammond adds by itself (not stored)
 }
 type Migration struct {
 	Base
