@@ -12,7 +12,8 @@ WORKDIR /app
 COPY ./ui/package.json ./ui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY ./ui .
-RUN npm run build
+COPY ./VERSION /VERSION
+RUN VUE_APP_VERSION="$(cat /VERSION)" npm run build
 
 FROM alpine:3.24.4@sha256:93b41ef40b1677fce8fcc64ff4af09daddfacf5040afde618bc46c1e2d1cc7d4
 LABEL org.opencontainers.image.source="https://github.com/nenchi/hammond"
