@@ -31,6 +31,7 @@ export default {
         detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
         showFillupTime: this.me.showFillupTime !== false,
         stationSuggestions: this.me.stationSuggestions || 'location',
+        customFuelSubtypes: this.me.customFuelSubtypes || '',
       },
       apiKeys: [],
       newKeyName: 'Home Assistant',
@@ -232,6 +233,9 @@ export default {
           </b-field>
           <b-field>
             <b-checkbox v-model="settingsModel.prefillFillup">Pre-fill new fill-ups with the last price and station</b-checkbox>
+          </b-field>
+          <b-field label="My fuel types" message="One per line, e.g. Q Max 95 or MaxxMotion 100: added to the fuel subtype list">
+            <b-input v-model="settingsModel.customFuelSubtypes" type="textarea" rows="2" class="my-fuel-types"></b-input>
           </b-field>
           <b-field label="Stations nearby (fill-up form)" message="Needs fuel prices set up by an admin (Site Settings)">
             <b-select v-model="settingsModel.stationSuggestions" expanded>

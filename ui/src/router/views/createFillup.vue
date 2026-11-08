@@ -9,6 +9,7 @@ import axios from 'axios'
 import { round } from 'lodash'
 import { format } from 'date-fns'
 import { timeOf } from '@utils/format-date'
+import { fuelSubtypes, defaultFuelSubtype } from '@utils/fuel-grades'
 
 export default {
   page: {
@@ -34,7 +35,6 @@ export default {
       tryingToCreate: false,
       showMore: false,
       quickEntry: null,
-      myVehicles: [],
       users: [],
       fuelSubTypes: [],
       selectedVehicle: this.vehicle,
@@ -48,11 +48,23 @@ export default {
   },
 
   computed: {
+    // reactive, with the current vehicle always in it: copied once at mount (upstream), a fresh page load
+    // left the required select empty while the vehicles were still loading, and saving silently failed
+    myVehicles() {
+      const list = this.vehicles || []
+      const sel = this.selectedVehicle
+      if (!sel || !sel.id) return list
+      return list.some((v) => v.id === sel.id) ? list.map((v) => (v.id === sel.id ? sel : v)) : [sel, ...list]
+    },
     user() {
       return store.state.auth.currentUser
     },
     ...mapState('users', ['me']),
     ...mapState('vehicles', ['fuelUnitMasters', 'fuelTypeMasters', 'vehicles']),
+    subtypeOptions() {
+      const custom = ((this.me && this.me.customFuelSubtypes) || '').split('\n').filter(Boolean)
+      return fuelSubtypes(this.selectedVehicle.fuelType, this.fillupModel.fuelSubType, custom)
+    },
     filteredFuelSubtypes() {
       if (!this.fillupModel.fuelSubType) {
         return this.fuelSubTypes
@@ -76,7 +88,6 @@ export default {
     },
   },
   mounted() {
-    this.myVehicles = this.vehicles
     this.selectedVehicle = this.vehicle
     this.fetchVehicleUsers()
     this.fetchVehicleFuelSubTypes()
@@ -152,7 +163,7 @@ export default {
             this.fillupModel.fillingStation = last.fillingStation
             this.showMore = true // show what was pre-filled
           }
-          if (!this.fillupModel.fuelSubType) this.fillupModel.fuelSubType = last.fuelSubType || ''
+          if (!this.fillupModel.fuelSubType) this.fillupModel.fuelSubType = last.fuelSubType || defaultFuelSubtype(this.selectedVehicle)
         })
         .catch((err) => console.log(err))
     },
@@ -170,7 +181,7 @@ export default {
         fillingStation: '',
         comments: '',
         userId: '',
-        fuelSubType: '',
+        fuelSubType: defaultFuelSubtype(this.selectedVehicle),
       }
     },
     async createFillup() {
@@ -299,15 +310,10 @@ export default {
         <b-input v-model="fillupTime" type="time" class="fillup-time"></b-input>
       </b-field>
       <b-field label="Fuel Subtype">
-        <b-autocomplete
-          v-model="fillupModel.fuelSubType"
-          :data="filteredFuelSubtypes"
-          placeholder="Octane etc."
-          clearable
-          autofocus
-          @select="(option) => (fillupModel.fuelSubType = option)"
-        >
-        </b-autocomplete>
+        <b-select v-model="fillupModel.fuelSubType" expanded class="fuel-subtype">
+          <option value="">–</option>
+          <option v-for="[value, text] in subtypeOptions" :key="value" :value="value">{{ text }}</option>
+        </b-select>
       </b-field>
       <b-field label="Quantity*" addons>
         <b-input v-model.number="fillupModel.fuelQuantity" type="number" step=".001" min="0" expanded required></b-input>

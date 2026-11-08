@@ -10,6 +10,10 @@ import (
 )
 
 func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicle, error) {
+	grades, err := NormalizeFuelGrades(model.FuelGrade)
+	if err != nil {
+		return nil, err
+	}
 	vehicle := db.Vehicle{
 		Nickname:          model.Nickname,
 		Registration:      model.Registration,
@@ -20,7 +24,7 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 		FuelUnit:          *model.FuelUnit,
 		FuelType:          *model.FuelType,
 		TankCapacity:      model.TankCapacity,
-		FuelGrade:         model.FuelGrade,
+		FuelGrade:         grades,
 	}
 
 	tx := db.DB.Create(&vehicle)
@@ -109,7 +113,11 @@ func UpdateVehicle(vehicleID string, model models.UpdateVehicleRequest) error {
 	toUpdate.FuelUnit = *model.FuelUnit
 	toUpdate.FuelType = *model.FuelType
 	toUpdate.TankCapacity = model.TankCapacity
-	toUpdate.FuelGrade = model.FuelGrade
+	grades, err := NormalizeFuelGrades(model.FuelGrade)
+	if err != nil {
+		return err
+	}
+	toUpdate.FuelGrade = grades
 	//}).Error
 
 	return db.DB.Omit(clause.Associations).Save(toUpdate).Error

@@ -69,6 +69,20 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, res)
 	})
+	router.GET("/settings/fuelPrices/test", ShouldBeAdmin(), func(c *gin.Context) {
+		lat, err1 := strconv.ParseFloat(c.DefaultQuery("lat", "50.1109"), 64) // Frankfurt am Main
+		lng, err2 := strconv.ParseFloat(c.DefaultQuery("lng", "8.6821"), 64)
+		if err1 != nil || err2 != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid position"})
+			return
+		}
+		res, err := service.TestFuelPriceProvider(lat, lng)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "stations": len(res.Stations), "sample": res.Stations, "attribution": res.Attribution})
+	})
 	router.POST("/settings/fuelPrices", ShouldBeAdmin(), func(c *gin.Context) {
 		var req models.UpdateFuelPriceSettingsRequest
 		if err := c.ShouldBindJSON(&req); err != nil {

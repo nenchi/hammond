@@ -57,7 +57,7 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Grade != "e10" || len(res.Stations) != 3 || res.Attribution != "MTS-K · CC BY 4.0 -  https://creativecommons.tankerkoenig.de" {
+	if len(res.Grades) != 1 || res.Grades[0] != "e10" || len(res.Stations) != 3 || res.Attribution != "MTS-K · CC BY 4.0 -  https://creativecommons.tankerkoenig.de" {
 		t.Fatalf("unexpected result %+v", res)
 	}
 	// stations selling E10 first (by distance), the one without E10 last
@@ -77,10 +77,28 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 		t.Fatalf("want cached diesel prices without a new call: calls %d→%d %+v", before, calls, res.Stations[0])
 	}
 
+	// several accepted grades, preferred first: E10, else E5 — the station without E10 gets its E5 price
+	v.FuelGrade = "e10,e5"
+	res, _ = NearbyStations(&v, 50.1, 8.76, 2)
+	byID := map[string]Station{}
+	for _, st := range res.Stations {
+		byID[st.ID] = st
+	}
+	free := byID["b"]
+	if res.Stations[0].ID != "b" {
+		t.Fatalf("with E5 accepted the nearest station (E5 only) comes first: %+v", res.Stations[0])
+	}
+	if free.Grade != "e5" || *free.Price != 1.769 || len(free.Prices) != 1 {
+		t.Fatalf("station without E10 should offer its E5 price: %+v", free)
+	}
+	if a := byID["c"]; a.Grade != "e10" || a.Prices["e5"] != 1.789 || a.Prices["e10"] != 1.729 {
+		t.Fatalf("both prices, preferred E10 first: %+v", a)
+	}
+
 	// the grade follows the fuel type when the vehicle has none
 	v.FuelGrade, v.FuelType = "", db.DIESEL
-	if g := VehicleFuelGrade(&v); g != "diesel" {
-		t.Fatalf("diesel vehicle → %q", g)
+	if g := VehicleFuelGrades(&v); len(g) != 1 || g[0] != "diesel" {
+		t.Fatalf("diesel vehicle → %v", g)
 	}
 	v.FuelType = db.ELECTRIC
 	if _, err := NearbyStations(&v, 50.1, 8.76, 2); err == nil {
@@ -117,5 +135,17 @@ func TestDetectionKeepsLocation(t *testing.T) {
 	res, err := CreateDetection(u.ID, v.ID, models.CreateDetectionRequest{OdoReading: 81068, FuelQuantity: f32(11), Lat: &lat, Lng: &lng})
 	if err != nil || res.Detection.Lat == nil || *res.Detection.Lat != lat || *res.Detection.Lng != lng {
 		t.Fatalf("location not stored: %+v %v", res, err)
+	}
+}
+
+func TestNormalizeGradesAndSubtypes(t *testing.T) {
+	if g, err := NormalizeFuelGrades(" E10, e5,e10 "); err != nil || g != "e10,e5" {
+		t.Fatalf("got %q %v", g, err)
+	}
+	if _, err := NormalizeFuelGrades("e10,hbuzg"); err == nil {
+		t.Fatal("unknown grade must be refused")
+	}
+	if got := NormalizeFuelSubtypes(" Q Max 95 \nMaxxMotion 100, q max 95\n\n"); got != "Q Max 95\nMaxxMotion 100" {
+		t.Fatalf("got %q", got)
 	}
 }
