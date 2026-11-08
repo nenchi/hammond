@@ -31,6 +31,8 @@ type User struct {
 	// station prices in the fill-up form: "" = button + stations near a detection's location,
 	// "button" = only the "stations nearby" button, "off"
 	StationSuggestions string `json:"stationSuggestions"`
+	// own fuel subtypes for the fill-up drop-down ("Q Max 95"), newline-separated
+	CustomFuelSubtypes string `json:"customFuelSubtypes"`
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {
@@ -80,7 +82,7 @@ type Vehicle struct {
 	FuelType          FuelType `json:"fuelType"`
 	// litres (or kWh for electric); used to estimate quantities from detected fuel levels
 	TankCapacity float32 `json:"tankCapacity"`
-	// grade for station prices: "e5", "e10", "diesel"; empty = from the fuel type
+	// accepted grades for station prices, preferred first: "e10,e5"; empty = from the fuel type
 	FuelGrade   string       `json:"fuelGrade"`
 	Users       []User       `gorm:"many2many:user_vehicles;" json:"users"`
 	Fillups     []Fillup     `json:"fillups"`

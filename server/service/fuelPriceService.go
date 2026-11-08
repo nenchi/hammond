@@ -21,35 +21,70 @@ import (
 const TankerkoenigURL = "https://creativecommons.tankerkoenig.de/json"
 
 type Station struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Brand   string   `json:"brand"`
-	Address string   `json:"address"`
-	Dist    float64  `json:"dist"` // km
-	Price   *float64 `json:"price"`
-	IsOpen  bool     `json:"isOpen"`
+	ID      string             `json:"id"`
+	Name    string             `json:"name"`
+	Brand   string             `json:"brand"`
+	Address string             `json:"address"`
+	Dist    float64            `json:"dist"`   // km
+	Prices  map[string]float64 `json:"prices"` // accepted grades this station sells
+	Price   *float64           `json:"price"`  // the preferred grade's price, or the first accepted one it sells
+	Grade   string             `json:"grade"`  // grade of Price
+	IsOpen  bool               `json:"isOpen"`
 }
 
 type StationsResult struct {
-	Grade       string    `json:"grade"`
+	Grades      []string  `json:"grades"` // accepted, preferred first
 	Attribution string    `json:"attribution"`
 	Stations    []Station `json:"stations"`
 }
 
-// grade to ask for: the vehicle's, else from its fuel type
-func VehicleFuelGrade(v *db.Vehicle) string {
+// accepted grades, preferred first: the vehicle's list, else from its fuel type
+func VehicleFuelGrades(v *db.Vehicle) []string {
 	if v.FuelGrade != "" {
-		return v.FuelGrade
+		return strings.Split(v.FuelGrade, ",")
 	}
 	switch v.FuelType {
 	case db.PETROL:
-		return "e5"
+		return []string{"e5"}
 	case db.DIESEL:
-		return "diesel"
+		return []string{"diesel"}
 	case db.ETHANOL:
-		return "e10"
+		return []string{"e10"}
 	}
-	return ""
+	return nil
+}
+
+// NormalizeFuelGrades checks "e10, E5" → "e10,e5" (known grades, no duplicates, order kept)
+func NormalizeFuelGrades(s string) (string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, g := range strings.Split(s, ",") {
+		g = strings.ToLower(strings.TrimSpace(g))
+		if g == "" || seen[g] {
+			continue
+		}
+		if g != "e5" && g != "e10" && g != "diesel" {
+			return "", fmt.Errorf("unknown fuel grade %q (e5, e10, diesel)", g)
+		}
+		seen[g] = true
+		out = append(out, g)
+	}
+	return strings.Join(out, ","), nil
+}
+
+// NormalizeFuelSubtypes: own fuel types, one per line (or comma), trimmed, no duplicates, ≤ 20 of ≤ 40 chars
+func NormalizeFuelSubtypes(s string) string {
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == ',' }) {
+		t = strings.TrimSpace(t)
+		if t == "" || len([]rune(t)) > 40 || seen[strings.ToLower(t)] || len(out) == 20 {
+			continue
+		}
+		seen[strings.ToLower(t)] = true
+		out = append(out, t)
+	}
+	return strings.Join(out, "\n")
 }
 
 var (
@@ -109,8 +144,8 @@ func NearbyStations(vehicle *db.Vehicle, lat, lng, radiusKm float64) (*StationsR
 	if base == "" {
 		return nil, errors.New("station prices are not set up (Admin → Site settings → Fuel prices)")
 	}
-	grade := VehicleFuelGrade(vehicle)
-	if grade == "" {
+	grades := VehicleFuelGrades(vehicle)
+	if len(grades) == 0 {
 		return nil, errors.New("no station prices for this vehicle's fuel type")
 	}
 	if math.IsNaN(lat) || lat < -90 || lat > 90 || math.IsNaN(lng) || lng < -180 || lng > 180 {
@@ -151,26 +186,37 @@ func NearbyStations(vehicle *db.Vehicle, lat, lng, radiusKm float64) (*StationsR
 		stationCacheMu.Unlock()
 	}
 
-	res := &StationsResult{Grade: grade, Attribution: c.lic, Stations: []Station{}}
+	res := &StationsResult{Grades: grades, Attribution: c.lic, Stations: []Station{}}
 	if s.FuelPriceProvider == "tankerkoenig" {
 		res.Attribution = "Prices: MTS-K via Tankerkönig (CC BY 4.0)"
 	}
 	for _, st := range c.res {
+		prices := map[string]float64{}
 		var p *float64
-		switch grade {
-		case "e5":
-			p = rawPrice(st.E5)
-		case "e10":
-			p = rawPrice(st.E10)
-		case "diesel":
-			p = rawPrice(st.Diesel)
+		chosen := ""
+		for _, g := range grades {
+			var v *float64
+			switch g {
+			case "e5":
+				v = rawPrice(st.E5)
+			case "e10":
+				v = rawPrice(st.E10)
+			case "diesel":
+				v = rawPrice(st.Diesel)
+			}
+			if v != nil {
+				prices[g] = *v
+				if p == nil {
+					p, chosen = v, g
+				}
+			}
 		}
 		addr := strings.TrimSpace(st.Street + " " + st.HouseNumber)
 		if st.Place != "" {
 			addr = strings.Trim(addr+", "+strings.TrimSpace(strings.Trim(string(st.PostCode), `"`)+" "+st.Place), ", ")
 		}
 		res.Stations = append(res.Stations, Station{ID: st.ID, Name: strings.TrimSpace(st.Name), Brand: strings.TrimSpace(st.Brand),
-			Address: addr, Dist: st.Dist, Price: p, IsOpen: st.IsOpen})
+			Address: addr, Dist: st.Dist, Prices: prices, Price: p, Grade: chosen, IsOpen: st.IsOpen})
 	}
 	// stations that sell the grade first, then by distance
 	sort.SliceStable(res.Stations, func(i, j int) bool {
@@ -203,4 +249,14 @@ func UpdateFuelPriceSettings(provider, rawURL, apiKey string) error {
 	stationCache = map[string]cachedStations{}
 	stationCacheMu.Unlock()
 	return db.UpdateSettings(s)
+}
+
+// TestFuelPriceProvider (admin "Test connection"): asks the stored provider with the stored key for
+// stations around a fixed point (Frankfurt city centre for the German default, or the given position).
+func TestFuelPriceProvider(lat, lng float64) (*StationsResult, error) {
+	stationCacheMu.Lock()
+	stationCache = map[string]cachedStations{} // always a real request
+	stationCacheMu.Unlock()
+	probe := &db.Vehicle{FuelGrade: "e10,e5,diesel"}
+	return NearbyStations(probe, lat, lng, 5)
 }

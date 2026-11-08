@@ -16,6 +16,7 @@ type UpdateSettingModel struct {
 	DetectionDuplicateMode *string `json:"detectionDuplicateMode" form:"detectionDuplicateMode" binding:"omitempty,oneof=ask manual detection"`
 	ShowFillupTime         *bool   `json:"showFillupTime" form:"showFillupTime"`
 	StationSuggestions     *string `json:"stationSuggestions" form:"stationSuggestions" binding:"omitempty,oneof=location button off"`
+	CustomFuelSubtypes     *string `json:"customFuelSubtypes" form:"customFuelSubtypes" binding:"omitempty,max=1000"`
 }
 
 // UpdateFuelPriceSettingsRequest (admin): apiKey empty = keep the stored one, "-" = remove it

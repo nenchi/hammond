@@ -62,7 +62,8 @@ export default {
     ...mapState('users', ['me']),
     ...mapState('vehicles', ['fuelUnitMasters', 'fuelTypeMasters', 'vehicles']),
     subtypeOptions() {
-      return fuelSubtypes(this.selectedVehicle.fuelType, this.fillupModel.fuelSubType)
+      const custom = ((this.me && this.me.customFuelSubtypes) || '').split('\n').filter(Boolean)
+      return fuelSubtypes(this.selectedVehicle.fuelType, this.fillupModel.fuelSubType, custom)
     },
     filteredFuelSubtypes() {
       if (!this.fillupModel.fuelSubType) {

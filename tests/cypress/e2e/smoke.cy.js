@@ -291,7 +291,9 @@ describe('hammond UI', () => {
   })
 
   it('stations nearby: admin sets the provider, the form lists E10 prices and fills one in', () => {
-    // not set up yet: admins see where to switch it on instead of nothing
+    // not set up yet (the API smoke test set one up before Cypress runs: switch it off first): admins see
+    // where to switch it on instead of nothing
+    cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders, body: { provider: '', url: '', apiKey: '-' } })
     visit(`/vehicles/${vehicleId}/fillup`)
     cy.get('.station-setup-hint').contains('a', 'Site Settings → Fuel prices').should('have.attr', 'href', '/admin/settings')
     cy.contains('button', 'Stations nearby').should('not.exist')
@@ -299,12 +301,14 @@ describe('hammond UI', () => {
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
       body: { provider: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' } })
     cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
-      cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, fuelGrade: 'e10' } }))
+      cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, fuelGrade: 'e10,e5' } }))
 
     visit('/admin/settings')
     cy.get('.fuel-prices select').should('have.value', 'custom')
     cy.get('.fuel-prices input[type=password]').should('have.attr', 'placeholder', '••••••••').and('have.value', '')
     cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-key')
+    cy.get('.fuel-prices').contains('button', 'Test connection').click()
+    cy.get('.test-result').should('contain', '✓ Works: 2 stations').and('contain', 'ARAL')
 
     // the phone is in Offenbach
     cy.visit(`/vehicles/${vehicleId}/fillup`, {
@@ -315,13 +319,17 @@ describe('hammond UI', () => {
     cy.contains('Last fill-up:')
     cy.contains('button', 'Stations nearby').click()
     cy.get('.station-picker').within(() => {
-      cy.contains('Stations nearby · 95 E10')
-      cy.contains('.station', 'Freie Tankstelle').should('contain', 'no 95 E10') // sells no E10: listed last
-      cy.contains('.station', 'ARAL').should('contain', '1.739').click()
+      cy.contains('Stations nearby · 95 E10 / 95')
+      // both accepted grades per station; the station without E10 shows its E5 price; cheapest highlighted
+      cy.contains('.station', 'ARAL').find('.price[data-grade=e10]').should('contain', '1.739')
+      cy.contains('.station', 'ARAL').find('.price[data-grade=e5]').should('contain', '1.799')
+      cy.contains('.station', 'Freie Tankstelle').find('.price[data-grade=e5]').should('contain', '1.769')
+      cy.get('.price.cheapest').should('have.length', 1).and('contain', '1.739')
+      cy.contains('.station', 'ARAL').find('.price[data-grade=e5]').click() // tanked E5 this time
     })
-    cy.contains('.field', 'Price per').find('input').should('have.value', '1.739')
+    cy.contains('.field', 'Price per').find('input').should('have.value', '1.799')
     cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'ARAL, Frankfurter Str. 12, 63067 Offenbach')
-    cy.contains('.field', 'Fuel Subtype').find('select').should('have.value', '95 E10')
+    cy.contains('.field', 'Fuel Subtype').find('select').should('have.value', '95')
   })
 
   it('detected fill-up with a location: the form lists stations near it right away', () => {
@@ -330,7 +338,7 @@ describe('hammond UI', () => {
         body: { odoReading: 22100, fuelQuantity: 30, lat: 50.1, lng: 8.76, date: '2026-11-07T16:00:00Z' } }))
       .its('body.detection.id').then((id) => {
         visit(`/vehicles/${vehicleId}/fillup?detection=${id}`)
-        cy.get('.station-picker').contains('Stations near the detected location · 95 E10')
+        cy.get('.station-picker').contains('Stations near the detected location · 95 E10 / 95')
         cy.get('.station-picker .station').first().should('contain', 'ARAL')
         cy.request({ method: 'POST', url: `/api/detections/${id}/discard`, headers: apiHeaders })
       })
@@ -359,6 +367,10 @@ describe('hammond UI', () => {
       expect(values).to.not.include('95')
     })
     cy.contains('.field', 'Fuel Subtype').find('select option').contains('Eurodizel')
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, customFuelSubtypes: 'Q Max 95\nMaxxMotion 100' } })
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('.field', 'Fuel Subtype').find('select').select('Q Max 95').should('have.value', 'Q Max 95')
+    cy.contains('.field', 'Fuel Subtype').find('select option').contains('MaxxMotion 100')
   })
 
   it('logs out, and a wrong password is refused', () => {

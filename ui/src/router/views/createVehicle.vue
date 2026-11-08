@@ -25,10 +25,24 @@ export default {
       myVehicles: [],
       vehicleModel: {},
       tankSuggestion: null,
+      gradeChoices: [
+        { value: 'e10', text: '95 E10' },
+        { value: 'e5', text: '95 (E5)' },
+        { value: 'diesel', text: 'Diesel' },
+      ],
     }
   },
 
   computed: {
+    // "e10,e5" ⇄ checkboxes; order = display order (E10 before E5)
+    acceptedGrades: {
+      get() {
+        return (this.vehicleModel.fuelGrade || '').split(',').filter(Boolean)
+      },
+      set(list) {
+        this.vehicleModel.fuelGrade = this.gradeChoices.map((g) => g.value).filter((v) => list.includes(v)).join(',')
+      },
+    },
     tankUnit() {
       const u = this.fuelUnitMasters && this.fuelUnitMasters[this.vehicleModel.fuelUnit]
       return u ? u.short : ''
@@ -181,13 +195,13 @@ export default {
         Suggested from {{ tankSuggestion.samples }} confirmed detections: {{ tankSuggestion.tankCapacity }} {{ tankUnit }} ·
         <a @click="vehicleModel.tankCapacity = tankSuggestion.tankCapacity">use it</a>
       </p>
-      <b-field label="Fuel grade for station prices" message="Which price to show for nearby stations">
-        <b-select v-model="vehicleModel.fuelGrade" expanded>
-          <option value="">From the fuel type (petrol → E5, diesel → Diesel)</option>
-          <option value="e5">95 (Super E5)</option>
-          <option value="e10">95 E10 (Super E10)</option>
-          <option value="diesel">Diesel</option>
-        </b-select>
+      <b-field
+        label="Accepted grades for station prices"
+        message="Prices of all ticked grades are shown; the first ticked one is preferred. None = from the fuel type."
+      >
+        <div class="fuel-grades">
+          <b-checkbox v-for="g in gradeChoices" :key="g.value" v-model="acceptedGrades" :native-value="g.value">{{ g.text }}</b-checkbox>
+        </div>
       </b-field>
       <b-field label="Make / Company*">
         <b-input v-model="vehicleModel.make" type="text" required expanded></b-input>

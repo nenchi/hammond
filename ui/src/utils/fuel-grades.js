@@ -5,7 +5,7 @@
 const OPTIONS = {
   0: [
     ['95', '95 – Super E5 · Eurosuper · NMB · BMB'],
-    ['95 E10', '95 E10 – Super E10'],
+    ['95 E10', '95 E10 – Super E10 · NMB 95 E10'],
     ['98', '98 – Super Plus'],
     ['100', '100 – Premium'],
   ],
@@ -25,15 +25,18 @@ export const GRADE_LABELS = { e5: '95', e10: '95 E10', diesel: 'Diesel' }
 
 // [value, text] options for a vehicle; an existing value not in the list (old free text, Fuelly import)
 // stays selectable so editing an old entry doesn't lose it
-export function fuelSubtypes(fuelType, current) {
+export function fuelSubtypes(fuelType, current, custom = []) {
   const list = (OPTIONS[fuelType] || []).slice()
+  // the user's own types (Settings → My fuel types), e.g. "Q Max 95"
+  for (const t of custom) if (!list.some(([v]) => v === t)) list.push([t, t])
   if (current && !list.some(([v]) => v === current)) list.push([current, current])
   return list
 }
 
 // default for a new fill-up: the vehicle's grade for station prices, else the first option
 export function defaultFuelSubtype(vehicle) {
-  if (vehicle.fuelGrade && GRADE_LABELS[vehicle.fuelGrade]) return GRADE_LABELS[vehicle.fuelGrade]
+  const preferred = (vehicle.fuelGrade || '').split(',')[0]
+  if (GRADE_LABELS[preferred]) return GRADE_LABELS[preferred]
   const first = (OPTIONS[vehicle.fuelType] || [])[0]
   return first ? first[0] : ''
 }

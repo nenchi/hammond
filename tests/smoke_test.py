@@ -202,8 +202,13 @@ check("non-admin can't change the price provider", s == 401, s)
 call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10"}, token=tok)
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
-check("stations nearby with E10 prices", s == 200 and r["grade"] == "e10" and r["stations"][0]["price"] == 1.739
+check("stations nearby with E10 prices", s == 200 and r["grades"] == ["e10"] and r["stations"][0]["price"] == 1.739
       and r["stations"][1]["price"] is None and "MTS-K" in r["attribution"], (s, r))
+s, r = call("GET", "/api/settings/fuelPrices/test", token=tok)
+check("admin: test connection", s == 200 and r["ok"] and r["stations"] == 2, (s, r))
+s, _ = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
+     "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10,hbuzg"}, token=tok)
+check("unknown fuel grade refused", s == 422, s)
 
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))

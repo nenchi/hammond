@@ -34,17 +34,31 @@ export default {
       },
       priceKeySet: !!this.settings.fuelPriceKeySet,
       tankerkoenigUrl: 'https://creativecommons.tankerkoenig.de/json',
+      testResult: null,
+      savedProvider: this.settings.fuelPriceProvider || '',
+      testing: false,
     }
   },
   computed: {
     ...mapState('vehicles', ['currencyMasters', 'distanceUnitMasters']),
   },
   methods: {
+    // asks the saved provider with the saved key (Frankfurt city centre)
+    testPrices() {
+      this.testing = true
+      this.testResult = null
+      axios
+        .get('/api/settings/fuelPrices/test')
+        .then(({ data }) => (this.testResult = data))
+        .catch((ex) => (this.testResult = { ok: false, error: ex.message }))
+        .finally(() => (this.testing = false))
+    },
     savePriceSettings() {
       axios
         .post('/api/settings/fuelPrices', this.priceModel)
         .then(({ data }) => {
           this.priceKeySet = data.fuelPriceKeySet
+          this.savedProvider = data.fuelPriceProvider || ''
           this.priceModel.apiKey = ''
           store.dispatch('utils/getSettings')
           this.$buefy.toast.open({ message: 'Fuel price settings saved', type: 'is-success', duration: 3000 })
@@ -142,9 +156,26 @@ export default {
           <b-input v-model="priceModel.apiKey" type="password" password-reveal :placeholder="priceKeySet ? '••••••••' : ''"></b-input>
         </b-field>
       </template>
-      <b-field>
-        <b-button tag="input" native-type="submit" type="is-primary" value="Save fuel prices" expanded></b-button>
+      <b-field grouped>
+        <p class="control is-expanded">
+          <b-button tag="input" native-type="submit" type="is-primary" value="Save fuel prices" expanded></b-button>
+        </p>
+        <p class="control">
+          <b-button class="test-prices" :loading="testing" :disabled="!savedProvider" @click="testPrices"
+            >Test connection</b-button
+          >
+        </p>
       </b-field>
+      <p class="help">Test uses the saved settings: save first.</p>
+      <b-notification v-if="testResult" :type="testResult.ok ? 'is-success' : 'is-danger'" :closable="false" class="test-result mt-2">
+        <template v-if="testResult.ok">
+          ✓ Works: {{ testResult.stations }} stations found near Frankfurt<span v-if="testResult.sample && testResult.sample[0]"
+            >, e.g. {{ testResult.sample[0].brand || testResult.sample[0].name }}:
+            {{ Object.entries(testResult.sample[0].prices).map(([g, p]) => g.toUpperCase() + ' ' + p.toFixed(3)).join(' · ') }}</span
+          >. <small>{{ testResult.attribution }}</small>
+        </template>
+        <template v-else>✗ {{ testResult.error }}</template>
+      </b-notification>
     </form>
   </Layout>
 </template>

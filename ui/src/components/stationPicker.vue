@@ -30,7 +30,13 @@ export default {
       return !this.enabled && this.mode !== 'off' && store.state.auth.currentUser && store.state.auth.currentUser.role === 'ADMIN'
     },
     gradeLabel() {
-      return this.result ? GRADES[this.result.grade] || this.result.grade : ''
+      return this.result ? this.result.grades.map((g) => GRADES[g] || g).join(' / ') : ''
+    },
+    // cheapest price among all stations and grades: highlighted
+    cheapest() {
+      let min = null
+      for (const st of (this.result && this.result.stations) || []) for (const p of Object.values(st.prices)) min = min === null || p < min ? p : min
+      return min
     },
   },
   watch: {
@@ -79,8 +85,17 @@ export default {
         })
         .finally(() => (this.loading = false))
     },
-    pick(st) {
-      this.$emit('pick', { name: [st.brand || st.name, st.address].filter(Boolean).join(', '), price: st.price, grade: this.gradeLabel })
+    label(g) {
+      return GRADES[g] || g
+    },
+    // tapping the station takes its preferred grade; tapping a price takes that grade
+    pick(st, grade) {
+      grade = grade || st.grade
+      this.$emit('pick', {
+        name: [st.brand || st.name, st.address].filter(Boolean).join(', '),
+        price: grade ? st.prices[grade] : null,
+        grade: grade ? this.label(grade) : '',
+      })
       this.result = null
     },
   },
@@ -109,7 +124,20 @@ export default {
           <b-tag v-if="!st.isOpen" size="is-small">closed</b-tag><br />
           <small>{{ st.address }} · {{ st.dist.toFixed(1) }} km</small>
         </span>
-        <strong class="ml-2">{{ st.price ? st.price.toFixed(3) + ' ' + (me ? me.currency : '') : 'no ' + gradeLabel }}</strong>
+        <span class="ml-2 has-text-right prices">
+          <template v-if="Object.keys(st.prices).length">
+            <a
+              v-for="g in result.grades.filter((x) => st.prices[x] !== undefined)"
+              :key="g"
+              class="price is-block"
+              :class="{ 'has-text-weight-bold has-text-success cheapest': st.prices[g] === cheapest }"
+              :data-grade="g"
+              @click.stop="pick(st, g)"
+              >{{ label(g) }} {{ st.prices[g].toFixed(3) }} {{ me ? me.currency : '' }}</a
+            >
+          </template>
+          <strong v-else>no {{ gradeLabel }}</strong>
+        </span>
       </a>
       <p class="help">{{ result.attribution }} · today's price, check it on the receipt</p>
     </div>
