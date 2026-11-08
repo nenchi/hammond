@@ -95,7 +95,14 @@ type CommonError struct {
 func NewValidatorError(err error) CommonError {
 	res := CommonError{}
 	res.Errors = make(map[string]interface{})
-	errs := err.(validator.ValidationErrors)
+	// upstream asserted unconditionally: malformed JSON (or nil) panicked the request
+	errs, ok := err.(validator.ValidationErrors)
+	if !ok {
+		if err != nil {
+			res.Errors["request"] = err.Error()
+		}
+		return res
+	}
 	for _, v := range errs {
 		// can translate each error one at a time.
 		//fmt.Println("gg",v.NameNamespace)

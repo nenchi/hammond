@@ -1,0 +1,85 @@
+/* Dark theme: active when <html> has class theme-dark (utils/theme.js). Overrides the Bulma/Buefy
+   parts hammond uses; colours keep hammond's green accent. */
+html.theme-dark {
+  --bg: #16191d;
+  --surface: #1f2328;
+  --surface-2: #272c32;
+  --border: #363c44;
+  --text: #d6dbe1;
+  --text-strong: #f1f3f5;
+  --text-muted: #9aa3ad;
+  --accent: #4cbf8c;
+  background-color: var(--bg);
+}
+html.theme-dark body { background-color: var(--bg); color: var(--text); }
+html.theme-dark a:not(.button):not(.dropdown-item):not(.navbar-item):not(.card-footer-item) { color: var(--accent); }
+html.theme-dark strong, html.theme-dark .title, html.theme-dark .label,
+html.theme-dark .content h1, html.theme-dark .content h2, html.theme-dark .content h3 { color: var(--text-strong); }
+html.theme-dark .subtitle, html.theme-dark .help, html.theme-dark .has-text-grey { color: var(--text-muted); }
+html.theme-dark hr { background-color: var(--border); }
+
+/* surfaces */
+html.theme-dark .box, html.theme-dark .card, html.theme-dark .modal-card-body,
+html.theme-dark .dropdown-content, html.theme-dark .navbar, html.theme-dark .navbar-menu,
+html.theme-dark .navbar-dropdown, html.theme-dark .footer {
+  background-color: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0.5em 1em -0.125em rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border);
+}
+html.theme-dark .navbar { box-shadow: 0 1px 0 var(--border); }
+html.theme-dark .card-header { background-color: var(--surface-2); box-shadow: 0 1px 0 var(--border); }
+html.theme-dark .card-header-title, html.theme-dark .card-header-icon { color: var(--text-strong); }
+html.theme-dark .card-footer, html.theme-dark .card-footer-item:not(:last-child) { border-color: var(--border); }
+html.theme-dark .card-footer-item { color: var(--accent); }
+html.theme-dark .modal-card-head, html.theme-dark .modal-card-foot { background-color: var(--surface-2); border-color: var(--border); }
+html.theme-dark .modal-card-title { color: var(--text-strong); }
+html.theme-dark .navbar-item, html.theme-dark .navbar-link { color: var(--text); }
+html.theme-dark a.navbar-item:hover, html.theme-dark .navbar-link:hover, html.theme-dark .navbar-item.has-dropdown:hover .navbar-link,
+html.theme-dark a.dropdown-item:hover, html.theme-dark .dropdown-item.is-active {
+  background-color: var(--surface-2);
+  color: var(--text-strong);
+}
+html.theme-dark .dropdown-item { color: var(--text); }
+html.theme-dark .navbar-burger { color: var(--text); }
+
+/* tables (b-table) */
+html.theme-dark .table { background-color: transparent; color: var(--text); }
+html.theme-dark .table th, html.theme-dark .table td { border-color: var(--border); }
+html.theme-dark .table thead th, html.theme-dark .table th { color: var(--text-strong); }
+html.theme-dark .table.is-striped tbody tr:not(.is-selected):nth-child(even) { background-color: var(--surface-2); }
+html.theme-dark .table.is-hoverable tbody tr:not(.is-selected):hover { background-color: #2d333a; }
+html.theme-dark .b-table .table-wrapper .table, html.theme-dark .b-table .table { background-color: transparent; }
+html.theme-dark .b-table .table-mobile-sort, html.theme-dark .pagination-link, html.theme-dark .pagination-previous,
+html.theme-dark .pagination-next { background-color: var(--surface-2); border-color: var(--border); color: var(--text); }
+
+/* forms */
+html.theme-dark .input, html.theme-dark .textarea, html.theme-dark .select select, html.theme-dark .taginput .taginput-container {
+  background-color: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-strong);
+}
+html.theme-dark .input::placeholder, html.theme-dark .textarea::placeholder { color: var(--text-muted); }
+html.theme-dark .input[disabled], html.theme-dark .select select[disabled] { background-color: var(--bg); color: var(--text-muted); }
+html.theme-dark .select:not(.is-multiple):not(.is-loading)::after { border-color: var(--accent); }
+html.theme-dark .b-checkbox.checkbox:hover, html.theme-dark .checkbox:hover, html.theme-dark .radio:hover { color: var(--text-strong); }
+html.theme-dark .b-checkbox.checkbox .check { background-color: var(--surface-2); border-color: var(--text-muted); }
+html.theme-dark .upload-draggable { border-color: var(--border); }
+html.theme-dark .button:not(.is-primary):not(.is-success):not(.is-danger):not(.is-warning):not(.is-info):not(.is-link) {
+  background-color: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-strong);
+}
+html.theme-dark .tag:not(.is-primary):not(.is-success):not(.is-danger):not(.is-warning):not(.is-info):not(.is-link) {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
+/* datepicker */
+html.theme-dark .datepicker .datepicker-table .datepicker-cell { color: var(--text); }
+html.theme-dark .datepicker .datepicker-table .datepicker-header .datepicker-cell { color: var(--text-muted); }
+html.theme-dark .datepicker .datepicker-table .datepicker-body .datepicker-cell.is-unselectable { color: #5c646e; }
+html.theme-dark .datepicker .datepicker-table .datepicker-body .datepicker-cell.is-selectable:hover:not(.is-selected) {
+  background-color: var(--surface-2);
+  color: var(--text-strong);
+}
+html.theme-dark .datepicker .dropdown .dropdown-menu .has-text-centered, html.theme-dark .datepicker .dropdown-content { background-color: var(--surface); }

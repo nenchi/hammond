@@ -6,6 +6,9 @@ type UpdateSettingModel struct {
 	Currency     string           `json:"currency" form:"currency" query:"currency"`
 	DateFormat   string           `json:"dateFormat" form:"dateFormat" query:"dateFormat"`
 	DistanceUnit *db.DistanceUnit `json:"distanceUnit" form:"distanceUnit" query:"distanceUnit" `
+	// optional: older clients don't send them, nil keeps the stored value
+	Theme         *string `json:"theme" form:"theme" binding:"omitempty,oneof=auto light dark"`
+	PrefillFillup *bool   `json:"prefillFillup" form:"prefillFillup"`
 }
 
 type ClarksonMigrationModel struct {

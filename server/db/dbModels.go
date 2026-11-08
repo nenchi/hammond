@@ -19,6 +19,10 @@ type User struct {
 	Name         string       `json:"name"`
 	Vehicles     []Vehicle    `gorm:"many2many:user_vehicles;" json:"vehicles"`
 	IsDisabled   bool         `json:"isDisabled"`
+	// "auto" (follow the device), "light" or "dark"; empty = auto
+	Theme string `json:"theme"`
+	// pre-fill new fill-ups with the vehicle's last price and station
+	PrefillFillup bool `gorm:"default:true" json:"prefillFillup"`
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {

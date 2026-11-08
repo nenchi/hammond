@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+import { setTheme } from '@utils/theme'
+
 export const state = {
   cached: [],
   me: null,
@@ -13,6 +15,7 @@ export const mutations = {
   },
   CACHE_MY_USER(state, newUser) {
     state.me = newUser
+    if (newUser) setTheme(newUser.theme)
   },
 }
 
