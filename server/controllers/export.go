@@ -121,6 +121,9 @@ func RegisterHomeAssistantController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, odo)
 	})
+	router.GET("/settings/homeAssistant/test", ShouldBeAdmin(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, service.TestHomeAssistant())
+	})
 	router.POST("/settings/homeAssistant", ShouldBeAdmin(), func(c *gin.Context) {
 		var req models.UpdateHomeAssistantRequest
 		if err := c.ShouldBindJSON(&req); err != nil {

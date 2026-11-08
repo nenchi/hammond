@@ -95,9 +95,15 @@ type DetectionResult struct {
 
 func findMatchingFillup(vehicleID string, odo int, date time.Time) *db.Fillup {
 	var fs []db.Fillup
-	db.DB.Where("vehicle_id = ? AND odo_reading BETWEEN ? AND ? AND date BETWEEN ? AND ?", vehicleID,
-		odo-matchKm, odo+matchKm, date.Add(-matchHours*time.Hour), date.Add(matchHours*time.Hour)).
-		Order("date desc").Limit(1).Find(&fs)
+	window := matchHours * time.Hour
+	if odo <= 0 { // no odometer (e.g. EVCC without a vehicle API): by time only, closer
+		window = 3 * time.Hour
+	}
+	q := db.DB.Where("vehicle_id = ? AND date BETWEEN ? AND ?", vehicleID, date.Add(-window), date.Add(window))
+	if odo > 0 {
+		q = q.Where("odo_reading BETWEEN ? AND ?", odo-matchKm, odo+matchKm)
+	}
+	q.Order("date desc").Limit(1).Find(&fs)
 	if len(fs) == 0 {
 		return nil
 	}

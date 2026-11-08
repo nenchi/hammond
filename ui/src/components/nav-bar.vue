@@ -52,6 +52,10 @@ export default {
           title: 'Site Settings',
         },
         {
+          name: 'charging-places',
+          title: 'Charging places',
+        },
+        {
           name: 'users',
           title: 'Users',
         },

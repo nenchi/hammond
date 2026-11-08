@@ -1,6 +1,6 @@
 """Fake Tankerkönig list.php for CI (python3 tests/fake_fuelprices.py [port]): fixed stations around
 any position; key "ci-key" required, like the real API needs one. Also a fake Home Assistant
-/api/states/sensor.ci_odometer (token "ci-ha-token")."""
+/api/states/sensor.ci_odometer (token "ci-ha-token") and a fake EVCC /api/sessions."""
 import json, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -17,6 +17,24 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/api/sessions":  # EVCC: one finished session of "CI EV" (no odometer)
+            data = json.dumps([{"id": 7, "created": "2026-11-10T23:00:00Z", "finished": "2026-11-11T01:00:00Z",
+                                "vehicle": "CI EV", "odometer": 0, "chargedEnergy": 12, "socEnd": 80, "pricePerKWh": 0.3}]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if u.path == "/api/config":  # HA "Test connection"
+            ok = self.headers.get("Authorization") == "Bearer ci-ha-token"
+            data = json.dumps({"location_name": "CI Home", "version": "2026.11.1"}).encode()
+            self.send_response(200 if ok else 401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if u.path.startswith("/api/states/"):
             ok = self.headers.get("Authorization") == "Bearer ci-ha-token"
             known = u.path == "/api/states/sensor.ci_odometer"

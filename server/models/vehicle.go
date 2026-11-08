@@ -30,6 +30,7 @@ type CreateVehicleRequest struct {
 	GaugeSegments int     `form:"gaugeSegments" json:"gaugeSegments" binding:"omitempty,min=1,max=10"`
 	// Home Assistant entity id, e.g. sensor.a180_odometer (checked by service.ValidEntityID)
 	OdometerEntity string `form:"odometerEntity" json:"odometerEntity" binding:"max=100"`
+	EvccVehicle    string `form:"evccVehicle" json:"evccVehicle" binding:"max=100"`
 }
 
 type UpdateVehicleRequest struct {

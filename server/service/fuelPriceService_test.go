@@ -251,6 +251,8 @@ func TestHomeAssistantOdometer(t *testing.T) {
 		case "/api/states/sensor.a180_odometer":
 			w.Write([]byte(`{"entity_id":"sensor.a180_odometer","state":"21345.0","attributes":{"unit_of_measurement":"km"},
 			  "last_changed":"2026-11-08T08:00:00Z","last_updated":"2026-11-08T08:00:00Z","last_reported":"2026-11-08T09:30:00Z"}`))
+		case "/api/config":
+			w.Write([]byte(`{"location_name":"Home","version":"2026.11.1"}`))
 		case "/api/states/sensor.offline":
 			w.Write([]byte(`{"state":"unavailable","attributes":{},"last_updated":"2026-11-08T08:00:00Z"}`))
 		default:
@@ -262,8 +264,15 @@ func TestHomeAssistantOdometer(t *testing.T) {
 	if o, err := CurrentOdometer(&v); err != nil || o.Configured {
 		t.Fatalf("not set up = not configured, no error: %+v %v", o, err)
 	}
+	if r := TestHomeAssistant(); r.OK {
+		t.Fatal("test without settings must fail")
+	}
 	UpdateHomeAssistantSettings(ha.URL+"/", "ha-token")
 	v.OdometerEntity = "sensor.a180_odometer"
+	db.DB.Save(&v)
+	if r := TestHomeAssistant(); !r.OK || r.Name != "Home" || r.Version != "2026.11.1" || !strings.Contains(r.Odometer, "= 21345 km") {
+		t.Fatalf("test connection: %+v", r)
+	}
 	o, err := CurrentOdometer(&v)
 	if err != nil || !o.Configured || o.Value != 21345 || o.Unit != "km" || o.UpdatedAt.Format(time.RFC3339) != "2026-11-08T09:30:00Z" {
 		t.Fatalf("want 21345 km reported 09:30: %+v %v", o, err)
@@ -284,6 +293,9 @@ func TestHomeAssistantOdometer(t *testing.T) {
 	v.OdometerEntity = "sensor.a180_odometer"
 	if _, err := CurrentOdometer(&v); err == nil || !strings.Contains(err.Error(), "token") {
 		t.Fatalf("wrong token: %v", err)
+	}
+	if r := TestHomeAssistant(); r.OK || !strings.Contains(r.Error, "401") {
+		t.Fatalf("test with a wrong token: %+v", r)
 	}
 	for _, bad := range []string{"../config", "sensor.x/../../api", "Sensor.X", "sensor"} {
 		if ValidEntityID(bad) {
