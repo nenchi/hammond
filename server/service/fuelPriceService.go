@@ -23,13 +23,16 @@ import (
 // Station prices from a list of profiles (Admin → Site settings), tried in order: the first one with
 // stations near the position wins, so no country borders are needed (each API only knows its country).
 // Kinds: "tankerkoenig" (Germany, free key), "econtrol" (Austria, no key), "goriva" (Slovenia, no key),
-// "mzoe" (Croatia, no key) and "custom" (any URL speaking the Tankerkönig list.php format).
+// "mzoe" (Croatia, no key), "france" (prix-carburants, no key), "portugal" (DGEG, no key) and "custom"
+// (any URL speaking the Tankerkönig list.php format).
 
 const (
-	TankerkoenigURL = "https://creativecommons.tankerkoenig.de/json"
-	EControlURL     = "https://api.e-control.at/sprit/1.0"
-	GorivaURL       = "https://goriva.si/api/v1"
-	MzoeURL         = "https://webservis.mzoe-gor.hr/data.gz"
+	TankerkoenigURL   = "https://creativecommons.tankerkoenig.de/json"
+	EControlURL       = "https://api.e-control.at/sprit/1.0"
+	GorivaURL         = "https://goriva.si/api/v1"
+	MzoeURL           = "https://webservis.mzoe-gor.hr/data.gz"
+	PrixCarburantsURL = "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2"
+	DgegURL           = "https://precoscombustiveis.dgeg.gov.pt/api/PrecoComb"
 )
 
 type Station struct {
@@ -212,7 +215,8 @@ func PublicAvailableProfiles(userID string) []db.PriceProfile {
 // UserPriceProfiles: the user's own list for their settings page
 func UserPriceProfiles(userID string) []db.PriceProfile { return public(userProfiles(getUser(userID))) }
 
-var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "goriva": GorivaURL, "mzoe": MzoeURL, "custom": ""}
+var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "goriva": GorivaURL, "mzoe": MzoeURL,
+	"france": PrixCarburantsURL, "portugal": DgegURL, "custom": ""}
 
 // normalizeProfiles checks a list; keys: "" keeps the old one of the same id, "-" removes it.
 // freshIDs (users' own lists): an id the list didn't have gets a new one, so a user's profile never
@@ -352,7 +356,7 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 	}
 	base = strings.TrimRight(base, "/")
 	extra := ""
-	if p.Kind == "econtrol" || p.Kind == "goriva" || p.Kind == "mzoe" {
+	if p.Kind != "tankerkoenig" && p.Kind != "custom" {
 		extra = strings.Join(grades, ",") // prices are stored under the vehicle's grades (95 → first petrol one)
 	}
 	key := cacheKey(p, extra, lat, lng, rad)
@@ -371,6 +375,12 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 		case "mzoe":
 			c.res, err = fetchMzoe(base, grades, lat, lng, rad)
 			c.lic = "Prices: Ministarstvo gospodarstva (mzoe-gor.hr)"
+		case "france":
+			c.res, err = fetchFrance(base, grades, lat, lng, rad)
+			c.lic = "Prices: prix-carburants.gouv.fr (Licence Ouverte)"
+		case "portugal":
+			c.res, err = fetchPortugal(base, grades, lat, lng, rad)
+			c.lic = "Prices: DGEG (precoscombustiveis.dgeg.gov.pt)"
 		default:
 			c.res, c.lic, err = fetchTankerkoenig(base, p.APIKey, lat, lng, rad)
 			if p.Kind == "tankerkoenig" {
@@ -721,6 +731,10 @@ func TestFuelPriceProvider(userID, profileID string, lat, lng *float64) (*Statio
 		la, ln = 46.0569, 14.5058 // Ljubljana
 	case "mzoe":
 		la, ln = 45.8150, 15.9819 // Zagreb
+	case "france":
+		la, ln = 45.7640, 4.8357 // Lyon
+	case "portugal":
+		la, ln = 38.7223, -9.1393 // Lisbon
 	}
 	if lat != nil && lng != nil {
 		la, ln = *lat, *lng
