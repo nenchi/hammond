@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"time"
 
 	"github.com/akhilrex/hammond/db"
@@ -139,7 +138,7 @@ func CreateDetection(userID, vehicleID string, req models.CreateDetectionRequest
 		if vehicle.TankCapacity <= 0 {
 			return nil, errors.New("set the vehicle's tank size in hammond to estimate the quantity from fuel levels")
 		}
-		d.FuelQuantity = round1((*req.LevelAfter - *req.LevelBefore) / 100 * vehicle.TankCapacity)
+		d.FuelQuantity = EstimateLitres(vehicle, float64(*req.LevelBefore), float64(*req.LevelAfter))
 		d.Estimated = true
 	default:
 		return nil, errors.New("send fuelQuantity, or levelBefore and levelAfter")
@@ -257,30 +256,15 @@ func ResolveDetectionsForFillup(f *db.Fillup, fromDetectionID string) {
 		Updates(map[string]interface{}{"status": db.DetectionMerged, "fillup_id": f.ID})
 }
 
-// SuggestTankSize learns the tank size from confirmed, certain level-based detections: the litres
-// the user confirmed divided by the level difference. Median of at least 2, else 0.
+// SuggestTankSize: the sum of the learned gauge segments (see gaugeService), once calibrated.
 func SuggestTankSize(vehicleID string) (float32, int) {
-	var ds []db.FillupDetection
-	db.DB.Where("vehicle_id = ? AND status = ? AND estimated = ? AND uncertain = ? AND fillup_id IS NOT NULL",
-		vehicleID, db.DetectionConfirmed, true, false).Find(&ds)
-	var sizes []float64
-	for _, d := range ds {
-		if d.LevelBefore == nil || d.LevelAfter == nil || *d.LevelAfter-*d.LevelBefore < 15 {
-			continue // small jumps are too coarse to learn from
-		}
-		f, err := db.GetFillupById(*d.FillupID)
-		if err != nil || f.FuelQuantity <= 0 {
-			continue
-		}
-		sizes = append(sizes, float64(f.FuelQuantity)/float64(*d.LevelAfter-*d.LevelBefore)*100)
+	v, err := db.GetVehicleById(vehicleID)
+	if err != nil {
+		return 0, 0
 	}
-	if len(sizes) < 2 {
-		return 0, len(sizes)
+	c := Calibrate(v)
+	if !c.Calibrated {
+		return 0, c.Samples
 	}
-	sort.Float64s(sizes)
-	m := sizes[len(sizes)/2]
-	if len(sizes)%2 == 0 {
-		m = (sizes[len(sizes)/2-1] + sizes[len(sizes)/2]) / 2
-	}
-	return round1(float32(m)), len(sizes)
+	return round1(float32(c.TankCapacity)), c.Samples
 }

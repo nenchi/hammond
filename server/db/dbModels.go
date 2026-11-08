@@ -83,12 +83,15 @@ type Vehicle struct {
 	// litres (or kWh for electric); used to estimate quantities from detected fuel levels
 	TankCapacity float32 `json:"tankCapacity"`
 	// accepted grades for station prices, preferred first: "e10,e5"; empty = from the fuel type
-	FuelGrade   string       `json:"fuelGrade"`
-	Users       []User       `gorm:"many2many:user_vehicles;" json:"users"`
-	Fillups     []Fillup     `json:"fillups"`
-	Expenses    []Expense    `json:"expenses"`
-	Attachments []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
-	IsOwner     bool         `gorm:"->" json:"isOwner"`
+	FuelGrade string `json:"fuelGrade"`
+	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
+	GaugeSegments int          `gorm:"default:4" json:"gaugeSegments"`
+	GaugeResetAt  *time.Time   `json:"gaugeResetAt"`
+	Users         []User       `gorm:"many2many:user_vehicles;" json:"users"`
+	Fillups       []Fillup     `json:"fillups"`
+	Expenses      []Expense    `json:"expenses"`
+	Attachments   []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
+	IsOwner       bool         `gorm:"->" json:"isOwner"`
 }
 
 func (b *Vehicle) MarshalJSON() ([]byte, error) {

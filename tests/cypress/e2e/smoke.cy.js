@@ -373,6 +373,18 @@ describe('hammond UI', () => {
     cy.contains('.field', 'Fuel Subtype').find('select option').contains('MaxxMotion 100')
   })
 
+  it('vehicle edit shows the gauge calibration (segments, status, litres per segment)', () => {
+    cy.request({ url: `/api/vehicles/${vehicleId}/gauge`, headers: apiHeaders }).then(({ body: g }) => {
+      expect(g.segments).to.eq(4)
+      expect(g.segmentLitres).to.have.length(4)
+    })
+    visit(`/vehicles/${vehicleId}/edit`)
+    cy.contains('.field', 'Gauge segments').find('input').should('have.value', '4')
+    cy.get('.gauge-calibration').should('contain', 'Gauge calibration').find('.gauge-segment').should('have.length', 4)
+    cy.get('.gauge-calibration').contains(/linear|learned from/)
+    noConsoleErrors()
+  })
+
   it('logs out, and a wrong password is refused', () => {
     // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
     // and typing into the first login page raced the second (flaky in CI)

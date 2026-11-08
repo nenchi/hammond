@@ -25,8 +25,9 @@ type CreateVehicleRequest struct {
 
 	FuelType *db.FuelType `form:"fuelType" json:"fuelType" binding:"required"`
 
-	TankCapacity float32 `form:"tankCapacity" json:"tankCapacity" binding:"min=0"`
-	FuelGrade    string  `form:"fuelGrade" json:"fuelGrade" binding:"max=30"` // "e10,e5": checked by service.NormalizeFuelGrades
+	TankCapacity  float32 `form:"tankCapacity" json:"tankCapacity" binding:"min=0"`
+	FuelGrade     string  `form:"fuelGrade" json:"fuelGrade" binding:"max=30"` // "e10,e5": checked by service.NormalizeFuelGrades
+	GaugeSegments int     `form:"gaugeSegments" json:"gaugeSegments" binding:"omitempty,min=1,max=10"`
 }
 
 type UpdateVehicleRequest struct {
