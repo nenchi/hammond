@@ -30,6 +30,7 @@ export default {
         prefillFillup: this.me.prefillFillup !== false,
         detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
         showFillupTime: this.me.showFillupTime !== false,
+        stationSuggestions: this.me.stationSuggestions || 'location',
       },
       apiKeys: [],
       newKeyName: 'Home Assistant',
@@ -231,6 +232,13 @@ export default {
           </b-field>
           <b-field>
             <b-checkbox v-model="settingsModel.prefillFillup">Pre-fill new fill-ups with the last price and station</b-checkbox>
+          </b-field>
+          <b-field label="Stations nearby (fill-up form)" message="Needs fuel prices set up by an admin (Site Settings)">
+            <b-select v-model="settingsModel.stationSuggestions" expanded>
+              <option value="location">Button, plus stations near a detected fill-up's location</option>
+              <option value="button">Only the "Stations nearby" button</option>
+              <option value="off">Off</option>
+            </b-select>
           </b-field>
           <b-field label="When a detected fill-up matches one I already entered">
             <b-select v-model="settingsModel.detectionDuplicateMode" expanded>

@@ -20,6 +20,7 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 		FuelUnit:          *model.FuelUnit,
 		FuelType:          *model.FuelType,
 		TankCapacity:      model.TankCapacity,
+		FuelGrade:         model.FuelGrade,
 	}
 
 	tx := db.DB.Create(&vehicle)
@@ -108,6 +109,7 @@ func UpdateVehicle(vehicleID string, model models.UpdateVehicleRequest) error {
 	toUpdate.FuelUnit = *model.FuelUnit
 	toUpdate.FuelType = *model.FuelType
 	toUpdate.TankCapacity = model.TankCapacity
+	toUpdate.FuelGrade = model.FuelGrade
 	//}).Error
 
 	return db.DB.Omit(clause.Associations).Save(toUpdate).Error

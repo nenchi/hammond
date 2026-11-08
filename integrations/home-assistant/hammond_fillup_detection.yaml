@@ -55,6 +55,15 @@ blueprint:
           min: 0
           max: 60
           unit_of_measurement: min
+    location_entity:
+      name: Location (optional)
+      description: >-
+        A device_tracker or person with latitude/longitude (your phone, or the car if its integration
+        has a position). hammond then lists the stations near it when you complete the fill-up.
+      default: ""
+      selector:
+        entity:
+          domain: [device_tracker, person]
     notify_service:
       name: Notify service
       description: "e.g. notify.mobile_app_my_phone (empty = no notification)"
@@ -85,6 +94,7 @@ variables:
   min_increase: !input min_increase
   settle_minutes: !input settle_minutes
   notify_service: !input notify_service
+  location_entity: !input location_entity
   hammond_url: !input hammond_url
   level: "{{ states(level_sensor) | float(-1) }}"
   previous: "{{ states(last_level_helper) | float(-1) }}"
@@ -112,6 +122,8 @@ action:
             levelBefore: "{{ previous }}"
             levelAfter: "{{ level_after }}"
             date: "{{ now().isoformat() }}"
+            lat: "{{ state_attr(location_entity, 'latitude') if location_entity else none }}"
+            lng: "{{ state_attr(location_entity, 'longitude') if location_entity else none }}"
       - service: rest_command.hammond_detection
         data:
           vehicle_id: "{{ vehicle_id }}"

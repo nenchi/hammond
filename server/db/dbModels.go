@@ -28,6 +28,9 @@ type User struct {
 	DetectionDuplicateMode string `json:"detectionDuplicateMode"`
 	// show the time of fill-ups in lists (entries without a time always show the date only)
 	ShowFillupTime bool `gorm:"default:true" json:"showFillupTime"`
+	// station prices in the fill-up form: "" = button + stations near a detection's location,
+	// "button" = only the "stations nearby" button, "off"
+	StationSuggestions string `json:"stationSuggestions"`
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {
@@ -76,12 +79,14 @@ type Vehicle struct {
 	FuelUnit          FuelUnit `json:"fuelUnit"`
 	FuelType          FuelType `json:"fuelType"`
 	// litres (or kWh for electric); used to estimate quantities from detected fuel levels
-	TankCapacity float32      `json:"tankCapacity"`
-	Users        []User       `gorm:"many2many:user_vehicles;" json:"users"`
-	Fillups      []Fillup     `json:"fillups"`
-	Expenses     []Expense    `json:"expenses"`
-	Attachments  []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
-	IsOwner      bool         `gorm:"->" json:"isOwner"`
+	TankCapacity float32 `json:"tankCapacity"`
+	// grade for station prices: "e5", "e10", "diesel"; empty = from the fuel type
+	FuelGrade   string       `json:"fuelGrade"`
+	Users       []User       `gorm:"many2many:user_vehicles;" json:"users"`
+	Fillups     []Fillup     `json:"fillups"`
+	Expenses    []Expense    `json:"expenses"`
+	Attachments []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
+	IsOwner     bool         `gorm:"->" json:"isOwner"`
 }
 
 func (b *Vehicle) MarshalJSON() ([]byte, error) {
@@ -166,6 +171,11 @@ type Setting struct {
 	Base
 	Currency     string       `json:"currency" gorm:"default:INR"`
 	DistanceUnit DistanceUnit `json:"distanceUnit" gorm:"default:1"`
+	// station prices: "" (off), "tankerkoenig" (Germany) or "custom" (Tankerkönig-compatible URL)
+	FuelPriceProvider string `json:"fuelPriceProvider"`
+	FuelPriceURL      string `json:"fuelPriceUrl"`
+	FuelPriceAPIKey   string `json:"-"` // never sent to the browser; GET /api/settings is readable by every user
+	FuelPriceKeySet   bool   `gorm:"-" json:"fuelPriceKeySet"`
 }
 type Migration struct {
 	Base

@@ -41,6 +41,8 @@ type FillupDetection struct {
 	Uncertain     bool            `json:"uncertain"`    // LevelBefore was read well before the fill-up
 	UncertainNote string          `json:"uncertainNote"`
 	IsTankFull    bool            `json:"isTankFull"`
+	Lat           *float64        `json:"lat"` // where the phone/car was when it was detected (optional)
+	Lng           *float64        `json:"lng"`
 	Status        DetectionStatus `gorm:"index" json:"status"`
 	FillupID      *string         `json:"fillupId"`      // fill-up it became / was merged into / applied to
 	DuplicateOfID *string         `json:"duplicateOfId"` // existing fill-up it probably duplicates

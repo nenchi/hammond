@@ -15,6 +15,14 @@ type UpdateSettingModel struct {
 	PrefillFillup          *bool   `json:"prefillFillup" form:"prefillFillup"`
 	DetectionDuplicateMode *string `json:"detectionDuplicateMode" form:"detectionDuplicateMode" binding:"omitempty,oneof=ask manual detection"`
 	ShowFillupTime         *bool   `json:"showFillupTime" form:"showFillupTime"`
+	StationSuggestions     *string `json:"stationSuggestions" form:"stationSuggestions" binding:"omitempty,oneof=location button off"`
+}
+
+// UpdateFuelPriceSettingsRequest (admin): apiKey empty = keep the stored one, "-" = remove it
+type UpdateFuelPriceSettingsRequest struct {
+	Provider string `json:"provider" binding:"omitempty,oneof=tankerkoenig custom"`
+	URL      string `json:"url" binding:"omitempty,url,max=300"`
+	APIKey   string `json:"apiKey" binding:"max=200"`
 }
 
 // CreateDetectionRequest: POST /api/v1/vehicles/:id/detections. Send fuelQuantity, or the fuel level
@@ -29,6 +37,9 @@ type CreateDetectionRequest struct {
 	OdoAtBefore *int   `json:"odoAtBefore" binding:"omitempty,min=0"`
 	IsTankFull  *bool  `json:"isTankFull"`
 	Source      string `json:"source" binding:"max=64"`
+	// optional position (phone or car) when it was detected: the fill-up form lists stations near it
+	Lat *float64 `json:"lat" binding:"omitempty,min=-90,max=90"`
+	Lng *float64 `json:"lng" binding:"omitempty,min=-180,max=180"`
 }
 
 type CreateApiKeyRequest struct {
