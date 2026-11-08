@@ -32,7 +32,8 @@ func ShouldBeAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		model := c.MustGet("userModel").(db.User)
 		if model.Role != db.ADMIN {
-			c.JSON(http.StatusUnauthorized, gin.H{})
+			// upstream only wrote 401 without aborting, so the admin-only handler still ran for everyone
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{})
 		} else {
 			c.Next()
 		}
@@ -55,7 +56,11 @@ func userRegister(c *gin.Context) {
 		return
 	}
 
-	if err := service.CreateUser(&registerRequest, *registerRequest.Role); err != nil {
+	role := db.USER // no role sent: a normal user, never admin (upstream: nil pointer panic)
+	if registerRequest.Role != nil {
+		role = *registerRequest.Role
+	}
+	if err := service.CreateUser(&registerRequest, role); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, common.NewError("database", err))
 		return
 	}
@@ -74,6 +79,10 @@ func initializeSystem(c *gin.Context) {
 	var registerRequest models.RegisterRequest
 	if err := c.ShouldBind(&registerRequest); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+		return
+	}
+	if registerRequest.DistanceUnit == nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "distanceUnit is required"})
 		return
 	}
 	service.UpdateSettings(registerRequest.Currency, *registerRequest.DistanceUnit)
