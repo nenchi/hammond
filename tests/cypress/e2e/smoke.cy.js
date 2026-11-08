@@ -332,6 +332,20 @@ describe('hammond UI', () => {
       })
   })
 
+  it('fill-up form opened by a fresh page load can be saved while the vehicles are still loading', () => {
+    // upstream copied the vehicle list once at mount: slow loading left the required vehicle select empty,
+    // so the browser silently refused to save (seen in CI as a "flaky" test)
+    cy.intercept('GET', '/api/me/vehicles', (req) => req.on('response', (res) => res.setDelay(3000))).as('vehicles')
+    cy.intercept('POST', `/api/vehicles/${vehicleId}/fillups`).as('save')
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('.field', 'Select a vehicle').find('select').invoke('val').should('not.be.empty')
+    cy.contains('.field', 'Quantity').find('input[type=number]').first().clear().type('5')
+    cy.contains('.field', 'Price per').find('input').clear().type('1.8')
+    cy.contains('.field', 'Odometer Reading').find('input').clear().type('22300')
+    cy.get('form [type=submit]').first().click()
+    cy.wait('@save').its('response.statusCode').should('eq', 201)
+  })
+
   it('logs out, and a wrong password is refused', () => {
     // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
     // and typing into the first login page raced the second (flaky in CI)

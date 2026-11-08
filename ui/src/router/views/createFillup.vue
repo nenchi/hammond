@@ -34,7 +34,6 @@ export default {
       tryingToCreate: false,
       showMore: false,
       quickEntry: null,
-      myVehicles: [],
       users: [],
       fuelSubTypes: [],
       selectedVehicle: this.vehicle,
@@ -48,6 +47,14 @@ export default {
   },
 
   computed: {
+    // reactive, with the current vehicle always in it: copied once at mount (upstream), a fresh page load
+    // left the required select empty while the vehicles were still loading, and saving silently failed
+    myVehicles() {
+      const list = this.vehicles || []
+      const sel = this.selectedVehicle
+      if (!sel || !sel.id) return list
+      return list.some((v) => v.id === sel.id) ? list.map((v) => (v.id === sel.id ? sel : v)) : [sel, ...list]
+    },
     user() {
       return store.state.auth.currentUser
     },
@@ -76,7 +83,6 @@ export default {
     },
   },
   mounted() {
-    this.myVehicles = this.vehicles
     this.selectedVehicle = this.vehicle
     this.fetchVehicleUsers()
     this.fetchVehicleFuelSubTypes()
