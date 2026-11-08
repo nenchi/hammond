@@ -60,7 +60,7 @@ func udpateMySettings(c *gin.Context) {
 		err = errors.New("distanceUnit is required")
 	}
 	if err == nil {
-		err = service.UpdateUserSettings(c.MustGet("userId").(string), model.Currency, *model.DistanceUnit, model.DateFormat, model.Theme, model.PrefillFillup, model.DetectionDuplicateMode)
+		err = service.UpdateUserSettings(c.MustGet("userId").(string), model.Currency, *model.DistanceUnit, model.DateFormat, model.Theme, model.PrefillFillup, model.DetectionDuplicateMode, model.ShowFillupTime)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("udpateMySettings", err))
 			return

@@ -14,6 +14,7 @@ type UpdateSettingModel struct {
 	Theme                  *string `json:"theme" form:"theme" binding:"omitempty,oneof=auto light dark"`
 	PrefillFillup          *bool   `json:"prefillFillup" form:"prefillFillup"`
 	DetectionDuplicateMode *string `json:"detectionDuplicateMode" form:"detectionDuplicateMode" binding:"omitempty,oneof=ask manual detection"`
+	ShowFillupTime         *bool   `json:"showFillupTime" form:"showFillupTime"`
 }
 
 // CreateDetectionRequest: POST /api/v1/vehicles/:id/detections. Send fuelQuantity, or the fuel level
