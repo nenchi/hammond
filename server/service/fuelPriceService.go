@@ -55,6 +55,7 @@ type StationsResult struct {
 	Grades      []string  `json:"grades"` // accepted, preferred first
 	Attribution string    `json:"attribution"`
 	Stations    []Station `json:"stations"`
+	Errors      []string  `json:"errors,omitempty"` // profiles that failed (only when no stations were found)
 }
 
 // accepted grades, preferred first: the vehicle's list, else from its fuel type
@@ -326,27 +327,29 @@ func NearbyStations(userID string, vehicle *db.Vehicle, lat, lng, radiusKm float
 	}
 	radiusKm = math.Min(math.Max(radiusKm, 1), 25) // Tankerkönig: max 25 km
 
-	var firstErr error
+	var errs, asked []string
 	var empty *StationsResult
 	for _, p := range profiles {
 		res, err := profileStations(p, grades, lat, lng, radiusKm)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("%s: %w", p.Name, err)
-			}
+			errs = append(errs, fmt.Sprintf("%s: %s", p.Name, err))
 			continue
 		}
 		if len(res.Stations) > 0 {
 			return res, nil
 		}
+		asked = append(asked, p.Name)
 		if empty == nil {
 			empty = res
 		}
 	}
-	if empty != nil {
-		return empty, nil // answered, but nothing here: "no stations within 2 km"
+	if empty == nil {
+		return nil, errors.New(strings.Join(errs, "; "))
 	}
-	return nil, firstErr
+	// answered, but nothing here: name every profile asked, not just the first (that read as "it only
+	// asks Germany" when in Austria), and say which ones failed
+	empty.ProfileName, empty.Errors = strings.Join(asked, ", "), errs
+	return empty, nil
 }
 
 func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) (*StationsResult, error) {
