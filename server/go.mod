@@ -3,7 +3,7 @@ module github.com/akhilrex/hammond
 go 1.27
 
 require (
-	github.com/gin-contrib/location/v2 v2.0.4
+	github.com/gin-contrib/location/v2 v2.0.5
 	github.com/gin-contrib/static v1.1.9
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.6
