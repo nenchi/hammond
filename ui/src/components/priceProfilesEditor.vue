@@ -18,6 +18,12 @@ export default {
         econtrol: { label: 'Austria – E-Control', url: 'https://api.e-control.at/sprit/1.0', key: false },
         goriva: { label: 'Slovenia – goriva.si', url: 'https://goriva.si/api/v1', key: false },
         mzoe: { label: 'Croatia – MZOE', url: 'https://webservis.mzoe-gor.hr/data.gz', key: false },
+        france: {
+          label: 'France – prix-carburants',
+          url: 'https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2',
+          key: false,
+        },
+        portugal: { label: 'Portugal – DGEG', url: 'https://precoscombustiveis.dgeg.gov.pt/api/PrecoComb', key: false },
         custom: { label: 'Custom (Tankerkönig-compatible)', url: '', key: true },
       },
       testResult: null,
@@ -35,7 +41,7 @@ export default {
       return (list || []).map((p) => ({ id: p.id, name: p.name, kind: p.kind, url: p.url || '', apiKey: '', keySet: p.keySet, shared: !p.private }))
     },
     addProfile(kind) {
-      const names = { tankerkoenig: 'Germany – Tankerkönig', econtrol: 'Austria – E-Control', goriva: 'Slovenia – goriva.si', mzoe: 'Croatia – MZOE', custom: 'Custom' }
+      const names = { tankerkoenig: 'Germany – Tankerkönig', econtrol: 'Austria – E-Control', goriva: 'Slovenia – goriva.si', mzoe: 'Croatia – MZOE', france: 'France – prix-carburants', portugal: 'Portugal – DGEG', custom: 'Custom' }
       this.profiles.push({ id: '', name: names[kind], kind, url: '', apiKey: '', keySet: false, shared: true })
     },
     move(i, d) {
@@ -80,7 +86,8 @@ export default {
       one with stations near you is used (each service only knows its own country), the form can switch to another.
       Germany needs a free key from
       <a href="https://creativecommons.tankerkoenig.de" target="_blank" rel="noopener">creativecommons.tankerkoenig.de</a>;
-      Austria needs none. "Custom" works with any service answering in the Tankerkönig format (e.g. your own proxy).
+      Austria, Slovenia, Croatia, France and Portugal need none. "Custom" works with any service answering in the
+      Tankerkönig format (e.g. your own proxy).
       <slot></slot></p
     >
     <div v-for="(p, i) in profiles" :key="p.id || 'new' + i" class="box price-profile p-3">
