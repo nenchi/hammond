@@ -303,6 +303,12 @@ call("POST", "/api/me/evcc", {"url": "", "syncMinutes": 0, "placeId": ""}, token
 call("DELETE", f"/api/chargingPlaces/{home['id']}", token=tok)
 call("DELETE", f"/api/vehicles/{ev['id']}", token=tok)
 
+s, _ = call("POST", "/api/me/settings", {**{"currency": "EUR", "distanceUnit": 1}, "stationRadiusKm": 10}, token=ptok)
+s2, me2 = call("GET", "/api/me", token=ptok)
+check("station search radius is a user setting", s == 200 and me2.get("stationRadiusKm") == 10, (s, me2))
+s, _ = call("POST", "/api/me/settings", {"currency": "EUR", "distanceUnit": 1, "stationRadiusKm": 30}, token=ptok)
+check("radius over 25 km refused", s == 422, s)
+
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))
 s, _ = call("POST", "/api/refresh", {"refreshToken": "garbage"}, token=tok)

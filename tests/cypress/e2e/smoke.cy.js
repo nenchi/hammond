@@ -337,10 +337,13 @@ describe('hammond UI', () => {
     cy.visit(`/vehicles/${vehicleId}/fillup`, {
       onBeforeLoad(win) {
         cy.stub(win.navigator.geolocation, 'getCurrentPosition').callsFake((ok) => ok({ coords: { latitude: 50.1, longitude: 8.76 } }))
+        win.navigator.share = cy.stub().resolves().as('share') // the phone's share sheet
       },
     })
     cy.contains('Last fill-up:')
+    cy.intercept('GET', '/api/vehicles/*/stations*').as('stations')
     cy.contains('button', 'Stations nearby').click()
+    cy.wait('@stations').its('request.url').should('contain', 'rad=2') // default radius (Settings)
     cy.get('.station-picker').within(() => {
       cy.contains('Stations nearby · 95 E10 / 95')
       cy.get('.price-profile-switch').should('not.exist') // only one profile
@@ -349,8 +352,13 @@ describe('hammond UI', () => {
       cy.contains('.station', 'ARAL').find('.price[data-grade=e5]').should('contain', '1.799')
       cy.contains('.station', 'Freie Tankstelle').find('.price[data-grade=e5]').should('contain', '1.769')
       cy.get('.price.cheapest').should('have.length', 1).and('contain', '1.739')
+      // finger-sized Navigate / Share for stations with a position (the fake's ARAL has one)
+      cy.contains('.station', 'ARAL').find('a.navigate').should('contain', 'Navigate').and('have.attr', 'href').and('contain', '50.1031,8.7601')
+      cy.contains('.station', 'ARAL').find('button.share').click()
+      cy.contains('.station', 'Freie Tankstelle').find('.station-actions').should('not.exist')
       cy.contains('.station', 'ARAL').find('.price[data-grade=e5]').click() // tanked E5 this time
     })
+    cy.get('@share').should('have.been.calledWithMatch', { title: 'ARAL', url: 'https://www.google.com/maps/search/?api=1&query=50.1031,8.7601' })
     cy.contains('.field', 'Price per').find('input').should('have.value', '1.799')
     cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'ARAL, Frankfurter Str. 12, 63067 Offenbach')
     cy.contains('.field', 'Fuel Subtype').find('select').should('have.value', '95')
@@ -389,6 +397,7 @@ describe('hammond UI', () => {
     // fake HA on 127.0.0.1:3999 (tests/fake_fuelprices.py); each user connects their own HA in Settings
     visit('/settings')
     cy.get('.my-price-profiles').should('contain', 'My fuel price profiles')
+    cy.get('.station-radius input').should('have.value', '2')
     cy.get('.home-assistant input[type=url]').clear().type('http://127.0.0.1:3999')
     cy.get('.home-assistant input[type=password]').type('ci-ha-token')
     cy.get('.home-assistant button[type=submit]').click()

@@ -16,6 +16,7 @@ type UpdateSettingModel struct {
 	DetectionDuplicateMode *string `json:"detectionDuplicateMode" form:"detectionDuplicateMode" binding:"omitempty,oneof=ask manual detection"`
 	ShowFillupTime         *bool   `json:"showFillupTime" form:"showFillupTime"`
 	StationSuggestions     *string `json:"stationSuggestions" form:"stationSuggestions" binding:"omitempty,oneof=location button off"`
+	StationRadiusKm        *int    `json:"stationRadiusKm" form:"stationRadiusKm" binding:"omitempty,min=1,max=25"`
 	CustomFuelSubtypes     *string `json:"customFuelSubtypes" form:"customFuelSubtypes" binding:"omitempty,max=1000"`
 }
 

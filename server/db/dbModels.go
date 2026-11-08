@@ -31,6 +31,8 @@ type User struct {
 	// station prices in the fill-up form: "" = button + stations near a detection's location,
 	// "button" = only the "stations nearby" button, "off"
 	StationSuggestions string `json:"stationSuggestions"`
+	// search radius of "Stations nearby" in km (1–25)
+	StationRadiusKm int `gorm:"default:2" json:"stationRadiusKm"`
 	// own fuel subtypes for the fill-up drop-down ("Q Max 95"), newline-separated
 	CustomFuelSubtypes string `json:"customFuelSubtypes"`
 	// own station price profiles (JSON like Setting.FuelPriceProfiles, keys included; never sent as is)

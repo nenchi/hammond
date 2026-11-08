@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 STATIONS = [
     {"id": "aral", "name": "ARAL Tankstelle", "brand": "ARAL", "street": "Frankfurter Str.", "houseNumber": "12",
-     "postCode": 63067, "place": "Offenbach", "dist": 0.4, "diesel": 1.629, "e5": 1.799, "e10": 1.739, "isOpen": True},
+     "postCode": 63067, "place": "Offenbach", "lat": 50.1031, "lng": 8.7601, "dist": 0.4, "diesel": 1.629, "e5": 1.799, "e10": 1.739, "isOpen": True},
     {"id": "free", "name": "Freie Tankstelle", "brand": "", "street": "Hafen", "houseNumber": "", "postCode": 63067,
      "place": "Offenbach", "dist": 1.1, "diesel": 1.599, "e5": 1.769, "e10": False, "isOpen": True},
 ]
