@@ -116,6 +116,29 @@ describe('hammond UI', () => {
   })
 
   // upstream bug: on a phone the Stats chart kept reloading and growing forever
+  it('dark theme on a phone: fill-up cards are dark, not white', () => {
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, theme: 'dark' } })
+    cy.viewport(375, 667)
+    visit(`/vehicles/${vehicleId}`)
+    cy.get('.b-table .table-wrapper.has-mobile-cards tbody tr').should('have.length.at.least', 2).each(($tr) =>
+      expect(getComputedStyle($tr[0]).backgroundColor, 'card background').to.not.eq('rgb(255, 255, 255)')
+    )
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, theme: 'light' } })
+  })
+
+  it('phone: API key list fits, Revoke is inside the box', () => {
+    cy.request({ method: 'POST', url: '/api/me/apikeys', headers: apiHeaders, body: { name: 'phone layout' } })
+    cy.viewport(375, 667)
+    visit('/settings')
+    cy.get('.api-keys').then(($box) => {
+      const box = $box[0].getBoundingClientRect()
+      cy.get('.api-key-list').contains('button', 'Revoke').then(($b) => {
+        const b = $b[0].getBoundingClientRect()
+        expect(b.right, 'Revoke inside the API keys box').to.be.at.most(box.right)
+      })
+    })
+  })
+
   it('mobile: stats chart loads once and keeps its size', () => {
     cy.viewport(375, 667)
     cy.intercept('GET', '/api/vehicles/*/mileage*').as('mileage')
@@ -207,6 +230,7 @@ describe('hammond UI', () => {
     cy.contains('td', 'Website').next().find('a').should('have.attr', 'href', 'https://github.com/nenchi/hammond')
     cy.contains('td', 'Found a bug').next().find('a').should('have.attr', 'href', 'https://github.com/nenchi/hammond/issues')
     cy.contains('td', 'Based on').next().find('a').first().should('have.attr', 'href', 'https://github.com/akhilrex/hammond')
+    cy.contains('td', 'Support this fork').next().find('a').should('have.attr', 'href', 'https://paypal.me/nenadd26')
   })
 
   it('logs out, and a wrong password is refused', () => {

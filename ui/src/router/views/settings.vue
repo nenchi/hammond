@@ -269,12 +269,19 @@ export default {
               <p class="control"><b-button tag="input" native-type="submit" type="is-primary" value="Create key"></b-button></p>
             </b-field>
           </form>
-          <table v-if="apiKeys.length" class="table is-fullwidth mt-3">
+          <!-- two columns so it fits a phone: name + details stacked, Revoke on the right -->
+          <table v-if="apiKeys.length" class="table is-fullwidth mt-3 api-key-list">
             <tr v-for="k in apiKeys" :key="k.id">
-              <td>{{ k.name }}</td>
-              <td><code>{{ k.prefix }}…</code></td>
-              <td>{{ k.lastUsedAt ? 'used ' + parseAndFormatDateTime(k.lastUsedAt) : 'never used' }}</td>
-              <td><a class="has-text-danger" @click="revokeApiKey(k)">Revoke</a></td>
+              <td>
+                <strong>{{ k.name }}</strong><br />
+                <small
+                  ><code>{{ k.prefix }}…</code> ·
+                  {{ k.lastUsedAt ? 'used ' + parseAndFormatDateTime(k.lastUsedAt) : 'never used' }}</small
+                >
+              </td>
+              <td class="has-text-right" style="vertical-align: middle; white-space: nowrap">
+                <b-button size="is-small" type="is-danger" outlined @click="revokeApiKey(k)">Revoke</b-button>
+              </td>
             </tr>
           </table>
         </div>
@@ -305,6 +312,10 @@ export default {
           <tr>
             <td>Feature Request</td>
             <td><a :href="`${repo}/issues`" target="_blank" rel="noopener noreferrer">Request here</a></td>
+          </tr>
+          <tr>
+            <td>Support this fork</td>
+            <td><a href="https://paypal.me/nenadd26" target="_blank" rel="noopener noreferrer">Buy me a coffee (PayPal)</a></td>
           </tr>
           <tr>
             <td>Based on</td>
