@@ -389,10 +389,12 @@ describe('hammond UI', () => {
     visit('/admin/settings')
     cy.get('.home-assistant input[type=url]').clear().type('http://127.0.0.1:3999')
     cy.get('.home-assistant input[type=password]').type('ci-ha-token')
-    cy.get('.home-assistant input[type=submit]').click()
+    cy.get('.home-assistant button[type=submit]').click()
     cy.contains('Home Assistant settings saved')
     cy.get('.home-assistant input[type=password]').should('have.value', '').and('have.attr', 'placeholder', '••••••••')
     cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-ha-token')
+    cy.get('.home-assistant').contains('button', 'Test connection').click()
+    cy.get('.ha-test-result').should('contain', '✓ Connected to CI Home (2026.11.1)')
     cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
       cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, odometerEntity: 'sensor.ci_odometer' } }))
     visit(`/vehicles/${vehicleId}/edit`)

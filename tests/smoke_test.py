@@ -226,6 +226,8 @@ s, r = call("GET", f"/api/vehicles/{vid}/odometer", token=tok)
 check("odometer: not configured without HA", s == 200 and r["configured"] is False, (s, r))
 s, st = call("POST", "/api/settings/homeAssistant", {"url": "http://127.0.0.1:3999", "token": "ci-ha-token"}, token=tok)
 check("admin sets HA; token not echoed", s == 200 and st.get("haTokenSet") is True and "ci-ha-token" not in json.dumps(st), (s, st))
+s, r = call("GET", "/api/settings/homeAssistant/test", token=tok)
+check("admin: HA test connection", s == 200 and r["ok"] and r["name"] == "CI Home", (s, r))
 s, _ = call("POST", "/api/settings/homeAssistant", {"url": "http://x.example", "token": "x"}, token=ptok)
 check("non-admin can't change HA", s == 401, s)
 veh = {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia", "fuelUnit": 0, "fuelType": 1,

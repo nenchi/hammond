@@ -132,3 +132,50 @@ func HAPriceHistory(entity string, start, end time.Time) ([]PricePoint, error) {
 	}
 	return out, nil
 }
+
+type HATestResult struct {
+	OK       bool   `json:"ok"`
+	Error    string `json:"error,omitempty"`
+	Name     string `json:"name,omitempty"` // HA location name
+	Version  string `json:"version,omitempty"`
+	Odometer string `json:"odometer,omitempty"` // first vehicle with an odometer entity: its value
+}
+
+// TestHomeAssistant (admin "Test connection"): the saved URL + token against /api/config, and the
+// odometer of the first vehicle that has an entity set
+func TestHomeAssistant() HATestResult {
+	s := db.GetOrCreateSetting()
+	if s.HAURL == "" || s.HAToken == "" {
+		return HATestResult{Error: "save the URL and the token first"}
+	}
+	req, _ := http.NewRequest("GET", strings.TrimRight(s.HAURL, "/")+"/api/config", nil)
+	req.Header.Set("Authorization", "Bearer "+s.HAToken)
+	resp, err := haClient.Do(req)
+	if err != nil {
+		return HATestResult{Error: "Home Assistant not reachable: " + strings.ReplaceAll(err.Error(), s.HAToken, "***")}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return HATestResult{Error: "Home Assistant refused the token (401)"}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return HATestResult{Error: fmt.Sprintf("Home Assistant answered HTTP %d (is the URL the HA base URL?)", resp.StatusCode)}
+	}
+	var cfg struct {
+		Name    string `json:"location_name"`
+		Version string `json:"version"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&cfg) != nil {
+		return HATestResult{Error: "the URL answers, but not like Home Assistant"}
+	}
+	r := HATestResult{OK: true, Name: cfg.Name, Version: cfg.Version}
+	var vs []db.Vehicle
+	if db.DB.Where("odometer_entity <> ''").Limit(1).Find(&vs); len(vs) > 0 {
+		if o, err := CurrentOdometer(&vs[0]); err != nil {
+			r.Odometer = fmt.Sprintf("%s: %s", vs[0].Nickname, err)
+		} else {
+			r.Odometer = fmt.Sprintf("%s: %s = %g %s", vs[0].Nickname, o.Entity, o.Value, o.Unit)
+		}
+	}
+	return r
+}

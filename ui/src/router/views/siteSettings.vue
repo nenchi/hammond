@@ -46,6 +46,8 @@ export default {
       evccResult: null,
       syncing: false,
       haTokenSet: !!this.settings.haTokenSet,
+      haTest: null,
+      haTesting: false,
       testing: false,
     }
   },
@@ -114,6 +116,16 @@ export default {
         })
         .catch((ex) => (this.evccResult = { ok: false, error: this.errorText(ex) }))
         .finally(() => (this.syncing = false))
+    },
+    // asks Home Assistant with the saved URL + token (and reads the first vehicle's odometer)
+    testHomeAssistant() {
+      this.haTesting = true
+      this.haTest = null
+      axios
+        .get('/api/settings/homeAssistant/test')
+        .then(({ data }) => (this.haTest = data))
+        .catch((ex) => (this.haTest = { ok: false, error: this.errorText(ex) }))
+        .finally(() => (this.haTesting = false))
     },
     saveHomeAssistant() {
       axios
@@ -256,7 +268,19 @@ export default {
       <b-field label="Access token" :message="haTokenSet ? 'A token is set; leave empty to keep it, enter - to remove it.' : ''">
         <b-input v-model="haModel.token" type="password" password-reveal :placeholder="haTokenSet ? '••••••••' : ''"></b-input>
       </b-field>
-      <b-button tag="input" native-type="submit" type="is-primary" value="Save Home Assistant" expanded></b-button>
+      <div class="buttons">
+        <b-button native-type="submit" type="is-primary">Save Home Assistant</b-button>
+        <b-button class="test-ha" :loading="haTesting" :disabled="!haTokenSet" @click="testHomeAssistant">Test connection</b-button>
+      </div>
+      <p class="help">Test uses the saved URL and token: save first.</p>
+      <b-notification v-if="haTest" :type="haTest.ok ? 'is-success' : 'is-danger'" :closable="false" class="ha-test-result mt-2">
+        <template v-if="haTest.ok"
+          >✓ Connected to {{ haTest.name || 'Home Assistant' }} ({{ haTest.version }})<span v-if="haTest.odometer"
+            ><br />Odometer {{ haTest.odometer }}</span
+          ></template
+        >
+        <template v-else>✗ {{ haTest.error }}</template>
+      </b-notification>
     </form>
     <form class="box evcc" @submit.prevent="saveEvcc">
       <h1 class="subtitle">EVCC</h1>
