@@ -3,6 +3,7 @@ import { filter } from 'lodash'
 
 import { parseISO } from 'date-fns'
 export const state = {
+  detections: [],
   vehicles: [],
   roleMasters: [],
   fuelUnitMasters: [],
@@ -41,6 +42,9 @@ export const mutations = {
   CACHE_CURRENCY_MASTERS(state, masters) {
     state.currencyMasters = masters
   },
+  CACHE_DETECTIONS(state, detections) {
+    state.detections = detections
+  },
   CACHE_QUICK_ENTRIES(state, entries) {
     state.quickEntries = entries
   },
@@ -56,6 +60,7 @@ export const actions = {
       dispatch('fetchVehicles')
       dispatch('fetchMasters')
       dispatch('fetchQuickEntries', { force: true })
+      dispatch('fetchDetections')
     }
   },
   fetchMasters({ commit, state, rootState }) {
@@ -75,6 +80,13 @@ export const actions = {
       const data = response.data
       commit('CACHE_VEHICLE', data)
       return data
+    })
+  },
+  // pending fill-up detections (Home Assistant etc.), for the "Detected" menu badge and page
+  fetchDetections({ commit }) {
+    return axios.get('/api/detections').then((response) => {
+      commit('CACHE_DETECTIONS', response.data || [])
+      return response.data
     })
   },
   fetchQuickEntries({ commit, state, rootState }, { force }) {
