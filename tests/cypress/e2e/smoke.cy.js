@@ -425,6 +425,7 @@ describe('hammond UI', () => {
         visit('/charging')
         cy.contains('.charging-place', 'Home').click()
         cy.get('.tariff-rules tbody tr').should('have.length', 1)
+        cy.get('.charging-place').should('not.contain', '&nbsp;') // spacer labels, not literal text
         cy.contains('button', 'Rule').click()
         cy.get('.tariff-rules tbody tr').should('have.length', 2) // not saved
 

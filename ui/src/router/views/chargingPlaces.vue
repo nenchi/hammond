@@ -154,7 +154,7 @@ export default {
           <b-field label="Latitude"><b-input v-model="p.lat" type="number" step="any"></b-input></b-field>
           <b-field label="Longitude"><b-input v-model="p.lng" type="number" step="any"></b-input></b-field>
           <b-field label="Radius (m)"><b-input v-model.number="p.radiusM" type="number" min="10" step="10"></b-input></b-field>
-          <b-field label="&nbsp;"><b-button icon-left="map-marker-alt" @click="hereAsPosition(p)">Here</b-button></b-field>
+          <b-field :label="'\u00a0'"><b-button icon-left="map-marker-alt" @click="hereAsPosition(p)">Here</b-button></b-field>
         </b-field>
         <b-field
           label="Home Assistant price sensor (optional)"
@@ -166,7 +166,7 @@ export default {
           <b-field grouped group-multiline>
             <b-field label="Part" expanded><b-input v-model="c.name" placeholder="Energy / Network"></b-input></b-field>
             <b-field label="Default price / kWh"><b-input v-model.number="c.price" type="number" step="any"></b-input></b-field>
-            <b-field label="&nbsp;"><b-button type="is-danger" outlined icon-left="trash" @click="p.components.splice(ci, 1)"></b-button></b-field>
+            <b-field :label="'\u00a0'"><b-button type="is-danger" outlined icon-left="trash" @click="p.components.splice(ci, 1)"></b-button></b-field>
           </b-field>
           <div class="table-container">
             <table v-if="c.rules.length" class="table is-narrow is-fullwidth tariff-rules">
