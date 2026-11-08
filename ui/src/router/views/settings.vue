@@ -33,6 +33,9 @@ export default {
       apiKeys: [],
       newKeyName: 'Home Assistant',
       createdKey: null,
+      // set at build time from the VERSION file (Dockerfile)
+      appVersion: process.env.VUE_APP_VERSION || 'dev',
+      repo: 'https://github.com/nenchi/hammond',
       tryingToSave: false,
       changePassModel: {
         old: '',
@@ -289,37 +292,27 @@ export default {
         <table class="table is-hoverable">
           <tr>
             <td>Current Version</td>
-            <td>2022.07.06</td>
+            <td class="app-version">{{ appVersion }}</td>
           </tr>
           <tr>
             <td>Website</td>
-            <td><a href="https://github.com/akhilrex/hammond" target="_blank">https://github.com/akhilrex/hammond</a></td>
+            <td><a :href="repo" target="_blank" rel="noopener noreferrer">{{ repo }}</a></td>
           </tr>
           <tr>
             <td>Found a bug</td>
-            <td
-              ><a
-                href="https://github.com/akhilrex/hammond/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc"
-                target="_blank"
-                rel="noopener noreferrer"
-                >Report here</a
-              ></td
-            >
+            <td><a :href="`${repo}/issues`" target="_blank" rel="noopener noreferrer">Report here</a></td>
           </tr>
           <tr>
             <td>Feature Request</td>
-            <td
-              ><a
-                href="https://github.com/akhilrex/hammond/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc"
-                target="_blank"
-                rel="noopener noreferrer"
-                >Request here</a
-              ></td
-            >
+            <td><a :href="`${repo}/issues`" target="_blank" rel="noopener noreferrer">Request here</a></td>
           </tr>
           <tr>
-            <td>Support the developer</td>
-            <td><a href="https://www.buymeacoffee.com/akhilrex" target="_blank" rel="noopener noreferrer">Buy him a beer!</a></td>
+            <td>Based on</td>
+            <td
+              ><a href="https://github.com/akhilrex/hammond" target="_blank" rel="noopener noreferrer">akhilrex/hammond</a> by Akhil
+              Gupta ·
+              <a href="https://www.buymeacoffee.com/akhilrex" target="_blank" rel="noopener noreferrer">support him</a></td
+            >
           </tr>
         </table>
       </div>

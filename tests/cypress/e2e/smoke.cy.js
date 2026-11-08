@@ -201,6 +201,14 @@ describe('hammond UI', () => {
       .its('body').should((fs) => expect(fs.find((f) => f.odoReading === 20640).fuelQuantity).to.eq(42.5))
   })
 
+  it('settings show this version and the fork, crediting upstream', () => {
+    visit('/settings')
+    cy.get('.app-version').invoke('text').should('match', /^\d+\.\d+\.\d+$/)
+    cy.contains('td', 'Website').next().find('a').should('have.attr', 'href', 'https://github.com/nenchi/hammond')
+    cy.contains('td', 'Found a bug').next().find('a').should('have.attr', 'href', 'https://github.com/nenchi/hammond/issues')
+    cy.contains('td', 'Based on').next().find('a').first().should('have.attr', 'href', 'https://github.com/akhilrex/hammond')
+  })
+
   it('logs out, and a wrong password is refused', () => {
     visit('/logout')
     cy.location('pathname').should('eq', '/login')
