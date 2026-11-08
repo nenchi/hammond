@@ -16,6 +16,8 @@ export default {
       kinds: {
         tankerkoenig: { label: 'Germany – Tankerkönig', url: 'https://creativecommons.tankerkoenig.de/json', key: true },
         econtrol: { label: 'Austria – E-Control', url: 'https://api.e-control.at/sprit/1.0', key: false },
+        goriva: { label: 'Slovenia – goriva.si', url: 'https://goriva.si/api/v1', key: false },
+        mzoe: { label: 'Croatia – MZOE', url: 'https://webservis.mzoe-gor.hr/data.gz', key: false },
         custom: { label: 'Custom (Tankerkönig-compatible)', url: '', key: true },
       },
       testResult: null,
@@ -33,7 +35,7 @@ export default {
       return (list || []).map((p) => ({ id: p.id, name: p.name, kind: p.kind, url: p.url || '', apiKey: '', keySet: p.keySet, shared: !p.private }))
     },
     addProfile(kind) {
-      const names = { tankerkoenig: 'Germany – Tankerkönig', econtrol: 'Austria – E-Control', custom: 'Custom' }
+      const names = { tankerkoenig: 'Germany – Tankerkönig', econtrol: 'Austria – E-Control', goriva: 'Slovenia – goriva.si', mzoe: 'Croatia – MZOE', custom: 'Custom' }
       this.profiles.push({ id: '', name: names[kind], kind, url: '', apiKey: '', keySet: false, shared: true })
     },
     move(i, d) {

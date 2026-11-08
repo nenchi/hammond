@@ -99,6 +99,13 @@ export default {
     label(g) {
       return GRADES[g] || g
     },
+    // Android: geo: opens the app chooser (Google Maps, Waze, OsmAnd…); elsewhere Google Maps directions
+    navUrl(st) {
+      const ll = `${st.lat},${st.lng}`
+      return /Android/i.test(navigator.userAgent)
+        ? `geo:${ll}?q=${ll}(${encodeURIComponent(st.brand || st.name)})`
+        : `https://www.google.com/maps/dir/?api=1&destination=${ll}`
+    },
     // tapping the station takes its preferred grade; tapping a price takes that grade
     pick(st, grade) {
       grade = grade || st.grade
@@ -144,6 +151,9 @@ export default {
           <strong>{{ st.brand || st.name }}</strong>
           <b-tag v-if="!st.isOpen" size="is-small">closed</b-tag><br />
           <small>{{ st.address }} · {{ st.dist.toFixed(1) }} km</small>
+          <a v-if="st.lat || st.lng" :href="navUrl(st)" target="_blank" rel="noopener" class="navigate ml-1" title="Navigate" @click.stop
+            ><b-icon icon="directions" size="is-small"></b-icon
+          ></a>
         </span>
         <span class="ml-2 has-text-right prices">
           <template v-if="Object.keys(st.prices).length">

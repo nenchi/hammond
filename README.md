@@ -59,10 +59,12 @@ to complete it. If the last reading before the fill-up was taken many km earlier
 *check quantity*.
 
 **Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
-[Tankerkönig](https://creativecommons.tankerkoenig.de), or any Tankerkönig-compatible URL), the fill-up form has a
+[Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE, no key;
+or any Tankerkönig-compatible URL; the first profile with stations nearby answers), the fill-up form has a
 **Stations nearby** button (uses the phone's location) and, if the detection sent a position (blueprint input
 *Location*: your phone's `device_tracker`, or the car's), lists the stations near it. Picking one fills in station,
-price and grade (per vehicle: E5 / E10 / Diesel). Prices are the current ones: a suggestion, check the receipt.
+price and grade (per vehicle: E5 / E10 / Diesel); the arrow next to the address opens navigation to the station
+(on Android any navigation app). Prices are the current ones: a suggestion, check the receipt.
 Prices: MTS-K via Tankerkönig (CC BY 4.0).
 
 **3. Any other system**

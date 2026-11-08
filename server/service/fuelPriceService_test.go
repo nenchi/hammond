@@ -1,6 +1,7 @@
 package service
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -70,7 +71,7 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	if first.ID != "c" || *first.Price != 1.729 || first.IsOpen || second.ID != "a" || last.ID != "b" || last.Price != nil {
 		t.Fatalf("order/prices wrong: %+v %+v %+v", first, second, last)
 	}
-	if second.Address != "Frankfurter Str. 12, 63067 Offenbach" || second.Brand != "ARAL" {
+	if second.Address != "Frankfurter Str. 12, 63067 Offenbach" || second.Brand != "ARAL" || second.Lat != 50.1 || second.Lng != 8.76 {
 		t.Fatalf("address/brand: %+v", second)
 	}
 
@@ -396,4 +397,83 @@ func TestMoveSiteConnectionsToAdmin(t *testing.T) {
 		t.Fatalf("moved: %+v", u)
 	}
 	MoveSiteConnectionsToAdmin() // twice: nothing happens
+}
+
+// fake goriva.si (Slovenia) and mzoe-gor.hr (Croatia, gzipped, lat/long swapped like the real file)
+func fakeSIHR(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/search/":
+			if r.URL.Query().Get("position") == "" || r.URL.Query().Get("radius") != "2000" {
+				t.Errorf("unexpected request %s", r.URL)
+			}
+			if !strings.HasPrefix(r.URL.Query().Get("position"), "46.05") {
+				w.Write([]byte(`{"count":0,"results":[]}`))
+				return
+			}
+			w.Write([]byte(`{"count":2,"results":[
+			  {"pk":2048,"name":"PETROL LJUBLJANA - TIVOLSKA","address":"TIVOLSKA CESTA 43","zip_code":"1000","distance":936.2,"lat":46.058,"lng":14.503,
+			   "prices":{"95":1.626,"dizel":1.949,"98":null,"100":1.996}},
+			  {"pk":7,"name":"OMV","address":"X","zip_code":"1000","distance":1500,"prices":{"95":null,"dizel":1.9}}]}`))
+		case "/data.gz":
+			gz := gzip.NewWriter(w)
+			gz.Write([]byte(`{"postajas":[
+			  {"id":1223,"naziv":"BP ZAGREB","adresa":"ILICA 1","mjesto":"ZAGREB","obveznik_id":5,"long":"45.8150","lat":"15.9819",
+			   "cjenici":[{"gorivo_id":10,"cijena":1.55},{"gorivo_id":11,"cijena":1.49},{"gorivo_id":12,"cijena":1.6},{"gorivo_id":13,"cijena":0.9}]},
+			  {"id":2,"naziv":"Not swapped","adresa":"A","mjesto":"ZAGREB","obveznik_id":9,"lat":"45.8200","long":"15.9819","cjenici":[]},
+			  {"id":3,"naziv":"DMS","adresa":"B","mjesto":"ZAGREB","obveznik_id":9,"lat":"15° 31.2440' E","long":"45.8150","cjenici":[]},
+			  {"id":4,"naziv":"Split","adresa":"C","mjesto":"SPLIT","obveznik_id":9,"lat":"16.44","long":"43.51","cjenici":[]}],
+			 "gorivos":[{"id":10,"vrsta_goriva_id":1},{"id":11,"vrsta_goriva_id":2},{"id":12,"vrsta_goriva_id":8},{"id":13,"vrsta_goriva_id":9}],
+			 "obvezniks":[{"id":5,"naziv":"Tifon d.o.o."}]}`))
+			gz.Close()
+		default:
+			t.Errorf("unexpected request %s", r.URL)
+		}
+	}))
+}
+
+func TestSloveniaCroatia(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 43)
+	srv := fakeSIHR(t)
+	defer srv.Close()
+	if err := UpdatePriceProfiles([]db.PriceProfile{
+		{ID: "si", Name: "Slovenia", Kind: "goriva", URL: srv.URL + "/api/v1"},
+		{ID: "hr", Name: "Croatia", Kind: "mzoe", URL: srv.URL + "/data.gz"}}); err != nil {
+		t.Fatal(err)
+	}
+	v.FuelGrade = "e10,e5,diesel"
+	res, err := NearbyStations(u.ID, &v, 46.05, 14.5, 2, "")
+	if err != nil || res.Profile != "si" || len(res.Stations) != 2 || res.Attribution != "Prices: goriva.si" {
+		t.Fatalf("Ljubljana: Slovenia answers: %+v %v", res, err)
+	}
+	st := res.Stations[0]
+	if st.ID != "2048" || st.Grade != "e10" || st.Prices["e10"] != 1.626 || st.Prices["diesel"] != 1.949 || len(st.Prices) != 2 ||
+		st.Dist != 0.9362 || st.Address != "TIVOLSKA CESTA 43, 1000" || !st.IsOpen || st.Lat != 46.058 || st.Lng != 14.503 {
+		t.Fatalf("95 → first petrol grade, dizel → diesel, m → km: %+v", st)
+	}
+	if res.Stations[1].Price == nil || res.Stations[1].Grade != "diesel" || len(res.Stations[1].Prices) != 1 {
+		t.Fatalf("null 95 skipped: %+v", res.Stations[1])
+	}
+
+	// Zagreb: Slovenia has nothing, Croatia answers; swapped and unswapped coordinates both work, DMS and Split dropped
+	res, err = NearbyStations(u.ID, &v, 45.8150, 15.9819, 2, "")
+	if err != nil || res.Profile != "hr" || len(res.Stations) != 2 || !strings.Contains(res.Attribution, "mzoe") {
+		t.Fatalf("Zagreb: Croatia answers: %+v %v", res, err)
+	}
+	st = res.Stations[0]
+	if st.ID != "1223" || st.Brand != "Tifon d.o.o." || st.Dist > 0.01 || st.Prices["e10"] != 1.49 || st.Prices["diesel"] != 1.6 ||
+		len(st.Prices) != 2 || st.Address != "ILICA 1, ZAGREB" || st.Lat != 45.815 || st.Lng != 15.9819 {
+		t.Fatalf("cheaper Eurosuper 95 wins, LPG ignored: %+v", st)
+	}
+	if res.Stations[1].ID != "2" || res.Stations[1].Price != nil || res.Stations[1].Dist < 0.5 || res.Stations[1].Dist > 0.6 {
+		t.Fatalf("unswapped station ~0.56 km, no price: %+v", res.Stations[1])
+	}
+
+	// same place, other vehicle grades: not served from the first vehicle's cache
+	v.FuelGrade = "e5"
+	res, err = NearbyStations(u.ID, &v, 45.8150, 15.9819, 2, "hr")
+	if err != nil || res.Stations[0].Grade != "e5" || res.Stations[0].Prices["e5"] != 1.49 {
+		t.Fatalf("cache must be per grade list: %+v %v", res, err)
+	}
 }

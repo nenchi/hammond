@@ -1,9 +1,12 @@
 package service
 
 import (
+	"compress/gzip"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -19,12 +22,14 @@ import (
 
 // Station prices from a list of profiles (Admin → Site settings), tried in order: the first one with
 // stations near the position wins, so no country borders are needed (each API only knows its country).
-// Kinds: "tankerkoenig" (Germany, free key), "econtrol" (Austria, no key) and "custom" (any URL speaking
-// the Tankerkönig list.php format).
+// Kinds: "tankerkoenig" (Germany, free key), "econtrol" (Austria, no key), "goriva" (Slovenia, no key),
+// "mzoe" (Croatia, no key) and "custom" (any URL speaking the Tankerkönig list.php format).
 
 const (
 	TankerkoenigURL = "https://creativecommons.tankerkoenig.de/json"
 	EControlURL     = "https://api.e-control.at/sprit/1.0"
+	GorivaURL       = "https://goriva.si/api/v1"
+	MzoeURL         = "https://webservis.mzoe-gor.hr/data.gz"
 )
 
 type Station struct {
@@ -32,7 +37,9 @@ type Station struct {
 	Name    string             `json:"name"`
 	Brand   string             `json:"brand"`
 	Address string             `json:"address"`
-	Dist    float64            `json:"dist"`   // km
+	Dist    float64            `json:"dist"` // km
+	Lat     float64            `json:"lat"`  // 0/0 = unknown (no navigation link)
+	Lng     float64            `json:"lng"`
 	Prices  map[string]float64 `json:"prices"` // accepted grades this station sells
 	Price   *float64           `json:"price"`  // the preferred grade's price, or the first accepted one it sells
 	Grade   string             `json:"grade"`  // grade of Price
@@ -105,7 +112,7 @@ var (
 // one station as every kind delivers it: prices per grade (e5/e10/diesel) it sells
 type rawStation struct {
 	ID, Name, Brand, Address string
-	Dist                     float64
+	Dist, Lat, Lng           float64
 	Prices                   map[string]float64
 	IsOpen                   bool
 }
@@ -205,7 +212,7 @@ func PublicAvailableProfiles(userID string) []db.PriceProfile {
 // UserPriceProfiles: the user's own list for their settings page
 func UserPriceProfiles(userID string) []db.PriceProfile { return public(userProfiles(getUser(userID))) }
 
-var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "custom": ""}
+var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "goriva": GorivaURL, "mzoe": MzoeURL, "custom": ""}
 
 // normalizeProfiles checks a list; keys: "" keeps the old one of the same id, "-" removes it.
 // freshIDs (users' own lists): an id the list didn't have gets a new one, so a user's profile never
@@ -345,8 +352,8 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 	}
 	base = strings.TrimRight(base, "/")
 	extra := ""
-	if p.Kind == "econtrol" {
-		extra = strings.Join(eControlTypes(grades), ",") // one request per fuel type there
+	if p.Kind == "econtrol" || p.Kind == "goriva" || p.Kind == "mzoe" {
+		extra = strings.Join(grades, ",") // prices are stored under the vehicle's grades (95 → first petrol one)
 	}
 	key := cacheKey(p, extra, lat, lng, rad)
 	stationCacheMu.Lock()
@@ -354,10 +361,17 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 	stationCacheMu.Unlock()
 	if !ok || time.Since(c.at) > 5*time.Minute {
 		var err error
-		if p.Kind == "econtrol" {
+		switch p.Kind {
+		case "econtrol":
 			c.res, err = fetchEControl(base, grades, lat, lng, rad)
 			c.lic = "Prices: E-Control Spritpreisrechner (only the 5 cheapest stations show a price)"
-		} else {
+		case "goriva":
+			c.res, err = fetchGoriva(base, grades, lat, lng, rad)
+			c.lic = "Prices: goriva.si"
+		case "mzoe":
+			c.res, err = fetchMzoe(base, grades, lat, lng, rad)
+			c.lic = "Prices: Ministarstvo gospodarstva (mzoe-gor.hr)"
+		default:
 			c.res, c.lic, err = fetchTankerkoenig(base, p.APIKey, lat, lng, rad)
 			if p.Kind == "tankerkoenig" {
 				c.lic = "Prices: MTS-K via Tankerkönig (CC BY 4.0)"
@@ -387,7 +401,7 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 			}
 		}
 		res.Stations = append(res.Stations, Station{ID: st.ID, Name: st.Name, Brand: st.Brand, Address: st.Address,
-			Dist: st.Dist, Prices: prices, Price: price, Grade: chosen, IsOpen: st.IsOpen})
+			Dist: st.Dist, Lat: st.Lat, Lng: st.Lng, Prices: prices, Price: price, Grade: chosen, IsOpen: st.IsOpen})
 	}
 	// stations that sell the grade first, then by distance
 	sort.SliceStable(res.Stations, func(i, j int) bool {
@@ -411,6 +425,8 @@ type tkStation struct {
 	PostCode    json.RawMessage `json:"postCode"`
 	Place       string          `json:"place"`
 	Dist        float64         `json:"dist"`
+	Lat         float64         `json:"lat"`
+	Lng         float64         `json:"lng"`
 	E5          json.RawMessage `json:"e5"`
 	E10         json.RawMessage `json:"e10"`
 	Diesel      json.RawMessage `json:"diesel"`
@@ -464,7 +480,7 @@ func fetchTankerkoenig(base, apiKey string, lat, lng, rad float64) ([]rawStation
 			addr = strings.Trim(addr+", "+strings.TrimSpace(strings.Trim(string(st.PostCode), `"`)+" "+st.Place), ", ")
 		}
 		out = append(out, rawStation{ID: st.ID, Name: strings.TrimSpace(st.Name), Brand: strings.TrimSpace(st.Brand),
-			Address: addr, Dist: st.Dist, Prices: prices, IsOpen: st.IsOpen})
+			Address: addr, Dist: st.Dist, Lat: st.Lat, Lng: st.Lng, Prices: prices, IsOpen: st.IsOpen})
 	}
 	lic := strings.Trim(strings.TrimSpace(strings.Join([]string{body.Data, body.License}, " · ")), " ·")
 	return out, lic, nil
@@ -504,9 +520,11 @@ func fetchEControl(base string, grades []string, lat, lng, rad float64) ([]rawSt
 			ID       int    `json:"id"`
 			Name     string `json:"name"`
 			Location struct {
-				Address    string `json:"address"`
-				PostalCode string `json:"postalCode"`
-				City       string `json:"city"`
+				Address    string  `json:"address"`
+				PostalCode string  `json:"postalCode"`
+				City       string  `json:"city"`
+				Latitude   float64 `json:"latitude"`
+				Longitude  float64 `json:"longitude"`
 			} `json:"location"`
 			Open     bool    `json:"open"`
 			Distance float64 `json:"distance"`
@@ -528,7 +546,8 @@ func fetchEControl(base string, grades []string, lat, lng, rad float64) ([]rawSt
 			r, ok := byID[id]
 			if !ok {
 				addr := strings.Trim(st.Location.Address+", "+strings.TrimSpace(st.Location.PostalCode+" "+st.Location.City), ", ")
-				r = &rawStation{ID: id, Name: strings.TrimSpace(st.Name), Address: addr, Dist: st.Distance, Prices: map[string]float64{}, IsOpen: st.Open}
+				r = &rawStation{ID: id, Name: strings.TrimSpace(st.Name), Address: addr, Dist: st.Distance,
+					Lat: st.Location.Latitude, Lng: st.Location.Longitude, Prices: map[string]float64{}, IsOpen: st.Open}
 				byID[id] = r
 				order = append(order, id)
 			}
@@ -542,6 +561,141 @@ func fetchEControl(base string, grades []string, lat, lng, rad float64) ([]rawSt
 	out := []rawStation{}
 	for _, id := range order {
 		out = append(out, *byID[id])
+	}
+	return out, nil
+}
+
+// goriva.si (Slovenia): the 25 nearest stations within the radius (metres), nearest first; "95" and
+// "dizel" map like E-Control's SUP/DIE. ponytail: opening hours are free text there, so every station
+// counts as open.
+func fetchGoriva(base string, grades []string, lat, lng, rad float64) ([]rawStation, error) {
+	q := url.Values{"position": {fmt.Sprintf("%f,%f", lat, lng)}, "radius": {fmt.Sprint(int(rad * 1000))}}
+	resp, err := priceClient.Get(base + "/search/?" + q.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("price service not reachable: %s", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Results []struct {
+			PK       int                 `json:"pk"`
+			Name     string              `json:"name"`
+			Address  string              `json:"address"`
+			ZipCode  string              `json:"zip_code"`
+			Lat      float64             `json:"lat"`
+			Lng      float64             `json:"lng"`
+			Distance float64             `json:"distance"` // m
+			Prices   map[string]*float64 `json:"prices"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
+	}
+	out := []rawStation{}
+	for _, st := range body.Results {
+		prices := map[string]float64{}
+		for t, key := range map[string]string{"SUP": "95", "DIE": "dizel"} {
+			if g := eControlGrade(t, grades); g != "" && st.Prices[key] != nil && *st.Prices[key] > 0 {
+				prices[g] = *st.Prices[key]
+			}
+		}
+		out = append(out, rawStation{ID: strconv.Itoa(st.PK), Name: strings.TrimSpace(st.Name),
+			Address: strings.Trim(strings.TrimSpace(st.Address)+", "+st.ZipCode, ", "), Dist: st.Distance / 1000,
+			Lat: st.Lat, Lng: st.Lng, Prices: prices, IsOpen: true})
+	}
+	return out, nil
+}
+
+// mzoe-gor.hr (Croatia): one gzipped JSON of all ~900 stations, filtered by distance here. ponytail:
+// downloaded (~330 kB) on every cache miss of a position; cache the whole file if lookups get frequent.
+// Eurosuper 95 / Eurodizel (with or without additives) map like E-Control's SUP/DIE, the cheaper one wins.
+// Opening hours are ignored (every station counts as open).
+func distanceKm(lat1, lng1, lat2, lng2 float64) float64 {
+	rad := math.Pi / 180
+	a := math.Pow(math.Sin((lat2-lat1)*rad/2), 2) + math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Pow(math.Sin((lng2-lng1)*rad/2), 2)
+	return 6371 * 2 * math.Asin(math.Sqrt(a))
+}
+
+// webservis.mzoe-gor.hr never answers Go's default post-quantum TLS key share (X25519MLKEM768, a large
+// ClientHello); curl and browsers get through. Classic curves only for this host.
+var mzoeClient = &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
+	TLSClientConfig: &tls.Config{CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256}}}}
+
+var mzoeKinds = map[int]string{1: "SUP", 2: "SUP", 7: "DIE", 8: "DIE"} // vrsta_goriva ids
+
+func fetchMzoe(base string, grades []string, lat, lng, rad float64) ([]rawStation, error) {
+	resp, err := mzoeClient.Get(base)
+	if err != nil {
+		return nil, fmt.Errorf("price service not reachable: %s", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Postajas []struct {
+			ID      int    `json:"id"`
+			Naziv   string `json:"naziv"`
+			Adresa  string `json:"adresa"`
+			Mjesto  string `json:"mjesto"`
+			Obv     int    `json:"obveznik_id"`
+			Lat     string `json:"lat"`
+			Long    string `json:"long"`
+			Cjenici []struct {
+				Gorivo int     `json:"gorivo_id"`
+				Cijena float64 `json:"cijena"`
+			} `json:"cjenici"`
+		} `json:"postajas"`
+		Gorivos []struct {
+			ID    int `json:"id"`
+			Vrsta int `json:"vrsta_goriva_id"`
+		} `json:"gorivos"`
+		Obvezniks []struct {
+			ID    int    `json:"id"`
+			Naziv string `json:"naziv"`
+		} `json:"obvezniks"`
+	}
+	var r io.Reader = resp.Body
+	if strings.HasSuffix(base, ".gz") {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
+		}
+		r = gz
+	}
+	if err := json.NewDecoder(r).Decode(&body); err != nil || resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
+	}
+	kind := map[int]string{}
+	for _, g := range body.Gorivos {
+		kind[g.ID] = mzoeKinds[g.Vrsta]
+	}
+	brand := map[int]string{}
+	for _, o := range body.Obvezniks {
+		brand[o.ID] = strings.TrimSpace(o.Naziv)
+	}
+	out := []rawStation{}
+	for _, st := range body.Postajas {
+		a, err1 := strconv.ParseFloat(strings.TrimSpace(st.Lat), 64)
+		b, err2 := strconv.ParseFloat(strings.TrimSpace(st.Long), 64)
+		if err1 != nil || err2 != nil {
+			continue // a few are empty or in degrees/minutes
+		}
+		// "lat" and "long" are swapped for most stations; in Croatia latitude (42–47) > longitude (13–20)
+		sLat, sLng := math.Max(a, b), math.Min(a, b)
+		d := distanceKm(lat, lng, sLat, sLng)
+		if d > rad {
+			continue
+		}
+		prices := map[string]float64{}
+		for _, c := range st.Cjenici {
+			g := eControlGrade(kind[c.Gorivo], grades)
+			if kind[c.Gorivo] == "" || g == "" || c.Cijena <= 0 {
+				continue
+			}
+			if old, ok := prices[g]; !ok || c.Cijena < old {
+				prices[g] = c.Cijena
+			}
+		}
+		out = append(out, rawStation{ID: strconv.Itoa(st.ID), Name: strings.TrimSpace(st.Naziv), Brand: brand[st.Obv],
+			Address: strings.Trim(strings.TrimSpace(st.Adresa)+", "+strings.TrimSpace(st.Mjesto), ", "), Dist: d,
+			Lat: sLat, Lng: sLng, Prices: prices, IsOpen: true})
 	}
 	return out, nil
 }
@@ -560,8 +714,13 @@ func TestFuelPriceProvider(userID, profileID string, lat, lng *float64) (*Statio
 		}
 	}
 	la, ln := 50.1109, 8.6821 // Frankfurt am Main
-	if p.Kind == "econtrol" {
+	switch p.Kind {
+	case "econtrol":
 		la, ln = 48.2082, 16.3738 // Vienna
+	case "goriva":
+		la, ln = 46.0569, 14.5058 // Ljubljana
+	case "mzoe":
+		la, ln = 45.8150, 15.9819 // Zagreb
 	}
 	if lat != nil && lng != nil {
 		la, ln = *lat, *lng
