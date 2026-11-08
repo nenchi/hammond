@@ -43,6 +43,10 @@ type FillupDetection struct {
 	IsTankFull    bool            `json:"isTankFull"`
 	Lat           *float64        `json:"lat"` // where the phone/car was when it was detected (optional)
 	Lng           *float64        `json:"lng"`
+	ExternalID    string          `gorm:"index" json:"externalId"` // e.g. "evcc:42": imported once
+	ChargeEnd     *time.Time      `json:"chargeEnd"`               // electric: when the charge finished
+	PerUnitPrice  *float32        `json:"perUnitPrice"`            // when the source knows the price
+	Station       string          `json:"station"`                 // filling station / charging place
 	Status        DetectionStatus `gorm:"index" json:"status"`
 	FillupID      *string         `json:"fillupId"`      // fill-up it became / was merged into / applied to
 	DuplicateOfID *string         `json:"duplicateOfId"` // existing fill-up it probably duplicates

@@ -55,3 +55,11 @@ type CreateApiKeyRequest struct {
 type ClarksonMigrationModel struct {
 	Url string `json:"url" form:"url" query:"url"`
 }
+
+// UpdateEvccRequest (admin): EVCC connection and import
+type UpdateEvccRequest struct {
+	URL         string     `json:"url" binding:"omitempty,url,max=300"`
+	SyncMinutes int        `json:"syncMinutes" binding:"min=0,max=1440"`
+	PlaceID     string     `json:"placeId" binding:"max=64"`
+	Since       *time.Time `json:"since"`
+}

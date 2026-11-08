@@ -86,6 +86,8 @@ type Vehicle struct {
 	FuelGrade string `json:"fuelGrade"`
 	// Home Assistant entity with the car's odometer (sensor.xyz_odometer): pre-fills new fill-ups
 	OdometerEntity string `json:"odometerEntity"`
+	// vehicle name in EVCC (its title): EVCC sessions of that vehicle are imported for this one
+	EvccVehicle string `json:"evccVehicle"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
 	GaugeSegments int          `gorm:"default:4" json:"gaugeSegments"`
 	GaugeResetAt  *time.Time   `json:"gaugeResetAt"`
@@ -190,6 +192,11 @@ type Setting struct {
 	HAURL      string `json:"haUrl"`
 	HAToken    string `json:"-"`
 	HATokenSet bool   `gorm:"-" json:"haTokenSet"`
+	// EVCC: finished charging sessions become detections (to confirm), priced at EvccPlaceID
+	EvccURL         string     `json:"evccUrl"`
+	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
+	EvccPlaceID     string     `json:"evccPlaceId"`
+	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
 }
 
 // PriceProfile: one station price source, tried in list order (the first with stations nearby wins).
@@ -287,4 +294,38 @@ type Notification struct {
 	ReadDate   *time.Time `json:"readDate"`
 	ParentID   string     `json:"parentId"`
 	ParentType string     `json:"parentType"`
+}
+
+// ChargingPlace: where an electric car charges (home, work, a public charger used often) and how a
+// charge there is priced. Price per kWh = sum of the components (each: first matching rule, else its
+// default price) + the Home Assistant price entity (time-weighted over the charge) when set.
+type ChargingPlace struct {
+	Base
+	Name        string            `json:"name"`
+	Lat         *float64          `json:"lat"` // optional: picked automatically within RadiusM
+	Lng         *float64          `json:"lng"`
+	RadiusM     int               `gorm:"default:200" json:"radiusM"`
+	Components  []TariffComponent `gorm:"serializer:json" json:"components"`
+	PriceEntity string            `json:"priceEntity"` // HA sensor with a price per kWh, e.g. sensor.electricity_price
+	SessionFee  float64           `json:"sessionFee"`  // per charge
+	LossPercent float64           `json:"lossPercent"` // charging loss: billed kWh = kWh in the car / (1 - loss)
+	Holidays    string            `json:"holidays"`    // non-working days, one per line: MM-DD (every year) or YYYY-MM-DD
+}
+
+// TariffComponent: one part of the price, e.g. "Energy" (high/low tariff) or "Network" (time blocks)
+type TariffComponent struct {
+	Name  string       `json:"name"`
+	Price float64      `json:"price"` // when no rule matches
+	Rules []TariffRule `json:"rules"` // first match wins
+}
+
+// TariffRule: months (empty = all), days ("all", "work" = Mon–Fri except holidays, "free" = weekend and
+// holidays), local time window From–To ("HH:MM"; To ≤ From runs past midnight; 00:00–00:00 = all day)
+type TariffRule struct {
+	Label  string  `json:"label"` // e.g. "Block 2" or "NT"
+	Months []int   `json:"months"`
+	Days   string  `json:"days"`
+	From   string  `json:"from"`
+	To     string  `json:"to"`
+	Price  float64 `json:"price"`
 }

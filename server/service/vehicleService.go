@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
@@ -31,6 +32,7 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 		FuelGrade:         grades,
 		GaugeSegments:     model.GaugeSegments,
 		OdometerEntity:    model.OdometerEntity,
+		EvccVehicle:       strings.TrimSpace(model.EvccVehicle),
 	}
 
 	tx := db.DB.Create(&vehicle)
@@ -128,6 +130,7 @@ func UpdateVehicle(vehicleID string, model models.UpdateVehicleRequest) error {
 		return errors.New("odometer entity must look like sensor.car_odometer")
 	}
 	toUpdate.OdometerEntity = model.OdometerEntity
+	toUpdate.EvccVehicle = strings.TrimSpace(model.EvccVehicle)
 	if model.GaugeSegments != 0 {
 		toUpdate.GaugeSegments = model.GaugeSegments
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -86,4 +87,48 @@ func UpdateHomeAssistantSettings(rawURL, token string) error {
 		s.HAToken = strings.TrimSpace(token)
 	}
 	return db.UpdateSettings(s)
+}
+
+// HAPriceHistory: the values of a price entity from start to end (the first one is the value at start),
+// for pricing a charge with a dynamic or block tariff that Home Assistant already knows.
+func HAPriceHistory(entity string, start, end time.Time) ([]PricePoint, error) {
+	s := db.GetOrCreateSetting()
+	if s.HAURL == "" || s.HAToken == "" {
+		return nil, errors.New("Home Assistant is not set up (Admin → Site Settings → Home Assistant)")
+	}
+	if end.Before(start) {
+		end = start
+	}
+	u := fmt.Sprintf("%s/api/history/period/%s?end_time=%s&filter_entity_id=%s&minimal_response&no_attributes",
+		strings.TrimRight(s.HAURL, "/"), url.QueryEscape(start.UTC().Format(time.RFC3339)),
+		url.QueryEscape(end.Add(time.Second).UTC().Format(time.RFC3339)), url.QueryEscape(entity))
+	req, _ := http.NewRequest("GET", u, nil)
+	req.Header.Set("Authorization", "Bearer "+s.HAToken)
+	resp, err := haClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), s.HAToken, "***"))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Home Assistant answered HTTP %d for the price history", resp.StatusCode)
+	}
+	var hist [][]struct {
+		State       string    `json:"state"`
+		LastChanged time.Time `json:"last_changed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&hist); err != nil {
+		return nil, errors.New("Home Assistant answered without valid history")
+	}
+	var out []PricePoint
+	for _, list := range hist {
+		for _, st := range list {
+			if v, err := strconv.ParseFloat(st.State, 64); err == nil {
+				out = append(out, PricePoint{At: st.LastChanged, Price: v})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no price history for %s at that time", entity)
+	}
+	return out, nil
 }
