@@ -42,7 +42,7 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	defer srv.Close()
 
 	v.FuelType, v.FuelGrade = db.PETROL, ""
-	if _, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, ""); err == nil || !strings.Contains(err.Error(), "not set up") {
+	if _, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, ""); err == nil || !strings.Contains(err.Error(), "Tankerkönig key") {
 		t.Fatalf("want 'not set up' without a provider, got %v", err)
 	}
 	custom := func(key string) []db.PriceProfile {
@@ -563,5 +563,49 @@ func TestCountryPicksProfile(t *testing.T) {
 	res, err = NearbyStations(u.ID, &v, 47.07, 15.44, 2, "de")
 	if err != nil || res.Profile != "de" {
 		t.Fatalf("chosen profile is asked: %+v %v", res, err)
+	}
+}
+
+// Austria, Slovenia, Croatia, France and Portugal need no key: they work without any profile, in their
+// country; a profile of the same kind replaces the built-in one; Germany still needs its key
+func TestBuiltinSources(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 43)
+	ec, sihr, geo := fakeEControl(t), fakeSIHR(t), fakeNominatim(t)
+	defer ec.Close()
+	defer sihr.Close()
+	defer geo.Close()
+	GeocodeURL, BuiltinSources = geo.URL, true
+	countryCache = map[string][2]string{}
+	oldEC, oldSI := priceKinds["econtrol"], priceKinds["goriva"]
+	priceKinds["econtrol"], priceKinds["goriva"] = ec.URL+"/sprit/1.0", sihr.URL+"/api/v1"
+	defer func() { priceKinds["econtrol"], priceKinds["goriva"], BuiltinSources = oldEC, oldSI, false }()
+	clearStationCache()
+	v.FuelGrade = "e10,e5,diesel"
+
+	res, err := NearbyStations(u.ID, &v, 46.05, 14.5, 2, "") // no profiles at all
+	if err != nil || res.Profile != "builtin-goriva" || res.ProfileName != "Slovenia – goriva.si" || len(res.Stations) == 0 {
+		t.Fatalf("Slovenia without a profile: %+v %v", res, err)
+	}
+	res, err = NearbyStations(u.ID, &v, 47.07, 15.44, 2, "")
+	if err != nil || res.Profile != "builtin-econtrol" || len(res.Stations) == 0 {
+		t.Fatalf("Austria without a profile: %+v %v", res, err)
+	}
+	if _, err = NearbyStations(u.ID, &v, 41.9, 12.5, 2, ""); err == nil || !strings.Contains(err.Error(), "Italy") {
+		t.Fatalf("Italy has no source: %v", err)
+	}
+	// the list shows them (for the switch), a same-kind profile replaces the built-in one
+	names := func() (out []string) {
+		for _, p := range PublicAvailableProfiles(u.ID) {
+			out = append(out, p.ID)
+		}
+		return
+	}
+	if got := strings.Join(names(), ","); got != "builtin-econtrol,builtin-goriva,builtin-mzoe,builtin-france,builtin-portugal" {
+		t.Fatalf("built-ins: %s", got)
+	}
+	UpdateUserPriceProfiles(u.ID, []db.PriceProfile{{Name: "My SI", Kind: "goriva", URL: sihr.URL + "/api/v1"}})
+	if got := names(); len(got) != 5 || strings.Contains(strings.Join(got, ","), "builtin-goriva") {
+		t.Fatalf("own Slovenia profile replaces the built-in: %v", got)
 	}
 }

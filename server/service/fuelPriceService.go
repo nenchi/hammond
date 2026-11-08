@@ -260,8 +260,25 @@ func AvailablePriceProfiles(userID string) []db.PriceProfile {
 			list = append(list, p)
 		}
 	}
+	// the free sources (no key) work without setup: added last, unless a profile of that kind exists
+	have := map[string]bool{}
+	for _, p := range list {
+		have[p.Kind] = true
+	}
+	for _, kind := range builtinKinds {
+		if BuiltinSources && !have[kind] {
+			list = append(list, db.PriceProfile{ID: "builtin-" + kind, Name: kindLabel[kind], Kind: kind, Builtin: true})
+		}
+	}
 	return list
 }
+
+// builtinKinds: sources without a key, always available (only asked in their country when the country
+// is known; Portugal's whole-country list is only loaded inside Portugal anyway)
+var builtinKinds = []string{"econtrol", "goriva", "mzoe", "france", "portugal"}
+
+// BuiltinSources: off in tests (no real services)
+var BuiltinSources = true
 
 func PublicAvailableProfiles(userID string) []db.PriceProfile {
 	return public(AvailablePriceProfiles(userID))
@@ -370,7 +387,7 @@ func NearbyStations(userID string, vehicle *db.Vehicle, lat, lng, radiusKm float
 		profiles = only
 	}
 	if len(profiles) == 0 {
-		return nil, errors.New("station prices are not set up (Settings → Fuel prices, or ask the admin to share a profile)")
+		return nil, errors.New("no station prices here (Germany needs a free Tankerkönig key: Settings → My fuel price profiles)")
 	}
 	grades := VehicleFuelGrades(vehicle)
 	if len(grades) == 0 {
