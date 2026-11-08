@@ -22,6 +22,7 @@ func main() {
 		fmt.Println("status: ", err)
 	} else {
 		db.Migrate()
+		service.MoveSiteConnectionsToAdmin() // v1.6 site-wide Home Assistant → the admin's own
 	}
 	r := gin.Default()
 

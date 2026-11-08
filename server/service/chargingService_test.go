@@ -111,6 +111,7 @@ func TestValidateChargingPlace(t *testing.T) {
 
 func TestChargingPlaceWithHAPrice(t *testing.T) {
 	setupDB(t)
+	u, _ := mkUserVehicle(t, "", 60)
 	ha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer ha-token" || !strings.HasPrefix(r.URL.Path, "/api/history/period/") ||
 			r.URL.Query().Get("filter_entity_id") != "sensor.price" {
@@ -123,29 +124,68 @@ func TestChargingPlaceWithHAPrice(t *testing.T) {
 		  {"state":"0.10","last_changed":"2026-11-10T23:00:00Z"}]]`))
 	}))
 	defer ha.Close()
-	UpdateHomeAssistantSettings(ha.URL, "ha-token")
-	p, err := SaveChargingPlace(db.ChargingPlace{Name: "Home", PriceEntity: "sensor.price", SessionFee: 1})
+	UpdateHomeAssistantSettings(u.ID, ha.URL, "ha-token")
+	p, err := SaveChargingPlace(u.ID, false, db.ChargingPlace{Name: "Home", PriceEntity: "sensor.price", SessionFee: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 11, 10, 22, 0, 0, 0, time.UTC)
-	q, err := QuoteChargeAt(p.ID, start, start.Add(2*time.Hour), 20, false)
+	q, err := QuoteChargeAt(u.ID, p.ID, start, start.Add(2*time.Hour), 20, false)
 	if err != nil || !near(q.Total, 5.0) { // 10 × 0.30 + 10 × 0.10 + 1 (unavailable ignored)
 		t.Fatalf("want 5.00: %+v %v", q, err)
 	}
-	ps, _ := ListChargingPlaces()
+	ps, _ := ListChargingPlaces(u.ID)
 	if len(ps) != 1 || ps[0].PriceEntity != "sensor.price" {
 		t.Fatalf("list: %+v", ps)
 	}
 	p.Name = "Home 2"
-	if _, err := SaveChargingPlace(*p); err != nil {
+	if _, err := SaveChargingPlace(u.ID, false, *p); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := GetChargingPlace(p.ID); got.Name != "Home 2" {
+	if got, _ := GetChargingPlace(u.ID, p.ID); got.Name != "Home 2" {
 		t.Fatalf("update: %+v", got)
 	}
-	DeleteChargingPlace(p.ID)
-	if _, err := GetChargingPlace(p.ID); err == nil {
+	DeleteChargingPlace(u.ID, false, p.ID)
+	if _, err := GetChargingPlace(u.ID, p.ID); err == nil {
 		t.Fatal("deleted")
+	}
+}
+
+// own places are private; admins share; shared places: everyone uses them, only admins edit
+func TestChargingPlaceSharing(t *testing.T) {
+	setupDB(t)
+	u, _ := mkUserVehicle(t, "", 60)
+	other := db.User{Email: "o@example.com", Name: "o", Role: db.USER}
+	admin := db.User{Email: "admin@example.com", Name: "a", Role: db.ADMIN}
+	db.DB.Create(&other)
+	db.DB.Create(&admin)
+	mine, _ := SaveChargingPlace(u.ID, false, db.ChargingPlace{Name: "My home", Shared: true}) // users can't share
+	office, _ := SaveChargingPlace(admin.ID, true, db.ChargingPlace{Name: "Office", Shared: true})
+	if mine.Shared || mine.OwnerID != u.ID || !office.Shared {
+		t.Fatalf("sharing: %+v %+v", mine, office)
+	}
+	count := func(id string) int { ps, _ := ListChargingPlaces(id); return len(ps) }
+	if count(u.ID) != 2 || count(other.ID) != 1 || count(admin.ID) != 1 {
+		t.Fatalf("visible: u %d other %d admin %d", count(u.ID), count(other.ID), count(admin.ID))
+	}
+	if _, err := QuoteChargeAt(other.ID, mine.ID, time.Now(), time.Now(), 10, false); err == nil {
+		t.Fatal("another user can't use my private place")
+	}
+	if _, err := QuoteChargeAt(other.ID, office.ID, time.Now(), time.Now(), 10, false); err != nil {
+		t.Fatalf("shared place for everyone: %v", err)
+	}
+	office.Name = "Hacked"
+	if _, err := SaveChargingPlace(u.ID, false, *office); err == nil {
+		t.Fatal("users can't change shared places")
+	}
+	if err := DeleteChargingPlace(u.ID, false, office.ID); err == nil {
+		t.Fatal("users can't delete shared places")
+	}
+	office.Name = "Office 2"
+	if p, err := SaveChargingPlace(admin.ID, true, *office); err != nil || p.OwnerID != admin.ID {
+		t.Fatalf("admin edits shared: %+v %v", p, err)
+	}
+	if err := DeleteChargingPlace(admin.ID, true, mine.ID); err == nil {
+		t.Fatal("admins don't see users' private places")
 	}
 }

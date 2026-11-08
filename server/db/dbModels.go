@@ -33,6 +33,16 @@ type User struct {
 	StationSuggestions string `json:"stationSuggestions"`
 	// own fuel subtypes for the fill-up drop-down ("Q Max 95"), newline-separated
 	CustomFuelSubtypes string `json:"customFuelSubtypes"`
+	// own station price profiles (JSON like Setting.FuelPriceProfiles, keys included; never sent as is)
+	FuelPriceProfiles string `json:"-"`
+	// own Home Assistant (odometer, price sensors); the token is write-only
+	HAURL   string `json:"haUrl"`
+	HAToken string `json:"-"`
+	// own EVCC: finished sessions of the user's vehicles become detections, priced at EvccPlaceID
+	EvccURL         string     `json:"evccUrl"`
+	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
+	EvccPlaceID     string     `json:"evccPlaceId"`
+	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {
@@ -40,8 +50,10 @@ func (b *User) MarshalJSON() ([]byte, error) {
 		User
 		RoleDetail         EnumDetail `json:"roleDetail"`
 		DistanceUnitDetail EnumDetail `json:"distanceUnitDetail"`
+		HATokenSet         bool       `json:"haTokenSet"`
 	}{
 		User:               *b,
+		HATokenSet:         b.HAToken != "",
 		RoleDetail:         b.RoleDetail(),
 		DistanceUnitDetail: b.DistanceUnitDetail(),
 	})
@@ -188,15 +200,9 @@ type Setting struct {
 	// GET /api/settings is readable by every user — PriceProfiles is the copy without keys
 	FuelPriceProfiles string         `json:"-"`
 	PriceProfiles     []PriceProfile `gorm:"-" json:"fuelPriceProfiles"`
-	// Home Assistant (current odometer for the fill-up form); the token is write-only
-	HAURL      string `json:"haUrl"`
-	HAToken    string `json:"-"`
-	HATokenSet bool   `gorm:"-" json:"haTokenSet"`
-	// EVCC: finished charging sessions become detections (to confirm), priced at EvccPlaceID
-	EvccURL         string     `json:"evccUrl"`
-	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
-	EvccPlaceID     string     `json:"evccPlaceId"`
-	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
+	// Home Assistant of v1.6 (site-wide): moved once to the first admin (MoveSiteConnectionsToAdmin)
+	HAURL   string `json:"-"`
+	HAToken string `json:"-"`
 }
 
 // PriceProfile: one station price source, tried in list order (the first with stations nearby wins).
@@ -208,6 +214,9 @@ type PriceProfile struct {
 	URL    string `json:"url"`              // empty = the kind's default
 	APIKey string `json:"apiKey,omitempty"` // request: "" keeps the stored key, "-" removes it
 	KeySet bool   `json:"keySet"`
+	// site profiles: only admins use it (zero value = shared, so v1.6 profiles stay shared)
+	Private bool `json:"private"`
+	Own     bool `json:"own"` // in lists for a user: their own profile (not stored)
 }
 type Migration struct {
 	Base
@@ -301,6 +310,8 @@ type Notification struct {
 // default price) + the Home Assistant price entity (time-weighted over the charge) when set.
 type ChargingPlace struct {
 	Base
+	OwnerID     string            `gorm:"index" json:"ownerId"` // who made it: edits it, its HA prices the price sensor
+	Shared      bool              `json:"shared"`               // all users can use it (only admins can share)
 	Name        string            `json:"name"`
 	Lat         *float64          `json:"lat"` // optional: picked automatically within RadiusM
 	Lng         *float64          `json:"lng"`

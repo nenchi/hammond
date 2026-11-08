@@ -21,7 +21,7 @@ func setupDB(t *testing.T) {
 
 func mkUserVehicle(t *testing.T, mode string, tank float32) (db.User, db.Vehicle) {
 	t.Helper()
-	u := db.User{Email: "u@example.com", Name: "u", DetectionDuplicateMode: mode}
+	u := db.User{Email: "u@example.com", Name: "u", DetectionDuplicateMode: mode, Role: db.USER}
 	if err := db.DB.Create(&u).Error; err != nil {
 		t.Fatal(err)
 	}

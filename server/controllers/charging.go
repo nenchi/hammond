@@ -10,11 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterChargingController: charging places with their tariffs (admins edit, everyone reads), and
-// the price of a charge at a place.
+// RegisterChargingController: charging places with their tariffs (own ones, and shared ones from
+// admins), and the price of a charge at a place.
 func RegisterChargingController(router *gin.RouterGroup) {
 	router.GET("/chargingPlaces", func(c *gin.Context) {
-		ps, err := service.ListChargingPlaces()
+		ps, err := service.ListChargingPlaces(c.MustGet("userId").(string))
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
@@ -28,17 +28,17 @@ func RegisterChargingController(router *gin.RouterGroup) {
 			return
 		}
 		p.ID = c.Param("id") // "" on create
-		saved, err := service.SaveChargingPlace(p)
+		saved, err := service.SaveChargingPlace(c.MustGet("userId").(string), isAdmin(c), p)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, saved)
 	}
-	router.POST("/chargingPlaces", ShouldBeAdmin(), save)
-	router.PUT("/chargingPlaces/:id", ShouldBeAdmin(), save)
-	router.DELETE("/chargingPlaces/:id", ShouldBeAdmin(), func(c *gin.Context) {
-		if err := service.DeleteChargingPlace(c.Param("id")); err != nil {
+	router.POST("/chargingPlaces", save)
+	router.PUT("/chargingPlaces/:id", save)
+	router.DELETE("/chargingPlaces/:id", func(c *gin.Context) {
+		if err := service.DeleteChargingPlace(c.MustGet("userId").(string), isAdmin(c), c.Param("id")); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
@@ -59,7 +59,7 @@ func RegisterChargingController(router *gin.RouterGroup) {
 		if req.End != nil {
 			end = *req.End
 		}
-		q, err := service.QuoteChargeAt(c.Param("id"), req.Start, end, req.KWh, true)
+		q, err := service.QuoteChargeAt(c.MustGet("userId").(string), c.Param("id"), req.Start, end, req.KWh, true)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
@@ -68,22 +68,24 @@ func RegisterChargingController(router *gin.RouterGroup) {
 	})
 }
 
-// RegisterEvccController: admin settings for the EVCC import and "Sync now"
+// RegisterEvccController: the user's own EVCC import and "Sync now"
 func RegisterEvccController(router *gin.RouterGroup) {
-	router.POST("/settings/evcc", ShouldBeAdmin(), func(c *gin.Context) {
+	router.POST("/me/evcc", func(c *gin.Context) {
 		var req models.UpdateEvccRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
-		if err := service.UpdateEvccSettings(req); err != nil {
+		userID := c.MustGet("userId").(string)
+		if err := service.UpdateEvccSettings(userID, req); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, service.GetSettings())
+		user, _ := service.GetUserById(userID)
+		c.JSON(http.StatusOK, user)
 	})
-	router.POST("/settings/evcc/sync", ShouldBeAdmin(), func(c *gin.Context) {
-		res, err := service.SyncEvcc()
+	router.POST("/me/evcc/sync", func(c *gin.Context) {
+		res, err := service.SyncEvcc(c.MustGet("userId").(string))
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return

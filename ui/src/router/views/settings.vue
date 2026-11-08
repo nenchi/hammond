@@ -4,12 +4,14 @@ import { mapState } from 'vuex'
 import store from '@state/store'
 import axios from 'axios'
 import { parseAndFormatDateTime } from '@utils/format-date'
+import PriceProfilesEditor from '@components/priceProfilesEditor.vue'
+import ConnectionsSettings from '@components/connectionsSettings.vue'
 
 export default {
   page: {
     title: 'Settings',
   },
-  components: { Layout },
+  components: { Layout, PriceProfilesEditor, ConnectionsSettings },
   props: {
     user: {
       type: Object,
@@ -22,6 +24,7 @@ export default {
   },
   data: function() {
     return {
+      myProfiles: [],
       settingsModel: {
         currency: this.me.currency,
         distanceUnit: this.me.distanceUnit,
@@ -49,6 +52,7 @@ export default {
     }
   },
   mounted() {
+    axios.get('/api/me/fuelPrices').then(({ data }) => (this.myProfiles = data))
     this.fetchApiKeys()
   },
   computed: {
@@ -301,6 +305,10 @@ export default {
             >
           </template>
         </div>
+        <PriceProfilesEditor :initial="myProfiles" save-url="/api/me/fuelPrices" title="My fuel price profiles" class="my-price-profiles"
+          >Yours are asked first, then the ones the admin shares.</PriceProfilesEditor
+        >
+        <ConnectionsSettings :me="me" />
         <div class="box api-keys">
           <h1 class="subtitle">API keys</h1>
           <p class="mb-3"

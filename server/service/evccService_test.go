@@ -12,7 +12,7 @@ import (
 
 func TestSyncEvcc(t *testing.T) {
 	setupDB(t)
-	_, v := mkUserVehicle(t, "", 60)
+	u, v := mkUserVehicle(t, "", 60)
 	v.EvccVehicle = "My EV"
 	db.DB.Save(&v)
 	wrapped := false
@@ -34,14 +34,14 @@ func TestSyncEvcc(t *testing.T) {
 	}))
 	defer evcc.Close()
 
-	if _, err := SyncEvcc(); err == nil {
+	if _, err := SyncEvcc(u.ID); err == nil {
 		t.Fatal("not set up must fail")
 	}
 	since := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	if err := UpdateEvccSettings(models.UpdateEvccRequest{URL: evcc.URL, Since: &since}); err != nil {
+	if err := UpdateEvccSettings(u.ID, models.UpdateEvccRequest{URL: evcc.URL, Since: &since}); err != nil {
 		t.Fatal(err)
 	}
-	r, err := SyncEvcc()
+	r, err := SyncEvcc(u.ID)
 	if err != nil || r.Imported != 2 || r.Skipped != 3 {
 		t.Fatalf("want 2 imported (1, 5), 3 skipped (other car, unfinished, before since): %+v %v", r, err)
 	}
@@ -58,23 +58,23 @@ func TestSyncEvcc(t *testing.T) {
 
 	// again (old EVCC format): nothing new
 	wrapped = true
-	if r, err = SyncEvcc(); err != nil || r.Imported != 0 {
+	if r, err = SyncEvcc(u.ID); err != nil || r.Imported != 0 {
 		t.Fatalf("already imported: %+v %v", r, err)
 	}
 
 	// with a charging place the place's tariff prices it, and the station is the place
 	db.DB.Where("1 = 1").Delete(&db.FillupDetection{})
-	p, _ := SaveChargingPlace(db.ChargingPlace{Name: "Home", LossPercent: 10,
+	p, _ := SaveChargingPlace(u.ID, false, db.ChargingPlace{Name: "Home", LossPercent: 10,
 		Components: []db.TariffComponent{{Name: "Energy", Price: 0.12}}})
-	UpdateEvccSettings(models.UpdateEvccRequest{URL: evcc.URL, Since: &since, PlaceID: p.ID})
-	if r, err = SyncEvcc(); err != nil || r.Imported != 2 {
+	UpdateEvccSettings(u.ID, models.UpdateEvccRequest{URL: evcc.URL, Since: &since, PlaceID: p.ID})
+	if r, err = SyncEvcc(u.ID); err != nil || r.Imported != 2 {
 		t.Fatalf("re-import: %+v %v", r, err)
 	}
 	db.DB.Order("date").Find(&ds)
 	if *ds[0].PerUnitPrice != 0.12 || ds[0].Station != "Home" { // no loss: EVCC meters at the wallbox
 		t.Fatalf("priced at the place: %+v", ds[0])
 	}
-	if err := UpdateEvccSettings(models.UpdateEvccRequest{URL: evcc.URL, PlaceID: "nope"}); err == nil {
+	if err := UpdateEvccSettings(u.ID, models.UpdateEvccRequest{URL: evcc.URL, PlaceID: "nope"}); err == nil {
 		t.Fatal("unknown place must be refused")
 	}
 }

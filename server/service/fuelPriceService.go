@@ -144,73 +144,153 @@ func PriceProfiles(s *db.Setting) []db.PriceProfile {
 	return nil
 }
 
-// PublicPriceProfiles: the list for the browser, keys replaced by keySet
-func PublicPriceProfiles(s *db.Setting) []db.PriceProfile {
+// public: keys replaced by keySet
+func public(list []db.PriceProfile) []db.PriceProfile {
 	out := []db.PriceProfile{}
-	for _, p := range PriceProfiles(s) {
+	for _, p := range list {
 		p.KeySet, p.APIKey = p.APIKey != "", ""
 		out = append(out, p)
 	}
 	return out
 }
 
+// PublicPriceProfiles: the site list for the browser, keys replaced by keySet; users only see the
+// shared ones, admins all
+func PublicPriceProfiles(s *db.Setting, isAdmin bool) []db.PriceProfile {
+	var list []db.PriceProfile
+	for _, p := range PriceProfiles(s) {
+		if isAdmin || !p.Private {
+			list = append(list, p)
+		}
+	}
+	return public(list)
+}
+
+func getUser(userID string) *db.User {
+	var u db.User
+	if userID == "" || db.DB.Where("id = ?", userID).Limit(1).Find(&u).Error != nil || u.ID == "" {
+		return nil
+	}
+	return &u
+}
+
+func userProfiles(u *db.User) []db.PriceProfile {
+	var list []db.PriceProfile
+	if u != nil && u.FuelPriceProfiles != "" {
+		json.Unmarshal([]byte(u.FuelPriceProfiles), &list)
+	}
+	for i := range list {
+		list[i].Own = true
+	}
+	return list
+}
+
+// AvailablePriceProfiles (keys included), in the order they're asked: the user's own first, then the
+// site's shared ones (all for admins)
+func AvailablePriceProfiles(userID string) []db.PriceProfile {
+	u := getUser(userID)
+	list := userProfiles(u)
+	for _, p := range PriceProfiles(db.GetOrCreateSetting()) {
+		if !p.Private || (u != nil && u.Role == db.ADMIN) {
+			list = append(list, p)
+		}
+	}
+	return list
+}
+
+func PublicAvailableProfiles(userID string) []db.PriceProfile {
+	return public(AvailablePriceProfiles(userID))
+}
+
+// UserPriceProfiles: the user's own list for their settings page
+func UserPriceProfiles(userID string) []db.PriceProfile { return public(userProfiles(getUser(userID))) }
+
 var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "custom": ""}
 
-// UpdatePriceProfiles (admin) replaces the list. Keys: "" keeps the stored one of the same id, "-" removes it.
-func UpdatePriceProfiles(in []db.PriceProfile) error {
-	s := db.GetOrCreateSetting()
+// normalizeProfiles checks a list; keys: "" keeps the old one of the same id, "-" removes it.
+// freshIDs (users' own lists): an id the list didn't have gets a new one, so a user's profile never
+// shares an id with a site profile.
+func normalizeProfiles(in, oldList []db.PriceProfile, freshIDs bool) ([]db.PriceProfile, error) {
 	old := map[string]db.PriceProfile{}
-	for _, p := range PriceProfiles(s) {
+	for _, p := range oldList {
 		old[p.ID] = p
 	}
 	out := []db.PriceProfile{}
+	seen := map[string]bool{}
 	for _, p := range in {
 		p.Name, p.URL = strings.TrimSpace(p.Name), strings.TrimSpace(p.URL)
 		if _, ok := priceKinds[p.Kind]; !ok {
-			return fmt.Errorf("unknown profile kind %q", p.Kind)
+			return nil, fmt.Errorf("unknown profile kind %q", p.Kind)
 		}
 		if p.Name == "" || len([]rune(p.Name)) > 40 {
-			return errors.New("every profile needs a name (up to 40 characters)")
+			return nil, errors.New("every profile needs a name (up to 40 characters)")
 		}
 		if p.Kind == "custom" && p.URL == "" {
-			return fmt.Errorf("profile %q needs a URL", p.Name)
+			return nil, fmt.Errorf("profile %q needs a URL", p.Name)
 		}
 		if p.URL != "" {
 			if u, err := url.Parse(p.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(p.URL) > 300 {
-				return fmt.Errorf("profile %q: invalid URL", p.Name)
+				return nil, fmt.Errorf("profile %q: invalid URL", p.Name)
 			}
 		}
 		if len(p.APIKey) > 200 {
-			return fmt.Errorf("profile %q: key too long", p.Name)
+			return nil, fmt.Errorf("profile %q: key too long", p.Name)
 		}
-		if p.ID == "" {
+		if _, known := old[p.ID]; p.ID == "" || (freshIDs && !known) || seen[p.ID] {
 			p.ID = uuid.NewString()
 		}
+		seen[p.ID] = true
 		switch p.APIKey {
 		case "":
 			p.APIKey = old[p.ID].APIKey
 		case "-":
 			p.APIKey = ""
 		}
-		p.KeySet = false
+		p.KeySet, p.Own = false, false
 		out = append(out, p)
 	}
 	if len(out) > 10 {
-		return errors.New("at most 10 profiles")
+		return nil, errors.New("at most 10 profiles")
+	}
+	return out, nil
+}
+
+// UpdatePriceProfiles (admin) replaces the site list
+func UpdatePriceProfiles(in []db.PriceProfile) error {
+	s := db.GetOrCreateSetting()
+	out, err := normalizeProfiles(in, PriceProfiles(s), false)
+	if err != nil {
+		return err
 	}
 	b, _ := json.Marshal(out)
-	s.FuelPriceProfiles = string(b)
-	if len(out) == 0 {
-		s.FuelPriceProfiles = "[]" // not "" — that would bring back a v1.5 provider
-	}
+	s.FuelPriceProfiles = string(b) // "[]" when empty, not "": that would bring back a v1.5 provider
 	s.FuelPriceProvider, s.FuelPriceURL, s.FuelPriceAPIKey = "", "", ""
 	clearStationCache()
 	return db.UpdateSettings(s)
 }
 
-// NearbyStations: with profileID that profile, else the first profile with stations nearby.
-func NearbyStations(vehicle *db.Vehicle, lat, lng, radiusKm float64, profileID string) (*StationsResult, error) {
-	profiles := PriceProfiles(db.GetOrCreateSetting())
+// UpdateUserPriceProfiles replaces the user's own list
+func UpdateUserPriceProfiles(userID string, in []db.PriceProfile) error {
+	u := getUser(userID)
+	if u == nil {
+		return errors.New("user not found")
+	}
+	for i := range in {
+		in[i].Private = false
+	}
+	out, err := normalizeProfiles(in, userProfiles(u), true)
+	if err != nil {
+		return err
+	}
+	b, _ := json.Marshal(out)
+	clearStationCache()
+	return db.DB.Model(u).Update("fuel_price_profiles", string(b)).Error
+}
+
+// NearbyStations: with profileID that profile, else the first of the user's available profiles with
+// stations nearby.
+func NearbyStations(userID string, vehicle *db.Vehicle, lat, lng, radiusKm float64, profileID string) (*StationsResult, error) {
+	profiles := AvailablePriceProfiles(userID)
 	if profileID != "" {
 		var only []db.PriceProfile
 		for _, p := range profiles {
@@ -224,7 +304,7 @@ func NearbyStations(vehicle *db.Vehicle, lat, lng, radiusKm float64, profileID s
 		profiles = only
 	}
 	if len(profiles) == 0 {
-		return nil, errors.New("station prices are not set up (Admin → Site settings → Fuel prices)")
+		return nil, errors.New("station prices are not set up (Settings → Fuel prices, or ask the admin to share a profile)")
 	}
 	grades := VehicleFuelGrades(vehicle)
 	if len(grades) == 0 {
@@ -468,8 +548,8 @@ func fetchEControl(base string, grades []string, lat, lng, rad float64) ([]rawSt
 
 // TestFuelPriceProvider (admin "Test connection"): asks one saved profile (the first without id) with
 // its stored key around the given position, or a fixed point in its country.
-func TestFuelPriceProvider(profileID string, lat, lng *float64) (*StationsResult, error) {
-	profiles := PriceProfiles(db.GetOrCreateSetting())
+func TestFuelPriceProvider(userID, profileID string, lat, lng *float64) (*StationsResult, error) {
+	profiles := AvailablePriceProfiles(userID)
 	if len(profiles) == 0 {
 		return nil, errors.New("no profile saved yet")
 	}
@@ -488,5 +568,5 @@ func TestFuelPriceProvider(profileID string, lat, lng *float64) (*StationsResult
 	}
 	clearStationCache() // always a real request
 	probe := &db.Vehicle{FuelGrade: "e10,e5,diesel"}
-	return NearbyStations(probe, la, ln, 5, p.ID)
+	return NearbyStations(userID, probe, la, ln, 5, p.ID)
 }

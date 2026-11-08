@@ -229,7 +229,7 @@ export default {
       </b-field>
       <b-field
         label="Home Assistant odometer entity"
-        message="Pre-fills new fill-ups with the car's current odometer, e.g. sensor.a180_odometer (Admin → Site Settings → Home Assistant)"
+        message="Pre-fills new fill-ups with the car's current odometer, e.g. sensor.a180_odometer (Settings → Home Assistant)"
       >
         <b-input v-model.trim="vehicleModel.odometerEntity" pattern="[a-z0-9_]+\.[a-z0-9_]+" maxlength="100" :has-counter="false"
           placeholder="sensor.…_odometer"></b-input>
@@ -237,7 +237,7 @@ export default {
       <b-field
         v-if="vehicleModel.fuelType === 4"
         label="EVCC vehicle"
-        message="The vehicle's name (title) in EVCC: its charging sessions are imported (Admin → Site Settings → EVCC)"
+        message="The vehicle's name (title) in EVCC: its charging sessions are imported (Settings → EVCC)"
       >
         <b-input v-model.trim="vehicleModel.evccVehicle" maxlength="100" :has-counter="false"></b-input>
       </b-field>

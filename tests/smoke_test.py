@@ -202,7 +202,23 @@ check("admin sets price profiles; key not echoed", s == 200 and len(profiles) ==
 s, pub = call("GET", "/api/settings", token=ptok)
 check("site settings readable by users without the key", s == 200 and "ci-key" not in json.dumps(pub) and [p["kind"] for p in pub.get("fuelPriceProfiles", [])] == ["econtrol", "custom"], pub)
 s, _ = call("POST", "/api/settings/fuelPrices", {"profiles": [{"name": "x", "kind": "tankerkoenig", "apiKey": "x"}]}, token=ptok)
-check("non-admin can't change the price provider", s == 401, s)
+check("non-admin can't change the site price profiles", s == 401, s)
+# the admin makes the Austria profile private: users don't see it, admins do
+s, st = call("POST", "/api/settings/fuelPrices", {"profiles": [{**profiles[0], "private": True}, profiles[1]]}, token=tok)
+check("admin keeps a profile private", s == 200 and st["fuelPriceProfiles"][0]["private"] is True
+      and st["fuelPriceProfiles"][1]["keySet"] is True, (s, st))
+s, pub = call("GET", "/api/settings", token=ptok)
+check("users don't see private site profiles", [p["name"] for p in pub["fuelPriceProfiles"]] == ["CI fake"], pub)
+s, own = call("POST", "/api/me/fuelPrices", {"profiles": [{"name": "Mine", "kind": "custom", "url": "http://127.0.0.1:3999/json", "apiKey": "ci-key"}]}, token=ptok)
+check("users add their own profile; key not echoed", s == 200 and len(own) == 1 and own[0]["keySet"] and "ci-key" not in json.dumps(own), (s, own))
+s, av = call("GET", "/api/fuelPrices/available", token=ptok)
+check("available for a user: own first, then shared", s == 200 and [(p["name"], p["own"]) for p in av] == [("Mine", True), ("CI fake", False)], (s, av))
+s, av = call("GET", "/api/fuelPrices/available", token=tok)
+check("available for the admin: all site profiles", s == 200 and [p["name"] for p in av] == ["Austria", "CI fake"], (s, av))
+s, r = call("GET", f"/api/settings/fuelPrices/test?profile={own[0]['id']}", token=ptok)
+check("users test their own profile", s == 200 and r["ok"] and r["stations"] == 2, (s, r))
+call("POST", "/api/me/fuelPrices", {"profiles": []}, token=ptok)
+call("POST", "/api/settings/fuelPrices", {"profiles": profiles}, token=tok)
 call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10"}, token=tok)
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
@@ -224,12 +240,15 @@ check("unknown fuel grade refused", s == 422, s)
 # ---- Home Assistant odometer (fake HA on the same port) ----
 s, r = call("GET", f"/api/vehicles/{vid}/odometer", token=tok)
 check("odometer: not configured without HA", s == 200 and r["configured"] is False, (s, r))
-s, st = call("POST", "/api/settings/homeAssistant", {"url": "http://127.0.0.1:3999", "token": "ci-ha-token"}, token=tok)
-check("admin sets HA; token not echoed", s == 200 and st.get("haTokenSet") is True and "ci-ha-token" not in json.dumps(st), (s, st))
-s, r = call("GET", "/api/settings/homeAssistant/test", token=tok)
-check("admin: HA test connection", s == 200 and r["ok"] and r["name"] == "CI Home", (s, r))
-s, _ = call("POST", "/api/settings/homeAssistant", {"url": "http://x.example", "token": "x"}, token=ptok)
-check("non-admin can't change HA", s == 401, s)
+s, st = call("POST", "/api/me/homeAssistant", {"url": "http://127.0.0.1:3999", "token": "ci-ha-token"}, token=tok)
+check("user sets their own HA; token not echoed", s == 200 and st.get("haTokenSet") is True and "ci-ha-token" not in json.dumps(st), (s, st))
+s, me = call("GET", "/api/me", token=tok)
+check("/me shows HA without the token", s == 200 and me.get("haUrl") == "http://127.0.0.1:3999" and me.get("haTokenSet") is True
+      and "ci-ha-token" not in json.dumps(me), me)
+s, r = call("GET", "/api/me/homeAssistant/test", token=tok)
+check("HA test connection", s == 200 and r["ok"] and r["name"] == "CI Home", (s, r))
+s, r = call("GET", "/api/me/homeAssistant/test", token=ptok)
+check("another user's HA isn't shared", s == 200 and not r["ok"], (s, r))
 veh = {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia", "fuelUnit": 0, "fuelType": 1,
        "tankCapacity": 50, "fuelGrade": "e10"}
 s, _ = call("PUT", f"/api/vehicles/{vid}", {**veh, "odometerEntity": "../../api/config"}, token=tok)
@@ -238,7 +257,7 @@ call("PUT", f"/api/vehicles/{vid}", {**veh, "odometerEntity": "sensor.ci_odomete
 s, r = call("GET", f"/api/vehicles/{vid}/odometer", token=tok)
 check("odometer from HA", s == 200 and r["configured"] and r["value"] == 23456 and r["unit"] == "km", (s, r))
 call("PUT", f"/api/vehicles/{vid}", veh, token=tok)
-call("POST", "/api/settings/homeAssistant", {"url": "", "token": "-"}, token=tok)
+call("POST", "/api/me/homeAssistant", {"url": "", "token": "-"}, token=tok)
 
 # ---- EV charging: places, tariff quote, EVCC import (fake EVCC on :3999) ----
 s, ev = call("POST", "/api/vehicles", {"nickname": "CI EV", "registration": "LJ EV1", "make": "VW", "model": "ID.3",
@@ -246,22 +265,29 @@ s, ev = call("POST", "/api/vehicles", {"nickname": "CI EV", "registration": "LJ 
 check("electric vehicle with EVCC name", s in (200, 201) and ev.get("evccVehicle") == "CI EV", (s, ev))
 place = {"name": "Home", "lossPercent": 0, "sessionFee": 0.5, "components": [
     {"name": "Energy", "price": 0.10, "rules": [{"label": "NT", "days": "all", "from": "22:00", "to": "06:00", "price": 0.05}]}]}
-s, _ = call("POST", "/api/chargingPlaces", place, token=ptok)
-check("non-admin can't create charging places", s == 401, s)
+s, mine = call("POST", "/api/chargingPlaces", {**place, "name": "Plain's home", "shared": True}, token=ptok)
+check("users create their own place, never shared", s == 200 and mine["shared"] is False, (s, mine))
+s, ps = call("GET", "/api/chargingPlaces", token=tok)
+check("others' private places are not listed", s == 200 and all(p["id"] != mine["id"] for p in ps), (s, ps))
+call("DELETE", f"/api/chargingPlaces/{mine['id']}", token=ptok)
 s, _ = call("POST", "/api/chargingPlaces", {**place, "components": [{"rules": [{"from": "25:00"}]}]}, token=tok)
 check("invalid tariff rule refused", s == 422, s)
-s, home = call("POST", "/api/chargingPlaces", place, token=tok)
-check("admin creates a charging place", s == 200 and home.get("id") and home["components"][0]["rules"][0]["label"] == "NT", (s, home))
+s, home = call("POST", "/api/chargingPlaces", {**place, "shared": True}, token=tok)
+check("admin creates a shared charging place", s == 200 and home.get("id") and home["shared"] and home["components"][0]["rules"][0]["label"] == "NT", (s, home))
+s, _ = call("PUT", f"/api/chargingPlaces/{home['id']}", {**place, "name": "Hacked"}, token=ptok)
+check("users can't change shared places", s == 422, s)
 s, q = call("POST", f"/api/chargingPlaces/{home['id']}/quote", {"start": "2026-11-10T21:00:00Z", "end": "2026-11-10T23:00:00Z", "kWh": 10}, token=ptok)
 check("quote: half day, half night tariff + session fee", s == 200 and abs(q["total"] - 1.25) < 0.001 and len(q["parts"]) == 2, (s, q))
 s, ps = call("GET", "/api/chargingPlaces", token=ptok)
-check("users can list charging places", s == 200 and len(ps) == 1, (s, ps))
-s, st = call("POST", "/api/settings/evcc", {"url": "http://127.0.0.1:3999", "syncMinutes": 0, "placeId": home["id"],
+check("users see shared places", s == 200 and len(ps) == 1, (s, ps))
+s, st = call("POST", "/api/me/evcc", {"url": "http://127.0.0.1:3999", "syncMinutes": 0, "placeId": home["id"],
              "since": "2026-01-01T00:00:00Z"}, token=tok)
-check("admin sets EVCC", s == 200 and st.get("evccPlaceId") == home["id"], (s, st))
-s, r = call("POST", "/api/settings/evcc/sync", token=tok)
+check("user sets their EVCC", s == 200 and st.get("evccPlaceId") == home["id"], (s, st))
+s, r = call("POST", "/api/me/evcc/sync", token=ptok)
+check("another user's EVCC isn't shared", s == 422, (s, r))
+s, r = call("POST", "/api/me/evcc/sync", token=tok)
 check("EVCC sync imports the session", s == 200 and r["imported"] == 1, (s, r))
-s, r = call("POST", "/api/settings/evcc/sync", token=tok)
+s, r = call("POST", "/api/me/evcc/sync", token=tok)
 check("EVCC sync again: nothing new", s == 200 and r["imported"] == 0, (s, r))
 s, dets = call("GET", "/api/detections", token=tok)
 evd = [d for d in dets if d.get("source") == "EVCC"] if s == 200 else []
@@ -269,7 +295,7 @@ check("EVCC detection priced with the place (night 0.05 + fee 0.5 / 12 kWh)", le
       and abs(evd[0]["perUnitPrice"] - round((12 * 0.05 + 0.5) / 12, 4)) < 0.0001 and evd[0]["odoReading"] == 0, evd)
 for d in evd:
     call("POST", f"/api/detections/{d['id']}/discard", token=tok)
-call("POST", "/api/settings/evcc", {"url": "", "syncMinutes": 0, "placeId": ""}, token=tok)
+call("POST", "/api/me/evcc", {"url": "", "syncMinutes": 0, "placeId": ""}, token=tok)
 call("DELETE", f"/api/chargingPlaces/{home['id']}", token=tok)
 call("DELETE", f"/api/vehicles/{ev['id']}", token=tok)
 
