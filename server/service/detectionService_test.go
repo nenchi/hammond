@@ -12,6 +12,7 @@ import (
 func setupDB(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONFIG", t.TempDir())
+	GeocodeURL = "" // no Nominatim in tests: every profile asked (country tests set a fake)
 	var err error
 	if db.DB, err = db.Init(); err != nil {
 		t.Fatal(err)

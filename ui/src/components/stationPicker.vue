@@ -95,7 +95,8 @@ export default {
           this.heading = heading
           if (!data.stations.length)
             this.error =
-              `No stations within ${this.radius} km (asked: ${data.profileName}).` +
+              (data.country ? data.country + ': n' : 'N') +
+              `o stations within ${this.radius} km (asked: ${data.profileName}).` +
               (data.errors ? ' Failed: ' + data.errors.join('; ') + '.' : '') +
               ' The radius can be changed in Settings.'
         })
