@@ -165,6 +165,28 @@ s, _ = call("DELETE", f"/api/me/apikeys/{kid}", token=tok)
 s2, _ = call("GET", "/api/v1/vehicles", token=key)
 check("revoked API key stops working", s2 == 401, (s, s2))
 
+# ---- export / backup / admin checks ----
+s, csvtxt = call("GET", f"/api/vehicles/{vid}/export", token=tok, raw=True)
+check("vehicle CSV export (Fuelly format)", s == 200 and csvtxt.startswith("Type,MPG,Date,Time,Car Name") and "\nGas," in csvtxt, (s, csvtxt[:200]))
+s, _ = call("GET", "/api/vehicles/00000000-0000-0000-0000-000000000000/export", token=tok, raw=True)
+check("export of a foreign/unknown vehicle is 404", s == 404, s)
+req = urllib.request.Request(BASE + "/api/backup", headers={"Authorization": "Bearer " + tok})
+with urllib.request.urlopen(req, timeout=30) as r:
+    import gzip as _gz
+    blob = r.read()
+check("admin backup download is a gzip'ed SQLite db", _gz.decompress(blob)[:15] == b"SQLite format 3", len(blob))
+s, _ = call("POST", "/api/register", {"name": "Plain", "email": "plain@example.com", "password": "plain-password1"}, token=tok)
+check("admin can register a user", s in (200, 201), s)
+s, plain = call("POST", "/api/login", {"email": "plain@example.com", "password": "plain-password1"})
+ptok = plain["token"]
+s, _ = call("GET", "/api/backup", token=ptok, raw=True)
+check("non-admin can't download the backup (401)", s == 401, s)
+s, _ = call("POST", "/api/register", {"name": "Sneaky", "email": "sneaky@example.com", "password": "sneaky-password1"}, token=ptok)
+s2, _ = call("POST", "/api/login", {"email": "sneaky@example.com", "password": "sneaky-password1"})
+check("non-admin can't create users (upstream could)", s == 401 and s2 != 200, (s, s2))
+s, _ = call("POST", "/api/settings", {"currency": "USD", "distanceUnit": 0}, token=ptok)
+check("non-admin can't change site settings", s == 401, s)
+
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))
 s, _ = call("POST", "/api/refresh", {"refreshToken": "garbage"}, token=tok)

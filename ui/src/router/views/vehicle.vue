@@ -344,6 +344,14 @@ export default {
         <b-button v-if="vehicle.isOwner" title="Share vehicle" @click="showShareVehicleModal">
           <b-icon pack="fas" icon="user-friends" type="is-info"> </b-icon
         ></b-button>
+        <b-button
+          tag="a"
+          title="Export fill-ups and expenses (CSV, can be imported again)"
+          class="export-csv"
+          :href="`/api/vehicles/${vehicle.id}/export?access_token=${currentUser.token}`"
+        >
+          <b-icon pack="fas" icon="download" type="is-info"> </b-icon
+        ></b-button>
         <b-button v-if="vehicle.isOwner" title="Delete Vehicle" @click="deleteVehicle">
           <b-icon pack="fas" icon="trash" type="is-danger"> </b-icon
         ></b-button>
@@ -533,8 +541,9 @@ export default {
     <div class="box">
       <div class="columns">
         <div class="column" :class="isMobile ? 'has-text-centered' : ''"> <h1 class="title">Stats</h1></div>
-        <div class="column">
-          <b-select v-model="dateRangeOption" class="is-pulled-right is-medium">
+        <!-- flex instead of is-pulled-right: the floated select stuck out of the box on phones -->
+        <div class="column is-flex" :class="isMobile ? 'is-justify-content-center' : 'is-justify-content-flex-end'">
+          <b-select v-model="dateRangeOption" class="is-medium stats-range">
             <option v-for="option in dateRangeOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>

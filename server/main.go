@@ -54,6 +54,7 @@ func main() {
 	controllers.RegisteImportController(router)
 	controllers.RegisterReportsController(router)
 	controllers.RegisterDetectionController(router)
+	controllers.RegisterExportController(router)
 
 	go assetEnv()
 	go intiCron()

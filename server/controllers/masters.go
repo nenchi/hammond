@@ -25,7 +25,7 @@ func RegisterAnonMasterConroller(router *gin.RouterGroup) {
 func RegisterMastersController(router *gin.RouterGroup) {
 
 	router.GET("/settings", getSettings)
-	router.POST("/settings", udpateSettings)
+	router.POST("/settings", ShouldBeAdmin(), udpateSettings) // site-wide: admins only (upstream: anyone logged in)
 	router.POST("/me/settings", udpateMySettings)
 
 }
@@ -36,7 +36,11 @@ func getSettings(c *gin.Context) {
 }
 func udpateSettings(c *gin.Context) {
 	var model models.UpdateSettingModel
-	if err := c.ShouldBind(&model); err == nil {
+	err := c.ShouldBind(&model)
+	if err == nil && model.DistanceUnit == nil {
+		err = errors.New("distanceUnit is required")
+	}
+	if err == nil {
 		err := service.UpdateSettings(model.Currency, *model.DistanceUnit)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("udpateSettings", err))

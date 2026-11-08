@@ -139,6 +139,32 @@ describe('hammond UI', () => {
     })
   })
 
+  it('phone: the Stats range select stays inside the box', () => {
+    cy.viewport(375, 667)
+    visit(`/vehicles/${vehicleId}`)
+    cy.get('.stats-range').then(($sel) => {
+      const sel = $sel[0].getBoundingClientRect()
+      const box = $sel.closest('.box')[0].getBoundingClientRect()
+      expect(sel.left, 'left edge').to.be.at.least(box.left)
+      expect(sel.right, 'right edge').to.be.at.most(box.right)
+      expect(sel.top, 'below the box top').to.be.at.least(box.top)
+    })
+  })
+
+  it('export button downloads the vehicle CSV; admins see the backup download', () => {
+    visit(`/vehicles/${vehicleId}`)
+    cy.get('a.export-csv').should('have.attr', 'href').then((href) =>
+      cy.request(href).then(({ status, headers, body }) => {
+        expect(status).to.eq(200)
+        expect(headers['content-disposition']).to.match(/attachment; filename="hammond-Cypress-\d{4}-\d{2}-\d{2}\.csv"/)
+        expect(body.split('\n')[0]).to.contain('Type,MPG,Date,Time,Car Name')
+        expect(body).to.contain('Cypress Station')
+      })
+    )
+    visit('/settings')
+    cy.get('.backup').contains('a', 'Download full backup').should('have.attr', 'href').and('contain', '/api/backup?access_token=')
+  })
+
   it('mobile: stats chart loads once and keeps its size', () => {
     cy.viewport(375, 667)
     cy.intercept('GET', '/api/vehicles/*/mileage*').as('mileage')

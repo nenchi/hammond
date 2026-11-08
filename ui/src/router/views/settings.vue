@@ -50,6 +50,10 @@ export default {
   },
   computed: {
     ...mapState('vehicles', ['currencyMasters', 'distanceUnitMasters']),
+    ...mapState('auth', ['currentUser']),
+    isAdmin() {
+      return this.currentUser && this.currentUser.role === 'ADMIN'
+    },
     passwordValid() {
       if (this.changePassModel.new === '' || this.changePassModel.renew === '') {
         return true
@@ -250,6 +254,29 @@ export default {
     <hr />
     <div class="columns">
       <div class="column">
+        <div class="box backup">
+          <h1 class="subtitle">Backup &amp; export</h1>
+          <p class="mb-3"
+            >Each vehicle page has an <strong>export</strong> button (CSV with all fill-ups and expenses). The file can be
+            imported again under <router-link to="/import">Import → Fuelly</router-link>: entries that already exist are
+            skipped, so it also works as a restore.</p
+          >
+          <template v-if="isAdmin">
+            <p class="mb-3"
+              >The full database (all users and vehicles) is also saved automatically every 2 days in
+              <code>/config/backups</code>. Restore: stop hammond, unpack the file to <code>/config/hammond.db</code>, start
+              hammond.</p
+            >
+            <b-button
+              tag="a"
+              type="is-primary"
+              class="download-backup"
+              :href="`/api/backup?access_token=${currentUser.token}`"
+              icon-left="download"
+              >Download full backup</b-button
+            >
+          </template>
+        </div>
         <div class="box api-keys">
           <h1 class="subtitle">API keys</h1>
           <p class="mb-3"

@@ -121,7 +121,6 @@ func CreateBackup() (string, error) {
 
 	backupFileName := "hammond_backup_" + time.Now().Format("2006.01.02_150405") + ".tar.gz"
 	folder := createConfigFolderIfNotExists("backups")
-	configPath := os.Getenv("CONFIG")
 	tarballFilePath := path.Join(folder, backupFileName)
 	file, err := os.Create(tarballFilePath)
 	if err != nil {
@@ -129,10 +128,11 @@ func CreateBackup() (string, error) {
 	}
 	defer file.Close()
 
-	dbPath := path.Join(configPath, "hammond.db")
-	_, err = os.Stat(dbPath)
-	if err != nil {
-		return "", fmt.Errorf("could not find db file '%s', got error '%s'", dbPath, err.Error())
+	// consistent snapshot instead of copying the live file (a copy during a write can be broken)
+	dbPath := path.Join(folder, ".snapshot-hammond.db")
+	defer os.Remove(dbPath)
+	if err := SnapshotDatabase(dbPath); err != nil {
+		return "", fmt.Errorf("could not snapshot the database: %s", err.Error())
 	}
 	gzipWriter := gzip.NewWriter(file)
 	defer gzipWriter.Close()
@@ -160,7 +160,7 @@ func addFileToTarWriter(filePath string, tarWriter *tar.Writer) error {
 	}
 
 	header := &tar.Header{
-		Name:    filePath,
+		Name:    "hammond.db", // only used for the database; restore = extract it to /config
 		Size:    stat.Size(),
 		Mode:    int64(stat.Mode()),
 		ModTime: stat.ModTime(),

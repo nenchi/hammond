@@ -3,8 +3,8 @@ package service
 import (
 	"bytes"
 	"encoding/csv"
-	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/akhilrex/hammond/db"
@@ -14,6 +14,7 @@ import (
 func FuellyImport(content []byte, userId string) []string {
 	stream := bytes.NewReader(content)
 	reader := csv.NewReader(stream)
+	reader.FieldsPerRecord = -1 // Fuelly has 18 columns, hammond's export 19 ("Missed")
 	records, err := reader.ReadAll()
 
 	var errors []string
@@ -63,15 +64,18 @@ func FuellyImport(content []byte, userId string) []string {
 			errors = append(errors, "Found an invalid date/time at row "+strconv.Itoa(index+1))
 		}
 
-		totalCostStr := accounting.UnformatNumber(record[9], 3, user.Currency)
-		totalCost64, err := strconv.ParseFloat(totalCostStr, 32)
+		if len(record) < 18 {
+			errors = append(errors, "Expected 18 columns at row "+strconv.Itoa(index+1))
+			continue
+		}
+		totalCost64, err := parseAmount(record[9], 3, user.Currency)
 		if err != nil {
 			errors = append(errors, "Found an invalid total cost at row "+strconv.Itoa(index+1))
 		}
 
 		totalCost := float32(totalCost64)
-		odoStr := accounting.UnformatNumber(record[5], 0, user.Currency)
-		odoreading, err := strconv.Atoi(odoStr)
+		odo64, err := parseAmount(record[5], 0, user.Currency)
+		odoreading := int(odo64)
 		if err != nil {
 			errors = append(errors, "Found an invalid odo reading at row "+strconv.Itoa(index+1))
 		}
@@ -79,25 +83,24 @@ func FuellyImport(content []byte, userId string) []string {
 
 		//Create Fillup
 		if record[0] == "Gas" {
-			rateStr := accounting.UnformatNumber(record[7], 3, user.Currency)
-			ratet64, err := strconv.ParseFloat(rateStr, 32)
+			ratet64, err := parseAmount(record[7], 3, user.Currency)
 			if err != nil {
 				errors = append(errors, "Found an invalid cost per gallon at row "+strconv.Itoa(index+1))
 			}
 			rate := float32(ratet64)
 
-			quantity64, err := strconv.ParseFloat(record[8], 32)
+			quantity64, err := parseAmount(record[8], 3, user.Currency)
 			if err != nil {
 				errors = append(errors, "Found an invalid quantity at row "+strconv.Itoa(index+1))
 			}
 			quantity := float32(quantity64)
 
-			notes := fmt.Sprintf("Octane:%s\nGas Brand:%s\nLocation%s\nTags:%s\nPayment Type:%s\nTire Pressure:%s\nNotes:%s\nMPG:%s",
-				record[10], record[11], record[12], record[13], record[14], record[15], record[16], record[1],
-			)
+			// only the fields that have something; a hammond export has just the notes
+			notes := joinNotes(record[16], "Gas Brand", record[11], "Tags", record[13], "Payment Type", record[14],
+				"Tire Pressure", record[15], "MPG", record[1])
 
 			isTankFull := record[6] == "Full"
-			fal := false
+			fal := len(record) > 18 && record[18] == "1" // hammond's "Missed" column
 			fillups = append(fillups, db.Fillup{
 				VehicleID:       vehicle.ID,
 				FuelUnit:        vehicle.FuelUnit,
@@ -114,13 +117,12 @@ func FuellyImport(content []byte, userId string) []string {
 				Currency:        user.Currency,
 				DistanceUnit:    user.DistanceUnit,
 				Source:          "Fuelly",
+				FuelSubType:     record[10], // Fuelly's octane; hammond exports the fuel subtype here
 			})
 
 		}
 		if record[0] == "Service" {
-			notes := fmt.Sprintf("Tags:%s\nPayment Type:%s\nNotes:%s",
-				record[13], record[14], record[16],
-			)
+			notes := joinNotes(record[16], "Tags", record[13], "Payment Type", record[14])
 			expenses = append(expenses, db.Expense{
 				VehicleID:    vehicle.ID,
 				Amount:       totalCost,
@@ -140,6 +142,11 @@ func FuellyImport(content []byte, userId string) []string {
 		return errors
 	}
 
+	// importing the same file again (e.g. restoring an export) must not duplicate anything:
+	// skip entries that already exist (same vehicle and odometer, same day, same quantity / amount)
+	fillups = skipExistingFillups(fillups)
+	expenses = skipExistingExpenses(expenses)
+
 	tx := db.DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -150,19 +157,79 @@ func FuellyImport(content []byte, userId string) []string {
 		errors = append(errors, err.Error())
 		return errors
 	}
-	if err := tx.Create(&fillups).Error; err != nil {
-		tx.Rollback()
-		errors = append(errors, err.Error())
-		return errors
+	if len(fillups) > 0 {
+		if err := tx.Create(&fillups).Error; err != nil {
+			tx.Rollback()
+			errors = append(errors, err.Error())
+			return errors
+		}
 	}
-	if err := tx.Create(&expenses).Error; err != nil {
-		tx.Rollback()
-		errors = append(errors, err.Error())
-		return errors
+	if len(expenses) > 0 {
+		if err := tx.Create(&expenses).Error; err != nil {
+			tx.Rollback()
+			errors = append(errors, err.Error())
+			return errors
+		}
 	}
 	err = tx.Commit().Error
 	if err != nil {
 		errors = append(errors, err.Error())
 	}
 	return errors
+}
+
+// parseAmount reads "22.69" as 22.69 for every currency; only numbers that aren't plain decimals go
+// through the currency format. Upstream always used the currency format, so for EUR ("," decimal)
+// a Fuelly "22.69" became 2269.
+func parseAmount(s string, precision int, currency string) (float64, error) {
+	s = strings.TrimSpace(s)
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return v, nil
+	}
+	return strconv.ParseFloat(accounting.UnformatNumber(s, precision, currency), 64)
+}
+
+func joinNotes(notes string, labelValue ...string) string {
+	var parts []string
+	for i := 0; i+1 < len(labelValue); i += 2 {
+		if v := strings.TrimSpace(labelValue[i+1]); v != "" {
+			parts = append(parts, labelValue[i]+": "+v)
+		}
+	}
+	if n := strings.TrimSpace(notes); n != "" {
+		parts = append(parts, n)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func sameDay(t time.Time) (time.Time, time.Time) {
+	return t.Add(-12 * time.Hour), t.Add(12 * time.Hour)
+}
+
+func skipExistingFillups(in []db.Fillup) []db.Fillup {
+	out := in[:0]
+	for _, f := range in {
+		from, to := sameDay(f.Date)
+		var n int64
+		db.DB.Model(&db.Fillup{}).Where("vehicle_id = ? AND odo_reading = ? AND date BETWEEN ? AND ? AND ABS(fuel_quantity - ?) < 0.01",
+			f.VehicleID, f.OdoReading, from, to, f.FuelQuantity).Count(&n)
+		if n == 0 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func skipExistingExpenses(in []db.Expense) []db.Expense {
+	out := in[:0]
+	for _, e := range in {
+		from, to := sameDay(e.Date)
+		var n int64
+		db.DB.Model(&db.Expense{}).Where("vehicle_id = ? AND odo_reading = ? AND date BETWEEN ? AND ? AND ABS(amount - ?) < 0.01",
+			e.VehicleID, e.OdoReading, from, to, e.Amount).Count(&n)
+		if n == 0 {
+			out = append(out, e)
+		}
+	}
+	return out
 }
