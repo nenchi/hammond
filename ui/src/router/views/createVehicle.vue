@@ -184,8 +184,8 @@ export default {
       <b-field label="Fuel grade for station prices" message="Which price to show for nearby stations">
         <b-select v-model="vehicleModel.fuelGrade" expanded>
           <option value="">From the fuel type (petrol → E5, diesel → Diesel)</option>
-          <option value="e5">Super E5</option>
-          <option value="e10">Super E10</option>
+          <option value="e5">95 (Super E5)</option>
+          <option value="e10">95 E10 (Super E10)</option>
           <option value="diesel">Diesel</option>
         </b-select>
       </b-field>

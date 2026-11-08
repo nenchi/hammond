@@ -291,6 +291,10 @@ describe('hammond UI', () => {
   })
 
   it('stations nearby: admin sets the provider, the form lists E10 prices and fills one in', () => {
+    // not set up yet: admins see where to switch it on instead of nothing
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.get('.station-setup-hint').contains('a', 'Site Settings → Fuel prices').should('have.attr', 'href', '/admin/settings')
+    cy.contains('button', 'Stations nearby').should('not.exist')
     // fake Tankerkönig on 127.0.0.1:3999 (tests/fake_fuelprices.py, started by the workflow)
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
       body: { provider: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' } })
@@ -311,13 +315,13 @@ describe('hammond UI', () => {
     cy.contains('Last fill-up:')
     cy.contains('button', 'Stations nearby').click()
     cy.get('.station-picker').within(() => {
-      cy.contains('Stations nearby · Super E10')
-      cy.contains('.station', 'Freie Tankstelle').should('contain', 'no Super E10') // sells no E10: listed last
+      cy.contains('Stations nearby · 95 E10')
+      cy.contains('.station', 'Freie Tankstelle').should('contain', 'no 95 E10') // sells no E10: listed last
       cy.contains('.station', 'ARAL').should('contain', '1.739').click()
     })
     cy.contains('.field', 'Price per').find('input').should('have.value', '1.739')
     cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'ARAL, Frankfurter Str. 12, 63067 Offenbach')
-    cy.contains('.field', 'Fuel Subtype').find('input').should('have.value', 'Super E10')
+    cy.contains('.field', 'Fuel Subtype').find('select').should('have.value', '95 E10')
   })
 
   it('detected fill-up with a location: the form lists stations near it right away', () => {
@@ -326,7 +330,7 @@ describe('hammond UI', () => {
         body: { odoReading: 22100, fuelQuantity: 30, lat: 50.1, lng: 8.76, date: '2026-11-07T16:00:00Z' } }))
       .its('body.detection.id').then((id) => {
         visit(`/vehicles/${vehicleId}/fillup?detection=${id}`)
-        cy.get('.station-picker').contains('Stations near the detected location · Super E10')
+        cy.get('.station-picker').contains('Stations near the detected location · 95 E10')
         cy.get('.station-picker .station').first().should('contain', 'ARAL')
         cy.request({ method: 'POST', url: `/api/detections/${id}/discard`, headers: apiHeaders })
       })
@@ -344,6 +348,17 @@ describe('hammond UI', () => {
     cy.contains('.field', 'Odometer Reading').find('input').clear().type('22300')
     cy.get('form [type=submit]').first().click()
     cy.wait('@save').its('response.statusCode').should('eq', 201)
+  })
+
+  it('fuel subtype is a drop-down for the vehicle\'s fuel type, defaulting to its grade', () => {
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('Last fill-up:')
+    cy.contains('.field', 'Fuel Subtype').find('select option').then(($o) => {
+      const values = [...$o].map((o) => o.value)
+      expect(values).to.include.members(['', 'Diesel', 'Premium Diesel', 'HVO100']) // the test vehicle is diesel
+      expect(values).to.not.include('95')
+    })
+    cy.contains('.field', 'Fuel Subtype').find('select option').contains('Eurodizel')
   })
 
   it('logs out, and a wrong password is refused', () => {

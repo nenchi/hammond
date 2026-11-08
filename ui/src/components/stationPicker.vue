@@ -3,7 +3,7 @@ import axios from 'axios'
 import { mapState } from 'vuex'
 import store from '@state/store'
 
-const GRADES = { e5: 'Super E5', e10: 'Super E10', diesel: 'Diesel' }
+import { GRADE_LABELS as GRADES } from '@utils/fuel-grades'
 
 // Stations nearby with current prices (Admin → Site Settings → Fuel prices). Picking one emits
 // { name, price, grade }. The price is today's, so it's a suggestion the user can still change.
@@ -24,6 +24,10 @@ export default {
     },
     enabled() {
       return this.settings && this.settings.fuelPriceProvider && this.mode !== 'off'
+    },
+    // admins see where to switch it on instead of nothing
+    showSetupHint() {
+      return !this.enabled && this.mode !== 'off' && store.state.auth.currentUser && store.state.auth.currentUser.role === 'ADMIN'
     },
     gradeLabel() {
       return this.result ? GRADES[this.result.grade] || this.result.grade : ''
@@ -84,7 +88,11 @@ export default {
 </script>
 
 <template>
-  <div v-if="enabled" class="station-picker mb-4">
+  <p v-if="showSetupHint" class="help mb-3 station-setup-hint"
+    >📍 Stations nearby with current prices: set up <router-link to="/admin/settings">Site Settings → Fuel prices</router-link
+    >.</p
+  >
+  <div v-else-if="enabled" class="station-picker mb-4">
     <b-button icon-left="map-marker-alt" :loading="loading" class="stations-nearby" @click="nearMe">Stations nearby</b-button>
     <p v-if="error" class="help is-danger">{{ error }}</p>
     <div v-if="result && result.stations.length" class="box mt-2 p-3">

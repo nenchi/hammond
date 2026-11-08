@@ -9,6 +9,7 @@ import axios from 'axios'
 import { round } from 'lodash'
 import { format } from 'date-fns'
 import { timeOf } from '@utils/format-date'
+import { fuelSubtypes, defaultFuelSubtype } from '@utils/fuel-grades'
 
 export default {
   page: {
@@ -60,6 +61,9 @@ export default {
     },
     ...mapState('users', ['me']),
     ...mapState('vehicles', ['fuelUnitMasters', 'fuelTypeMasters', 'vehicles']),
+    subtypeOptions() {
+      return fuelSubtypes(this.selectedVehicle.fuelType, this.fillupModel.fuelSubType)
+    },
     filteredFuelSubtypes() {
       if (!this.fillupModel.fuelSubType) {
         return this.fuelSubTypes
@@ -158,7 +162,7 @@ export default {
             this.fillupModel.fillingStation = last.fillingStation
             this.showMore = true // show what was pre-filled
           }
-          if (!this.fillupModel.fuelSubType) this.fillupModel.fuelSubType = last.fuelSubType || ''
+          if (!this.fillupModel.fuelSubType) this.fillupModel.fuelSubType = last.fuelSubType || defaultFuelSubtype(this.selectedVehicle)
         })
         .catch((err) => console.log(err))
     },
@@ -176,7 +180,7 @@ export default {
         fillingStation: '',
         comments: '',
         userId: '',
-        fuelSubType: '',
+        fuelSubType: defaultFuelSubtype(this.selectedVehicle),
       }
     },
     async createFillup() {
@@ -305,15 +309,10 @@ export default {
         <b-input v-model="fillupTime" type="time" class="fillup-time"></b-input>
       </b-field>
       <b-field label="Fuel Subtype">
-        <b-autocomplete
-          v-model="fillupModel.fuelSubType"
-          :data="filteredFuelSubtypes"
-          placeholder="Octane etc."
-          clearable
-          autofocus
-          @select="(option) => (fillupModel.fuelSubType = option)"
-        >
-        </b-autocomplete>
+        <b-select v-model="fillupModel.fuelSubType" expanded class="fuel-subtype">
+          <option value="">–</option>
+          <option v-for="[value, text] in subtypeOptions" :key="value" :value="value">{{ text }}</option>
+        </b-select>
       </b-field>
       <b-field label="Quantity*" addons>
         <b-input v-model.number="fillupModel.fuelQuantity" type="number" step=".001" min="0" expanded required></b-input>
