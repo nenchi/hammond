@@ -314,6 +314,10 @@ export default {
             <td><a :href="`${repo}/issues`" target="_blank" rel="noopener noreferrer">Request here</a></td>
           </tr>
           <tr>
+            <td>Support this fork</td>
+            <td><a href="https://paypal.me/nenadd26" target="_blank" rel="noopener noreferrer">Buy me a coffee (PayPal)</a></td>
+          </tr>
+          <tr>
             <td>Based on</td>
             <td
               ><a href="https://github.com/akhilrex/hammond" target="_blank" rel="noopener noreferrer">akhilrex/hammond</a> by Akhil

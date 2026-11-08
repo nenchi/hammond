@@ -230,6 +230,7 @@ describe('hammond UI', () => {
     cy.contains('td', 'Website').next().find('a').should('have.attr', 'href', 'https://github.com/nenchi/hammond')
     cy.contains('td', 'Found a bug').next().find('a').should('have.attr', 'href', 'https://github.com/nenchi/hammond/issues')
     cy.contains('td', 'Based on').next().find('a').first().should('have.attr', 'href', 'https://github.com/akhilrex/hammond')
+    cy.contains('td', 'Support this fork').next().find('a').should('have.attr', 'href', 'https://paypal.me/nenadd26')
   })
 
   it('logs out, and a wrong password is refused', () => {
