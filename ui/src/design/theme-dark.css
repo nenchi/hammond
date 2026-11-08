@@ -83,3 +83,16 @@ html.theme-dark .datepicker .datepicker-table .datepicker-body .datepicker-cell.
   color: var(--text-strong);
 }
 html.theme-dark .datepicker .dropdown .dropdown-menu .has-text-centered, html.theme-dark .datepicker .dropdown-content { background-color: var(--surface); }
+
+/* b-table below 769px (phone, narrow window): rows become cards with a fixed white background, also on
+   hover; and the expanded "Details" row */
+html.theme-dark .b-table .table-wrapper.has-mobile-cards tr:not([class*='is-']),
+html.theme-dark .b-table .table-wrapper.has-mobile-cards tr:not([class*='is-']):hover {
+  background: var(--surface-2);
+}
+html.theme-dark .b-table .table-wrapper.has-mobile-cards tr { box-shadow: 0 0 0 1px var(--border); }
+html.theme-dark .b-table .table-wrapper.has-mobile-cards tr:not(.detail):not(.is-empty):not(.table-footer) td {
+  border-bottom-color: var(--border);
+}
+html.theme-dark .b-table .table tr.detail { background: var(--bg); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6); }
+html.theme-dark .b-table .table-mobile-sort .select select { background-color: var(--surface-2); }
