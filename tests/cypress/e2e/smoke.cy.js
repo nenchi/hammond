@@ -393,7 +393,7 @@ describe('hammond UI', () => {
     cy.get('.home-assistant input[type=password]').type('ci-ha-token')
     cy.get('.home-assistant button[type=submit]').click()
     cy.contains('Home Assistant settings saved')
-    cy.get('.home-assistant input[type=password]').should('have.value', '').and('have.attr', 'placeholder', '••••••••')
+    cy.get('.home-assistant input[type=password]').should('have.value', '').and('have.attr', 'placeholder', 'saved, hidden – type a new one to replace it')
     cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-ha-token')
     cy.get('.home-assistant').contains('button', 'Test connection').click()
     cy.get('.ha-test-result').should('contain', '✓ Connected to CI Home (2026.11.1)')
