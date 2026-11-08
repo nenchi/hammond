@@ -126,6 +126,19 @@ describe('hammond UI', () => {
     cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, theme: 'light' } })
   })
 
+  it('phone: API key list fits, Revoke is inside the box', () => {
+    cy.request({ method: 'POST', url: '/api/me/apikeys', headers: apiHeaders, body: { name: 'phone layout' } })
+    cy.viewport(375, 667)
+    visit('/settings')
+    cy.get('.api-keys').then(($box) => {
+      const box = $box[0].getBoundingClientRect()
+      cy.get('.api-key-list').contains('button', 'Revoke').then(($b) => {
+        const b = $b[0].getBoundingClientRect()
+        expect(b.right, 'Revoke inside the API keys box').to.be.at.most(box.right)
+      })
+    })
+  })
+
   it('mobile: stats chart loads once and keeps its size', () => {
     cy.viewport(375, 667)
     cy.intercept('GET', '/api/vehicles/*/mileage*').as('mileage')
