@@ -96,8 +96,8 @@ export default {
       <b-field label="URL">
         <b-input v-model="haModel.url" type="url" placeholder="http://homeassistant.local:8123"></b-input>
       </b-field>
-      <b-field label="Access token" :message="haTokenSet ? 'A token is set; leave empty to keep it, enter - to remove it.' : ''">
-        <b-input v-model="haModel.token" type="password" password-reveal :placeholder="haTokenSet ? '••••••••' : ''"></b-input>
+      <b-field label="Access token" :message="haTokenSet ? 'A token is saved. hammond never shows it again (the eye only shows what you type now); leave empty to keep it, - removes it. Test connection checks it.' : ''">
+        <b-input v-model="haModel.token" type="password" password-reveal :placeholder="haTokenSet ? 'saved, hidden – type a new one to replace it' : ''"></b-input>
       </b-field>
       <div class="buttons">
         <b-button native-type="submit" type="is-primary">Save Home Assistant</b-button>

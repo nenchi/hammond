@@ -328,7 +328,7 @@ describe('hammond UI', () => {
     cy.get('.price-profile').should('have.length', 1)
     cy.get('.price-profile select').should('have.value', 'custom')
     cy.get('.price-profile .share-profile input').should('be.checked') // shared with users by default
-    cy.get('.price-profile input[type=password]').should('have.attr', 'placeholder', '••••••••').and('have.value', '')
+    cy.get('.price-profile input[type=password]').should('have.attr', 'placeholder', 'saved, hidden – type a new one to replace it').and('have.value', '')
     cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-key')
     cy.get('.fuel-prices').contains('button', 'Test connection').click()
     cy.get('.test-result').should('contain', '✓ Works: 2 stations').and('contain', 'ARAL')

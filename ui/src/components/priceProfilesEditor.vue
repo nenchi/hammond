@@ -95,8 +95,8 @@ export default {
       <b-field label="URL" :message="kinds[p.kind].url ? 'Empty = ' + kinds[p.kind].url : ''">
         <b-input v-model="p.url" type="url" :placeholder="kinds[p.kind].url || 'https://…/json'" :required="p.kind === 'custom'"></b-input>
       </b-field>
-      <b-field v-if="kinds[p.kind].key" label="API key" :message="p.keySet ? 'A key is set; leave empty to keep it, enter - to remove it.' : ''">
-        <b-input v-model="p.apiKey" type="password" password-reveal :placeholder="p.keySet ? '••••••••' : ''"></b-input>
+      <b-field v-if="kinds[p.kind].key" label="API key" :message="p.keySet ? 'A key is saved. hammond never shows it again (the eye only shows what you type now); leave empty to keep it, - removes it.' : ''">
+        <b-input v-model="p.apiKey" type="password" password-reveal :placeholder="p.keySet ? 'saved, hidden – type a new one to replace it' : ''"></b-input>
       </b-field>
       <b-field v-if="shareable">
         <b-checkbox v-model="p.shared" class="share-profile">Share with users (they can use it, not see the key)</b-checkbox>
