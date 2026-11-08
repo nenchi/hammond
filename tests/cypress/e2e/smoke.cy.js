@@ -262,10 +262,20 @@ describe('hammond UI', () => {
   it('fill-up time: entered in the form, shown in the list, can be hidden in the settings', () => {
     cy.intercept('POST', `/api/vehicles/${vehicleId}/fillups`).as('createFillup')
     visit(`/vehicles/${vehicleId}/fillup`)
+    // the form loads the last fill-up in the background (pre-fill, opens the station section): let it
+    // finish before typing, else it re-renders mid-test and the save was occasionally blocked
+    cy.contains('Last fill-up:')
+    cy.contains('.field', 'Filling Station Name')
     cy.contains('.field', 'Quantity').find('input[type=number]').first().clear().type('9.5')
     cy.contains('.field', 'Price per').find('input').clear().type('1.7')
     cy.contains('.field', 'Odometer Reading').find('input').clear().type('21450')
     cy.get('.fillup-time input').clear().type('07:45')
+    // name any field the browser considers invalid (it then silently refuses to submit)
+    cy.get('form').first().then(($f) => {
+      const bad = [...$f[0].elements].filter((e) => e.willValidate && !e.checkValidity())
+        .map((e) => `${e.type} "${e.value}": ${e.validationMessage}`)
+      expect(bad, 'invalid form fields').to.deep.eq([])
+    })
     cy.get('form [type=submit]').first().click()
     cy.wait('@createFillup').its('request.body.date').then((iso) => {
       const d = new Date(iso)
