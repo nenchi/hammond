@@ -19,11 +19,16 @@ type UpdateSettingModel struct {
 	CustomFuelSubtypes     *string `json:"customFuelSubtypes" form:"customFuelSubtypes" binding:"omitempty,max=1000"`
 }
 
-// UpdateFuelPriceSettingsRequest (admin): apiKey empty = keep the stored one, "-" = remove it
+// UpdateFuelPriceSettingsRequest (admin): the whole profile list, in order. Per profile apiKey
+// empty = keep the stored one (matched by id), "-" = remove it. Checked by service.UpdatePriceProfiles.
 type UpdateFuelPriceSettingsRequest struct {
-	Provider string `json:"provider" binding:"omitempty,oneof=tankerkoenig custom"`
-	URL      string `json:"url" binding:"omitempty,url,max=300"`
-	APIKey   string `json:"apiKey" binding:"max=200"`
+	Profiles []db.PriceProfile `json:"profiles" binding:"max=10"`
+}
+
+// UpdateHomeAssistantRequest (admin): token empty = keep, "-" = remove
+type UpdateHomeAssistantRequest struct {
+	URL   string `json:"url" binding:"omitempty,url,max=300"`
+	Token string `json:"token" binding:"max=500"`
 }
 
 // CreateDetectionRequest: POST /api/v1/vehicles/:id/detections. Send fuelQuantity, or the fuel level

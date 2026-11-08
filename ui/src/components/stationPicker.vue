@@ -5,7 +5,7 @@ import store from '@state/store'
 
 import { GRADE_LABELS as GRADES } from '@utils/fuel-grades'
 
-// Stations nearby with current prices (Admin → Site Settings → Fuel prices). Picking one emits
+// Stations nearby with current prices (Admin → Site Settings → Fuel prices, a list of profiles). Picking one emits
 // { name, price, grade }. The price is today's, so it's a suggestion the user can still change.
 export default {
   props: {
@@ -14,7 +14,7 @@ export default {
     detection: { type: Object, default: null },
   },
   data() {
-    return { loading: false, error: '', result: null, heading: '' }
+    return { loading: false, error: '', result: null, heading: '', pos: null }
   },
   computed: {
     ...mapState('utils', ['settings']),
@@ -23,11 +23,14 @@ export default {
       return (this.me && this.me.stationSuggestions) || 'location'
     },
     enabled() {
-      return this.settings && this.settings.fuelPriceProvider && this.mode !== 'off'
+      return this.profiles.length > 0 && this.mode !== 'off'
     },
     // admins see where to switch it on instead of nothing
     showSetupHint() {
       return !this.enabled && this.mode !== 'off' && store.state.auth.currentUser && store.state.auth.currentUser.role === 'ADMIN'
+    },
+    profiles() {
+      return (this.settings && this.settings.fuelPriceProfiles) || []
     },
     gradeLabel() {
       return this.result ? this.result.grades.map((g) => GRADES[g] || g).join(' / ') : ''
@@ -69,16 +72,18 @@ export default {
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
       )
     },
-    load(lat, lng, heading) {
+    // profile empty = the server asks the profiles in order, the first with stations nearby answers
+    load(lat, lng, heading, profile = '') {
       if (!this.enabled) return
       this.loading = true
       this.error = ''
+      this.pos = { lat, lng, heading }
       axios
-        .get(`/api/vehicles/${this.vehicle.id}/stations`, { params: { lat, lng, rad: 2 } })
+        .get(`/api/vehicles/${this.vehicle.id}/stations`, { params: { lat, lng, rad: 2, profile } })
         .then(({ data }) => {
           this.result = data
           this.heading = heading
-          if (!data.stations.length) this.error = 'No stations within 2 km.'
+          if (!data.stations.length) this.error = `No stations within 2 km (${data.profileName}).`
         })
         .catch((ex) => {
           this.error = (ex.response && ex.response.data && ex.response.data.error) || ex.message
@@ -109,6 +114,16 @@ export default {
   >
   <div v-else-if="enabled" class="station-picker mb-4">
     <b-button icon-left="map-marker-alt" :loading="loading" class="stations-nearby" @click="nearMe">Stations nearby</b-button>
+    <b-select
+      v-if="result && profiles.length > 1"
+      :value="result.profile"
+      size="is-small"
+      class="price-profile-switch is-inline-block ml-2"
+      title="Price source"
+      @input="(id) => load(pos.lat, pos.lng, pos.heading, id)"
+    >
+      <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+    </b-select>
     <p v-if="error" class="help is-danger">{{ error }}</p>
     <div v-if="result && result.stations.length" class="box mt-2 p-3">
       <p class="heading">{{ heading }} · {{ gradeLabel }}</p>
@@ -139,7 +154,7 @@ export default {
           <strong v-else>no {{ gradeLabel }}</strong>
         </span>
       </a>
-      <p class="help">{{ result.attribution }} · today's price, check it on the receipt</p>
+      <p class="help">{{ result.profileName }} · {{ result.attribution }} · today's price, check it on the receipt</p>
     </div>
   </div>
 </template>

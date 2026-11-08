@@ -314,19 +314,20 @@ describe('hammond UI', () => {
   it('stations nearby: admin sets the provider, the form lists E10 prices and fills one in', () => {
     // not set up yet (the API smoke test set one up before Cypress runs: switch it off first): admins see
     // where to switch it on instead of nothing
-    cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders, body: { provider: '', url: '', apiKey: '-' } })
+    cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders, body: { profiles: [] } })
     visit(`/vehicles/${vehicleId}/fillup`)
     cy.get('.station-setup-hint').contains('a', 'Site Settings → Fuel prices').should('have.attr', 'href', '/admin/settings')
     cy.contains('button', 'Stations nearby').should('not.exist')
     // fake Tankerkönig on 127.0.0.1:3999 (tests/fake_fuelprices.py, started by the workflow)
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
-      body: { provider: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' } })
+      body: { profiles: [{ name: 'CI fake', kind: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' }] } })
     cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
       cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, fuelGrade: 'e10,e5' } }))
 
     visit('/admin/settings')
-    cy.get('.fuel-prices select').should('have.value', 'custom')
-    cy.get('.fuel-prices input[type=password]').should('have.attr', 'placeholder', '••••••••').and('have.value', '')
+    cy.get('.price-profile').should('have.length', 1)
+    cy.get('.price-profile select').should('have.value', 'custom')
+    cy.get('.price-profile input[type=password]').should('have.attr', 'placeholder', '••••••••').and('have.value', '')
     cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-key')
     cy.get('.fuel-prices').contains('button', 'Test connection').click()
     cy.get('.test-result').should('contain', '✓ Works: 2 stations').and('contain', 'ARAL')
@@ -341,6 +342,7 @@ describe('hammond UI', () => {
     cy.contains('button', 'Stations nearby').click()
     cy.get('.station-picker').within(() => {
       cy.contains('Stations nearby · 95 E10 / 95')
+      cy.get('.price-profile-switch').should('not.exist') // only one profile
       // both accepted grades per station; the station without E10 shows its E5 price; cheapest highlighted
       cy.contains('.station', 'ARAL').find('.price[data-grade=e10]').should('contain', '1.739')
       cy.contains('.station', 'ARAL').find('.price[data-grade=e5]').should('contain', '1.799')
@@ -351,6 +353,58 @@ describe('hammond UI', () => {
     cy.contains('.field', 'Price per').find('input').should('have.value', '1.799')
     cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'ARAL, Frankfurter Str. 12, 63067 Offenbach')
     cy.contains('.field', 'Fuel Subtype').find('select').should('have.value', '95')
+  })
+
+  it('price profiles: admin adds and orders profiles, the form switches between them', () => {
+    visit('/admin/settings')
+    cy.get('.price-profile').should('have.length', 1) // CI fake from the test before
+    cy.contains('.add-profile', 'Austria – E-Control').click()
+    cy.get('.price-profile').eq(1).within(() => {
+      cy.get('select').should('have.value', 'econtrol')
+      cy.get('input[type=password]').should('not.exist') // Austria needs no key
+      cy.get('input[type=url]').type('http://127.0.0.1:3999/nothing-here') // answers nothing useful
+    })
+    cy.get('.price-profile').eq(1).find('[title="Ask earlier"]').click()
+    cy.get('.price-profile').eq(0).find('select').should('have.value', 'econtrol')
+    cy.get('.fuel-prices input[type=submit]').click()
+    cy.contains('Fuel price settings saved')
+    // Austria is asked first, fails, the CI fake answers; the switch offers both
+    cy.visit(`/vehicles/${vehicleId}/fillup`, {
+      onBeforeLoad(win) {
+        cy.stub(win.navigator.geolocation, 'getCurrentPosition').callsFake((ok) => ok({ coords: { latitude: 50.1, longitude: 8.76 } }))
+      },
+    })
+    cy.contains('button', 'Stations nearby').click()
+    cy.get('.station-picker .station').first().should('contain', 'ARAL')
+    cy.get('.price-profile-switch select').find('option').should('have.length', 2)
+    cy.get('.price-profile-switch select').should('contain', 'CI fake')
+    cy.get('.station-picker').should('contain', 'CI fake ·')
+    // back to one profile for the tests after this
+    cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
+      body: { profiles: [{ name: 'CI fake', kind: 'custom', url: 'http://127.0.0.1:3999/json', apiKey: 'ci-key' }] } })
+  })
+
+  it('home assistant: a new fill-up is pre-filled with the car odometer', () => {
+    // fake HA on 127.0.0.1:3999 (tests/fake_fuelprices.py)
+    visit('/admin/settings')
+    cy.get('.home-assistant input[type=url]').clear().type('http://127.0.0.1:3999')
+    cy.get('.home-assistant input[type=password]').type('ci-ha-token')
+    cy.get('.home-assistant input[type=submit]').click()
+    cy.contains('Home Assistant settings saved')
+    cy.get('.home-assistant input[type=password]').should('have.value', '').and('have.attr', 'placeholder', '••••••••')
+    cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-ha-token')
+    cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
+      cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, odometerEntity: 'sensor.ci_odometer' } }))
+    visit(`/vehicles/${vehicleId}/edit`)
+    cy.contains('.field', 'Home Assistant odometer entity').find('input').should('have.value', 'sensor.ci_odometer')
+
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('.field', 'Odometer Reading').find('input').should('have.value', '23456')
+    cy.contains('.field', 'Odometer Reading').should('contain', 'From Home Assistant, updated').and('contain', 'Last fill-up:')
+    noConsoleErrors()
+    cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
+      cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, odometerEntity: '' } }))
+    cy.request({ method: 'POST', url: '/api/settings/homeAssistant', headers: apiHeaders, body: { url: '', token: '-' } })
   })
 
   it('detected fill-up with a location: the form lists stations near it right away', () => {

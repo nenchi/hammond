@@ -62,7 +62,7 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			c.JSON(http.StatusNotFound, gin.H{})
 			return
 		}
-		res, err := service.NearbyStations(vehicle, lat, lng, rad)
+		res, err := service.NearbyStations(vehicle, lat, lng, rad, c.Query("profile"))
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
@@ -70,13 +70,17 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 		c.JSON(http.StatusOK, res)
 	})
 	router.GET("/settings/fuelPrices/test", ShouldBeAdmin(), func(c *gin.Context) {
-		lat, err1 := strconv.ParseFloat(c.DefaultQuery("lat", "50.1109"), 64) // Frankfurt am Main
-		lng, err2 := strconv.ParseFloat(c.DefaultQuery("lng", "8.6821"), 64)
-		if err1 != nil || err2 != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid position"})
-			return
+		var lat, lng *float64 // empty = a fixed point in the profile's country
+		if c.Query("lat") != "" || c.Query("lng") != "" {
+			la, err1 := strconv.ParseFloat(c.Query("lat"), 64)
+			ln, err2 := strconv.ParseFloat(c.Query("lng"), 64)
+			if err1 != nil || err2 != nil {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid position"})
+				return
+			}
+			lat, lng = &la, &ln
 		}
-		res, err := service.TestFuelPriceProvider(lat, lng)
+		res, err := service.TestFuelPriceProvider(c.Query("profile"), lat, lng)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
 			return
@@ -89,7 +93,41 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 			return
 		}
-		if err := service.UpdateFuelPriceSettings(req.Provider, req.URL, req.APIKey); err != nil {
+		if err := service.UpdatePriceProfiles(req.Profiles); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, service.GetSettings())
+	})
+}
+
+// RegisterHomeAssistantController: the car's current odometer for the fill-up form, and the admin
+// settings for the connection (the token is write-only).
+func RegisterHomeAssistantController(router *gin.RouterGroup) {
+	router.GET("/vehicles/:id/odometer", func(c *gin.Context) {
+		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		vehicle, err := service.GetVehicleById(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		odo, err := service.CurrentOdometer(vehicle)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, odo)
+	})
+	router.POST("/settings/homeAssistant", ShouldBeAdmin(), func(c *gin.Context) {
+		var req models.UpdateHomeAssistantRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		if err := service.UpdateHomeAssistantSettings(req.URL, req.Token); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}

@@ -97,6 +97,7 @@ export default {
           tankCapacity: null,
           fuelGrade: '',
           gaugeSegments: 4,
+          odometerEntity: '',
           make: '',
           model: '',
           yearOfManufacture: null,
@@ -111,6 +112,7 @@ export default {
           tankCapacity: veh.tankCapacity || null,
           fuelGrade: veh.fuelGrade || '',
           gaugeSegments: veh.gaugeSegments || 4,
+          odometerEntity: veh.odometerEntity || '',
           make: veh.make,
           model: veh.model,
           yearOfManufacture: veh.yearOfManufacture,
@@ -222,6 +224,13 @@ export default {
         <div class="fuel-grades">
           <b-checkbox v-for="g in gradeChoices" :key="g.value" v-model="acceptedGrades" :native-value="g.value">{{ g.text }}</b-checkbox>
         </div>
+      </b-field>
+      <b-field
+        label="Home Assistant odometer entity"
+        message="Pre-fills new fill-ups with the car's current odometer, e.g. sensor.a180_odometer (Admin → Site Settings → Home Assistant)"
+      >
+        <b-input v-model.trim="vehicleModel.odometerEntity" pattern="[a-z0-9_]+\.[a-z0-9_]+" maxlength="100" :has-counter="false"
+          placeholder="sensor.…_odometer"></b-input>
       </b-field>
       <b-field
         label="Gauge segments"

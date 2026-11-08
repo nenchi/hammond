@@ -84,6 +84,8 @@ type Vehicle struct {
 	TankCapacity float32 `json:"tankCapacity"`
 	// accepted grades for station prices, preferred first: "e10,e5"; empty = from the fuel type
 	FuelGrade string `json:"fuelGrade"`
+	// Home Assistant entity with the car's odometer (sensor.xyz_odometer): pre-fills new fill-ups
+	OdometerEntity string `json:"odometerEntity"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
 	GaugeSegments int          `gorm:"default:4" json:"gaugeSegments"`
 	GaugeResetAt  *time.Time   `json:"gaugeResetAt"`
@@ -176,11 +178,29 @@ type Setting struct {
 	Base
 	Currency     string       `json:"currency" gorm:"default:INR"`
 	DistanceUnit DistanceUnit `json:"distanceUnit" gorm:"default:1"`
-	// station prices: "" (off), "tankerkoenig" (Germany) or "custom" (Tankerkönig-compatible URL)
-	FuelPriceProvider string `json:"fuelPriceProvider"`
-	FuelPriceURL      string `json:"fuelPriceUrl"`
-	FuelPriceAPIKey   string `json:"-"` // never sent to the browser; GET /api/settings is readable by every user
-	FuelPriceKeySet   bool   `gorm:"-" json:"fuelPriceKeySet"`
+	// station prices before profiles (v1.5): read once to convert into a profile, then cleared
+	FuelPriceProvider string `json:"-"`
+	FuelPriceURL      string `json:"-"`
+	FuelPriceAPIKey   string `json:"-"`
+	// station price profiles as JSON ([]PriceProfile, keys included): never sent as is,
+	// GET /api/settings is readable by every user — PriceProfiles is the copy without keys
+	FuelPriceProfiles string         `json:"-"`
+	PriceProfiles     []PriceProfile `gorm:"-" json:"fuelPriceProfiles"`
+	// Home Assistant (current odometer for the fill-up form); the token is write-only
+	HAURL      string `json:"haUrl"`
+	HAToken    string `json:"-"`
+	HATokenSet bool   `gorm:"-" json:"haTokenSet"`
+}
+
+// PriceProfile: one station price source, tried in list order (the first with stations nearby wins).
+// Kind "tankerkoenig" (Germany), "econtrol" (Austria) or "custom" (Tankerkönig-compatible URL).
+type PriceProfile struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	URL    string `json:"url"`              // empty = the kind's default
+	APIKey string `json:"apiKey,omitempty"` // request: "" keeps the stored key, "-" removes it
+	KeySet bool   `json:"keySet"`
 }
 type Migration struct {
 	Base

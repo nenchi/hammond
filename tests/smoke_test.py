@@ -193,17 +193,21 @@ check("non-admin can't change site settings", s == 401, s)
 # ---- station prices (fake Tankerkönig on 127.0.0.1:3999 in CI) ----
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
 check("stations: clear error while no provider is set up", s == 422 and "not set up" in r, (s, r))
-s, st = call("POST", "/api/settings/fuelPrices", {"provider": "custom", "url": "http://127.0.0.1:3999/json", "apiKey": "ci-key"}, token=tok)
-check("admin sets the price provider; key not echoed", s == 200 and st.get("fuelPriceKeySet") is True and "ci-key" not in json.dumps(st), (s, st))
+s, st = call("POST", "/api/settings/fuelPrices", {"profiles": [
+    {"name": "Austria", "kind": "econtrol", "url": "http://127.0.0.1:3999/nothing-here"},  # fails: next profile answers
+    {"name": "CI fake", "kind": "custom", "url": "http://127.0.0.1:3999/json", "apiKey": "ci-key"}]}, token=tok)
+profiles = st.get("fuelPriceProfiles") or [] if s == 200 else []
+check("admin sets price profiles; key not echoed", s == 200 and len(profiles) == 2 and profiles[1]["keySet"] is True
+      and all(p["id"] for p in profiles) and "ci-key" not in json.dumps(st), (s, st))
 s, pub = call("GET", "/api/settings", token=ptok)
-check("site settings readable by users without the key", s == 200 and "ci-key" not in json.dumps(pub) and pub.get("fuelPriceProvider") == "custom", pub)
-s, _ = call("POST", "/api/settings/fuelPrices", {"provider": "tankerkoenig", "apiKey": "x"}, token=ptok)
+check("site settings readable by users without the key", s == 200 and "ci-key" not in json.dumps(pub) and [p["kind"] for p in pub.get("fuelPriceProfiles", [])] == ["econtrol", "custom"], pub)
+s, _ = call("POST", "/api/settings/fuelPrices", {"profiles": [{"name": "x", "kind": "tankerkoenig", "apiKey": "x"}]}, token=ptok)
 check("non-admin can't change the price provider", s == 401, s)
 call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10"}, token=tok)
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
 check("stations nearby with E10 prices", s == 200 and r["grades"] == ["e10"] and r["stations"][0]["price"] == 1.739
-      and r["stations"][1]["price"] is None and "MTS-K" in r["attribution"], (s, r))
+      and r["stations"][1]["price"] is None and "MTS-K" in r["attribution"] and r["profileName"] == "CI fake", (s, r))
 s, g = call("GET", f"/api/vehicles/{vid}/gauge", token=tok)
 check("gauge calibration: 4 segments, linear until 2 confirmed detections", s == 200 and g["segments"] == 4
       and len(g["segmentLitres"]) == 4 and g["samples"] <= 1 and not g["calibrated"], (s, g))
@@ -211,11 +215,28 @@ s, _ = call("POST", f"/api/vehicles/{vid}/gauge/reset", token=tok)
 check("gauge calibration reset", s == 200, s)
 s, _ = call("GET", "/api/vehicles/00000000-0000-0000-0000-000000000000/gauge", token=tok)
 check("gauge of a foreign vehicle is 404", s == 404, s)
-s, r = call("GET", "/api/settings/fuelPrices/test", token=tok)
+s, r = call("GET", f"/api/settings/fuelPrices/test?profile={profiles[1]['id']}", token=tok)
 check("admin: test connection", s == 200 and r["ok"] and r["stations"] == 2, (s, r))
 s, _ = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10,hbuzg"}, token=tok)
 check("unknown fuel grade refused", s == 422, s)
+
+# ---- Home Assistant odometer (fake HA on the same port) ----
+s, r = call("GET", f"/api/vehicles/{vid}/odometer", token=tok)
+check("odometer: not configured without HA", s == 200 and r["configured"] is False, (s, r))
+s, st = call("POST", "/api/settings/homeAssistant", {"url": "http://127.0.0.1:3999", "token": "ci-ha-token"}, token=tok)
+check("admin sets HA; token not echoed", s == 200 and st.get("haTokenSet") is True and "ci-ha-token" not in json.dumps(st), (s, st))
+s, _ = call("POST", "/api/settings/homeAssistant", {"url": "http://x.example", "token": "x"}, token=ptok)
+check("non-admin can't change HA", s == 401, s)
+veh = {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia", "fuelUnit": 0, "fuelType": 1,
+       "tankCapacity": 50, "fuelGrade": "e10"}
+s, _ = call("PUT", f"/api/vehicles/{vid}", {**veh, "odometerEntity": "../../api/config"}, token=tok)
+check("odometer entity must be an entity id", s == 422, s)
+call("PUT", f"/api/vehicles/{vid}", {**veh, "odometerEntity": "sensor.ci_odometer"}, token=tok)
+s, r = call("GET", f"/api/vehicles/{vid}/odometer", token=tok)
+check("odometer from HA", s == 200 and r["configured"] and r["value"] == 23456 and r["unit"] == "km", (s, r))
+call("PUT", f"/api/vehicles/{vid}", veh, token=tok)
+call("POST", "/api/settings/homeAssistant", {"url": "", "token": "-"}, token=tok)
 
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))

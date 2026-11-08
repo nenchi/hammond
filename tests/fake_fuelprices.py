@@ -1,5 +1,6 @@
 """Fake Tankerkönig list.php for CI (python3 tests/fake_fuelprices.py [port]): fixed stations around
-any position; key "ci-key" required, like the real API needs one."""
+any position; key "ci-key" required, like the real API needs one. Also a fake Home Assistant
+/api/states/sensor.ci_odometer (token "ci-ha-token")."""
 import json, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -16,6 +17,18 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path.startswith("/api/states/"):
+            ok = self.headers.get("Authorization") == "Bearer ci-ha-token"
+            known = u.path == "/api/states/sensor.ci_odometer"
+            body = {"entity_id": "sensor.ci_odometer", "state": "23456", "attributes": {"unit_of_measurement": "km"},
+                    "last_updated": "2026-11-08T08:00:00+00:00", "last_reported": "2026-11-08T08:00:00+00:00"}
+            data = json.dumps(body).encode()
+            self.send_response(200 if ok and known else 401 if not ok else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if u.path != "/json/list.php":
             self.send_response(404); self.end_headers(); return
         body = ({"ok": False, "message": "apikey falsch"} if q.get("apikey") != ["ci-key"] else
