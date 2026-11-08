@@ -210,10 +210,14 @@ describe('hammond UI', () => {
   })
 
   it('logs out, and a wrong password is refused', () => {
-    visit('/logout')
+    // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
+    // and typing into the first login page raced the second (flaky in CI)
+    cy.contains('.navbar a', 'Log out').click()
     cy.location('pathname').should('eq', '/login')
-    // use the login page logout landed on; reloading /login right away raced the logout (flaky in CI)
+    cy.window().its('localStorage').invoke('getItem', 'auth.currentUser').should('eq', 'null')
+    cy.intercept('POST', '/api/login').as('login')
     fillLogin('wrong-password')
+    cy.wait('@login').its('response.statusCode').should('eq', 403)
     cy.contains('There was an error logging in')
     cy.location('pathname').should('eq', '/login')
   })
