@@ -407,6 +407,36 @@ describe('hammond UI', () => {
     cy.request({ method: 'POST', url: '/api/settings/homeAssistant', headers: apiHeaders, body: { url: '', token: '-' } })
   })
 
+  it('electric: a charge at a charging place is priced by its tariff', () => {
+    cy.request({ method: 'POST', url: '/api/vehicles', headers: apiHeaders,
+      body: { nickname: 'CY EV', registration: 'CY EV1', make: 'VW', model: 'ID.3', fuelUnit: 4, fuelType: 4 } }).its('body.id').then((evId) =>
+      cy.request({ method: 'POST', url: '/api/chargingPlaces', headers: apiHeaders,
+        body: { name: 'Home', lossPercent: 0, components: [{ name: 'Energy', price: 0.1,
+          rules: [{ label: 'NT', days: 'all', from: '22:00', to: '06:00', price: 0.05 }] }] } }).its('body.id').then((placeId) => {
+        visit('/admin/charging')
+        cy.contains('.charging-place', 'Home').click()
+        cy.get('.tariff-rules tbody tr').should('have.length', 1)
+        cy.contains('button', 'Rule').click()
+        cy.get('.tariff-rules tbody tr').should('have.length', 2) // not saved
+
+        visit(`/vehicles/${evId}/fillup`)
+        cy.get('.charging-place select').should('have.value', placeId) // the only place: preselected
+        cy.contains('button', 'Stations nearby').should('not.exist')
+        cy.get('.fillup-time input').clear().type('23:00')
+        cy.get('.charge-end input').type('01:00')
+        cy.contains('.field', 'Quantity').find('input').type('10')
+        cy.get('.charge-quote').should('contain', 'Home: Energy · NT 0.50 = 0.50')
+        cy.contains('.field', 'Price per').find('input').should('have.value', '0.05')
+        cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'Home')
+        // elsewhere: no quote, the price is typed
+        cy.get('.charging-place select').select('')
+        cy.get('.charge-quote').should('not.exist')
+        noConsoleErrors()
+        cy.request({ method: 'DELETE', url: `/api/chargingPlaces/${placeId}`, headers: apiHeaders })
+        cy.request({ method: 'DELETE', url: `/api/vehicles/${evId}`, headers: apiHeaders })
+      }))
+  })
+
   it('detected fill-up with a location: the form lists stations near it right away', () => {
     cy.request({ method: 'POST', url: '/api/me/apikeys', headers: apiHeaders, body: { name: 'location test' } }).then(({ body: k }) =>
       cy.request({ method: 'POST', url: `/api/v1/vehicles/${vehicleId}/detections`, headers: { 'X-Api-Key': k.key },

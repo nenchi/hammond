@@ -98,6 +98,7 @@ export default {
           fuelGrade: '',
           gaugeSegments: 4,
           odometerEntity: '',
+          evccVehicle: '',
           make: '',
           model: '',
           yearOfManufacture: null,
@@ -113,6 +114,7 @@ export default {
           fuelGrade: veh.fuelGrade || '',
           gaugeSegments: veh.gaugeSegments || 4,
           odometerEntity: veh.odometerEntity || '',
+          evccVehicle: veh.evccVehicle || '',
           make: veh.make,
           model: veh.model,
           yearOfManufacture: veh.yearOfManufacture,
@@ -231,6 +233,13 @@ export default {
       >
         <b-input v-model.trim="vehicleModel.odometerEntity" pattern="[a-z0-9_]+\.[a-z0-9_]+" maxlength="100" :has-counter="false"
           placeholder="sensor.…_odometer"></b-input>
+      </b-field>
+      <b-field
+        v-if="vehicleModel.fuelType === 4"
+        label="EVCC vehicle"
+        message="The vehicle's name (title) in EVCC: its charging sessions are imported (Admin → Site Settings → EVCC)"
+      >
+        <b-input v-model.trim="vehicleModel.evccVehicle" maxlength="100" :has-counter="false"></b-input>
       </b-field>
       <b-field
         label="Gauge segments"

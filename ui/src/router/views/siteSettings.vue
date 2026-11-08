@@ -36,12 +36,24 @@ export default {
       testResult: null,
       testedProfile: '',
       haModel: { url: this.settings.haUrl || '', token: '' },
+      evccModel: {
+        url: this.settings.evccUrl || '',
+        syncMinutes: this.settings.evccSyncMinutes || 0,
+        placeId: this.settings.evccPlaceId || '',
+        since: this.settings.evccSince ? this.settings.evccSince.slice(0, 10) : '',
+      },
+      chargingPlaces: [],
+      evccResult: null,
+      syncing: false,
       haTokenSet: !!this.settings.haTokenSet,
       testing: false,
     }
   },
   computed: {
     ...mapState('vehicles', ['currencyMasters', 'distanceUnitMasters']),
+  },
+  mounted() {
+    axios.get('/api/chargingPlaces').then(({ data }) => (this.chargingPlaces = data))
   },
   methods: {
     toModels(list) {
@@ -79,6 +91,29 @@ export default {
           this.$buefy.toast.open({ message: 'Fuel price settings saved', type: 'is-success', duration: 3000 })
         })
         .catch((ex) => this.$buefy.toast.open({ duration: 5000, message: this.errorText(ex), position: 'is-bottom', type: 'is-danger' }))
+    },
+    saveEvcc() {
+      const m = this.evccModel
+      axios
+        .post('/api/settings/evcc', { ...m, since: m.since ? new Date(m.since + 'T00:00:00').toISOString() : null })
+        .then(({ data }) => {
+          this.evccModel.since = data.evccSince ? data.evccSince.slice(0, 10) : ''
+          store.dispatch('utils/getSettings')
+          this.$buefy.toast.open({ message: 'EVCC settings saved', type: 'is-success', duration: 3000 })
+        })
+        .catch((ex) => this.$buefy.toast.open({ duration: 5000, message: this.errorText(ex), position: 'is-bottom', type: 'is-danger' }))
+    },
+    syncEvcc() {
+      this.syncing = true
+      this.evccResult = null
+      axios
+        .post('/api/settings/evcc/sync')
+        .then(({ data }) => {
+          this.evccResult = { ok: true, ...data }
+          store.dispatch('vehicles/fetchDetections').catch(() => {})
+        })
+        .catch((ex) => (this.evccResult = { ok: false, error: this.errorText(ex) }))
+        .finally(() => (this.syncing = false))
     },
     saveHomeAssistant() {
       axios
@@ -222,6 +257,40 @@ export default {
         <b-input v-model="haModel.token" type="password" password-reveal :placeholder="haTokenSet ? '••••••••' : ''"></b-input>
       </b-field>
       <b-button tag="input" native-type="submit" type="is-primary" value="Save Home Assistant" expanded></b-button>
+    </form>
+    <form class="box evcc" @submit.prevent="saveEvcc">
+      <h1 class="subtitle">EVCC</h1>
+      <p class="mb-3"
+        >Imports finished charging sessions from EVCC as detections to confirm (bell icon), priced with the charging place's
+        tariff (else EVCC's own price). Link a vehicle in Edit vehicle → "EVCC vehicle". Prices:
+        <router-link to="/admin/charging">Charging places</router-link>.</p
+      >
+      <b-field label="URL"><b-input v-model="evccModel.url" type="url" placeholder="http://evcc.local:7070"></b-input></b-field>
+      <b-field grouped group-multiline>
+        <b-field label="Sync every (minutes)" message="0 = only Sync now">
+          <b-input v-model.number="evccModel.syncMinutes" type="number" min="0" max="1440"></b-input>
+        </b-field>
+        <b-field label="Charging place of EVCC" expanded>
+          <b-select v-model="evccModel.placeId" expanded>
+            <option value="">— EVCC's price —</option>
+            <option v-for="p in chargingPlaces" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </b-select>
+        </b-field>
+        <b-field label="Import sessions from" message="Empty at the first save = the last 7 days">
+          <b-input v-model="evccModel.since" type="date"></b-input>
+        </b-field>
+      </b-field>
+      <div class="buttons">
+        <b-button native-type="submit" type="is-primary">Save EVCC</b-button>
+        <b-button class="sync-evcc" :loading="syncing" :disabled="!settings.evccUrl && !evccModel.url" @click="syncEvcc">Sync now</b-button>
+      </div>
+      <b-notification v-if="evccResult" :type="evccResult.ok ? 'is-success' : 'is-danger'" :closable="false" class="evcc-result">
+        <template v-if="evccResult.ok"
+          >✓ {{ evccResult.imported }} imported, {{ evccResult.skipped }} skipped (other vehicles, older, unfinished or already
+          imported).<span v-for="n in evccResult.notes" :key="n"><br />{{ n }}</span></template
+        >
+        <template v-else>✗ {{ evccResult.error }}</template>
+      </b-notification>
     </form>
   </Layout>
 </template>

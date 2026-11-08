@@ -105,6 +105,15 @@ export default [
     }),
   },
   {
+    path: '/admin/charging',
+    name: 'charging-places',
+    component: () => lazyLoadView(import('@/src/router/views/chargingPlaces.vue')),
+    meta: {
+      authRequired: true,
+      roles: ['ADMIN'],
+    },
+  },
+  {
     path: '/admin/users',
     name: 'users',
     component: () => lazyLoadView(import('@/src/router/views/users.vue')),

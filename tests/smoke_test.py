@@ -238,6 +238,39 @@ check("odometer from HA", s == 200 and r["configured"] and r["value"] == 23456 a
 call("PUT", f"/api/vehicles/{vid}", veh, token=tok)
 call("POST", "/api/settings/homeAssistant", {"url": "", "token": "-"}, token=tok)
 
+# ---- EV charging: places, tariff quote, EVCC import (fake EVCC on :3999) ----
+s, ev = call("POST", "/api/vehicles", {"nickname": "CI EV", "registration": "LJ EV1", "make": "VW", "model": "ID.3",
+             "fuelUnit": 4, "fuelType": 4, "evccVehicle": "CI EV"}, token=tok)
+check("electric vehicle with EVCC name", s in (200, 201) and ev.get("evccVehicle") == "CI EV", (s, ev))
+place = {"name": "Home", "lossPercent": 0, "sessionFee": 0.5, "components": [
+    {"name": "Energy", "price": 0.10, "rules": [{"label": "NT", "days": "all", "from": "22:00", "to": "06:00", "price": 0.05}]}]}
+s, _ = call("POST", "/api/chargingPlaces", place, token=ptok)
+check("non-admin can't create charging places", s == 401, s)
+s, _ = call("POST", "/api/chargingPlaces", {**place, "components": [{"rules": [{"from": "25:00"}]}]}, token=tok)
+check("invalid tariff rule refused", s == 422, s)
+s, home = call("POST", "/api/chargingPlaces", place, token=tok)
+check("admin creates a charging place", s == 200 and home.get("id") and home["components"][0]["rules"][0]["label"] == "NT", (s, home))
+s, q = call("POST", f"/api/chargingPlaces/{home['id']}/quote", {"start": "2026-11-10T21:00:00Z", "end": "2026-11-10T23:00:00Z", "kWh": 10}, token=ptok)
+check("quote: half day, half night tariff + session fee", s == 200 and abs(q["total"] - 1.25) < 0.001 and len(q["parts"]) == 2, (s, q))
+s, ps = call("GET", "/api/chargingPlaces", token=ptok)
+check("users can list charging places", s == 200 and len(ps) == 1, (s, ps))
+s, st = call("POST", "/api/settings/evcc", {"url": "http://127.0.0.1:3999", "syncMinutes": 0, "placeId": home["id"],
+             "since": "2026-01-01T00:00:00Z"}, token=tok)
+check("admin sets EVCC", s == 200 and st.get("evccPlaceId") == home["id"], (s, st))
+s, r = call("POST", "/api/settings/evcc/sync", token=tok)
+check("EVCC sync imports the session", s == 200 and r["imported"] == 1, (s, r))
+s, r = call("POST", "/api/settings/evcc/sync", token=tok)
+check("EVCC sync again: nothing new", s == 200 and r["imported"] == 0, (s, r))
+s, dets = call("GET", "/api/detections", token=tok)
+evd = [d for d in dets if d.get("source") == "EVCC"] if s == 200 else []
+check("EVCC detection priced with the place (night 0.05 + fee 0.5 / 12 kWh)", len(evd) == 1 and evd[0]["station"] == "Home"
+      and abs(evd[0]["perUnitPrice"] - round((12 * 0.05 + 0.5) / 12, 4)) < 0.0001 and evd[0]["odoReading"] == 0, evd)
+for d in evd:
+    call("POST", f"/api/detections/{d['id']}/discard", token=tok)
+call("POST", "/api/settings/evcc", {"url": "", "syncMinutes": 0, "placeId": ""}, token=tok)
+call("DELETE", f"/api/chargingPlaces/{home['id']}", token=tok)
+call("DELETE", f"/api/vehicles/{ev['id']}", token=tok)
+
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))
 s, _ = call("POST", "/api/refresh", {"refreshToken": "garbage"}, token=tok)
