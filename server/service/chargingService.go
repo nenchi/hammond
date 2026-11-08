@@ -225,44 +225,66 @@ func QuoteCharge(p db.ChargingPlace, start, end time.Time, kWh float64, applyLos
 	return q
 }
 
-func ListChargingPlaces() ([]db.ChargingPlace, error) {
+// ListChargingPlaces: the user's own places and the shared ones
+func ListChargingPlaces(userID string) ([]db.ChargingPlace, error) {
 	var ps []db.ChargingPlace
-	err := db.DB.Order("name").Find(&ps).Error
+	err := db.DB.Where("shared = ? OR owner_id = ?", true, userID).Order("name").Find(&ps).Error
 	return ps, err
 }
 
-func GetChargingPlace(id string) (*db.ChargingPlace, error) {
+// GetChargingPlace: a place the user may use (own or shared)
+func GetChargingPlace(userID, id string) (*db.ChargingPlace, error) {
 	var ps []db.ChargingPlace
-	db.DB.Where("id = ?", id).Limit(1).Find(&ps)
+	db.DB.Where("id = ? AND (shared = ? OR owner_id = ?)", id, true, userID).Limit(1).Find(&ps)
 	if len(ps) == 0 {
 		return nil, errors.New("charging place not found")
 	}
 	return &ps[0], nil
 }
 
-// SaveChargingPlace creates (no id) or replaces a place
-func SaveChargingPlace(p db.ChargingPlace) (*db.ChargingPlace, error) {
+// editable: the owner, or an admin for a shared place
+func editablePlace(userID string, isAdmin bool, id string) (*db.ChargingPlace, error) {
+	p, err := GetChargingPlace(userID, id)
+	if err != nil {
+		return nil, err
+	}
+	if p.OwnerID != userID && !(isAdmin && p.Shared) {
+		return nil, errors.New("only its owner or an admin can change this place")
+	}
+	return p, nil
+}
+
+// SaveChargingPlace creates (no id) or replaces a place. Only admins share places.
+func SaveChargingPlace(userID string, isAdmin bool, p db.ChargingPlace) (*db.ChargingPlace, error) {
 	if err := ValidateChargingPlace(&p); err != nil {
 		return nil, err
 	}
+	if !isAdmin {
+		p.Shared = false
+	}
 	if p.ID != "" {
-		old, err := GetChargingPlace(p.ID)
+		old, err := editablePlace(userID, isAdmin, p.ID)
 		if err != nil {
 			return nil, err
 		}
-		p.CreatedAt = old.CreatedAt
+		p.CreatedAt, p.OwnerID = old.CreatedAt, old.OwnerID
 		return &p, db.DB.Save(&p).Error
 	}
+	p.OwnerID = userID
 	return &p, db.DB.Create(&p).Error
 }
 
-func DeleteChargingPlace(id string) error {
+func DeleteChargingPlace(userID string, isAdmin bool, id string) error {
+	if _, err := editablePlace(userID, isAdmin, id); err != nil {
+		return err
+	}
 	return db.DB.Where("id = ?", id).Delete(&db.ChargingPlace{}).Error
 }
 
-// QuoteChargeAt prices a charge at a saved place, with its Home Assistant price entity if it has one
-func QuoteChargeAt(placeID string, start, end time.Time, kWh float64, applyLoss bool) (*ChargeQuote, error) {
-	p, err := GetChargingPlace(placeID)
+// QuoteChargeAt prices a charge at a place the user may use; a price sensor is read from the Home
+// Assistant of the place's owner
+func QuoteChargeAt(userID, placeID string, start, end time.Time, kWh float64, applyLoss bool) (*ChargeQuote, error) {
+	p, err := GetChargingPlace(userID, placeID)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +296,7 @@ func QuoteChargeAt(placeID string, start, end time.Time, kWh float64, applyLoss 
 	}
 	var hist []PricePoint
 	if p.PriceEntity != "" {
-		if hist, err = HAPriceHistory(p.PriceEntity, start, end); err != nil {
+		if hist, err = HAPriceHistory(p.OwnerID, p.PriceEntity, start, end); err != nil {
 			return nil, err
 		}
 	}

@@ -31,8 +31,13 @@ func RegisterMastersController(router *gin.RouterGroup) {
 }
 
 func getSettings(c *gin.Context) {
+	c.JSON(http.StatusOK, service.GetSettings(isAdmin(c)))
+}
 
-	c.JSON(http.StatusOK, service.GetSettings())
+// isAdmin: the logged-in user is an admin
+func isAdmin(c *gin.Context) bool {
+	u, ok := c.Get("userModel")
+	return ok && u.(db.User).Role == db.ADMIN
 }
 func udpateSettings(c *gin.Context) {
 	var model models.UpdateSettingModel

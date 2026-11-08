@@ -32,6 +32,10 @@ export default {
           title: () => 'Import',
         },
         {
+          name: 'charging-places',
+          title: () => 'Charging places',
+        },
+        {
           name: 'settings',
           title: 'Settings',
         },
@@ -50,10 +54,6 @@ export default {
         {
           name: 'site-settings',
           title: 'Site Settings',
-        },
-        {
-          name: 'charging-places',
-          title: 'Charging places',
         },
         {
           name: 'users',

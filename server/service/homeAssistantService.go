@@ -14,8 +14,35 @@ import (
 	"github.com/akhilrex/hammond/db"
 )
 
-// Current odometer from Home Assistant for the fill-up form: GET <url>/api/states/<entity> with a
-// long-lived access token (HA profile → Security). Read-only, nothing is written to HA.
+// Each user's own Home Assistant (Settings → Home Assistant): the car's odometer for the fill-up form
+// (GET <url>/api/states/<entity>) and price sensors' history for charges. Long-lived access token from
+// HA profile → Security; read-only, nothing is written to HA.
+
+// haConfig: the user's HA URL + token ("" when not set up)
+func haConfig(userID string) (string, string) {
+	var u db.User
+	if userID == "" || db.DB.Where("id = ?", userID).Limit(1).Find(&u).Error != nil {
+		return "", ""
+	}
+	return strings.TrimRight(u.HAURL, "/"), u.HAToken
+}
+
+// MoveSiteConnectionsToAdmin: v1.6 had one site-wide Home Assistant; it becomes the first admin's own
+func MoveSiteConnectionsToAdmin() {
+	s := db.GetOrCreateSetting()
+	if s.HAURL == "" && s.HAToken == "" {
+		return
+	}
+	var admin db.User
+	if db.DB.Where("role = ?", db.ADMIN).Order("created_at").Limit(1).Find(&admin); admin.ID == "" {
+		return
+	}
+	if admin.HAURL == "" && admin.HAToken == "" {
+		db.DB.Model(&admin).Updates(map[string]interface{}{"ha_url": s.HAURL, "ha_token": s.HAToken})
+	}
+	s.HAURL, s.HAToken = "", ""
+	db.UpdateSettings(s)
+}
 
 var entityRe = regexp.MustCompile(`^[a-z0-9_]+\.[a-z0-9_]+$`)
 
@@ -31,17 +58,17 @@ type Odometer struct {
 
 var haClient = &http.Client{Timeout: 5 * time.Second}
 
-// CurrentOdometer: {configured: false} when HA or the vehicle's entity isn't set up
-func CurrentOdometer(v *db.Vehicle) (*Odometer, error) {
-	s := db.GetOrCreateSetting()
-	if s.HAURL == "" || s.HAToken == "" || v.OdometerEntity == "" {
+// CurrentOdometer with the user's HA: {configured: false} when HA or the vehicle's entity isn't set up
+func CurrentOdometer(userID string, v *db.Vehicle) (*Odometer, error) {
+	haURL, token := haConfig(userID)
+	if haURL == "" || token == "" || v.OdometerEntity == "" {
 		return &Odometer{}, nil
 	}
-	req, _ := http.NewRequest("GET", strings.TrimRight(s.HAURL, "/")+"/api/states/"+v.OdometerEntity, nil)
-	req.Header.Set("Authorization", "Bearer "+s.HAToken)
+	req, _ := http.NewRequest("GET", haURL+"/api/states/"+v.OdometerEntity, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := haClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), s.HAToken, "***"))
+		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), token, "***"))
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
@@ -75,38 +102,37 @@ func CurrentOdometer(v *db.Vehicle) (*Odometer, error) {
 	return &Odometer{Configured: true, Value: val, Unit: st.Attributes.Unit, UpdatedAt: at, Entity: v.OdometerEntity}, nil
 }
 
-// UpdateHomeAssistantSettings (admin). token "" keeps the stored one, "-" removes it.
-func UpdateHomeAssistantSettings(rawURL, token string) error {
-	s := db.GetOrCreateSetting()
-	s.HAURL = strings.TrimSpace(rawURL)
+// UpdateHomeAssistantSettings (the user's own). token "" keeps the stored one, "-" removes it.
+func UpdateHomeAssistantSettings(userID, rawURL, token string) error {
+	upd := map[string]interface{}{"ha_url": strings.TrimSpace(rawURL)}
 	switch token {
 	case "":
 	case "-":
-		s.HAToken = ""
+		upd["ha_token"] = ""
 	default:
-		s.HAToken = strings.TrimSpace(token)
+		upd["ha_token"] = strings.TrimSpace(token)
 	}
-	return db.UpdateSettings(s)
+	return db.DB.Model(&db.User{}).Where("id = ?", userID).Updates(upd).Error
 }
 
-// HAPriceHistory: the values of a price entity from start to end (the first one is the value at start),
-// for pricing a charge with a dynamic or block tariff that Home Assistant already knows.
-func HAPriceHistory(entity string, start, end time.Time) ([]PricePoint, error) {
-	s := db.GetOrCreateSetting()
-	if s.HAURL == "" || s.HAToken == "" {
-		return nil, errors.New("Home Assistant is not set up (Admin → Site Settings → Home Assistant)")
+// HAPriceHistory: the values of a price entity in the user's HA from start to end (the first one is the
+// value at start), for pricing a charge with a dynamic or block tariff that Home Assistant already knows.
+func HAPriceHistory(userID, entity string, start, end time.Time) ([]PricePoint, error) {
+	haURL, token := haConfig(userID)
+	if haURL == "" || token == "" {
+		return nil, errors.New("Home Assistant of the place's owner is not set up (Settings → Home Assistant)")
 	}
 	if end.Before(start) {
 		end = start
 	}
 	u := fmt.Sprintf("%s/api/history/period/%s?end_time=%s&filter_entity_id=%s&minimal_response&no_attributes",
-		strings.TrimRight(s.HAURL, "/"), url.QueryEscape(start.UTC().Format(time.RFC3339)),
+		haURL, url.QueryEscape(start.UTC().Format(time.RFC3339)),
 		url.QueryEscape(end.Add(time.Second).UTC().Format(time.RFC3339)), url.QueryEscape(entity))
 	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("Authorization", "Bearer "+s.HAToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := haClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), s.HAToken, "***"))
+		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), token, "***"))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -141,18 +167,18 @@ type HATestResult struct {
 	Odometer string `json:"odometer,omitempty"` // first vehicle with an odometer entity: its value
 }
 
-// TestHomeAssistant (admin "Test connection"): the saved URL + token against /api/config, and the
-// odometer of the first vehicle that has an entity set
-func TestHomeAssistant() HATestResult {
-	s := db.GetOrCreateSetting()
-	if s.HAURL == "" || s.HAToken == "" {
+// TestHomeAssistant ("Test connection"): the user's saved URL + token against /api/config, and the
+// odometer of the user's first vehicle that has an entity set
+func TestHomeAssistant(userID string) HATestResult {
+	haURL, token := haConfig(userID)
+	if haURL == "" || token == "" {
 		return HATestResult{Error: "save the URL and the token first"}
 	}
-	req, _ := http.NewRequest("GET", strings.TrimRight(s.HAURL, "/")+"/api/config", nil)
-	req.Header.Set("Authorization", "Bearer "+s.HAToken)
+	req, _ := http.NewRequest("GET", haURL+"/api/config", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := haClient.Do(req)
 	if err != nil {
-		return HATestResult{Error: "Home Assistant not reachable: " + strings.ReplaceAll(err.Error(), s.HAToken, "***")}
+		return HATestResult{Error: "Home Assistant not reachable: " + strings.ReplaceAll(err.Error(), token, "***")}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
@@ -170,8 +196,9 @@ func TestHomeAssistant() HATestResult {
 	}
 	r := HATestResult{OK: true, Name: cfg.Name, Version: cfg.Version}
 	var vs []db.Vehicle
-	if db.DB.Where("odometer_entity <> ''").Limit(1).Find(&vs); len(vs) > 0 {
-		if o, err := CurrentOdometer(&vs[0]); err != nil {
+	if db.DB.Where("odometer_entity <> '' AND id IN (?)", db.DB.Model(&db.UserVehicle{}).Select("vehicle_id").Where("user_id = ?", userID)).
+		Limit(1).Find(&vs); len(vs) > 0 {
+		if o, err := CurrentOdometer(userID, &vs[0]); err != nil {
 			r.Odometer = fmt.Sprintf("%s: %s", vs[0].Nickname, err)
 		} else {
 			r.Odometer = fmt.Sprintf("%s: %s = %g %s", vs[0].Nickname, o.Entity, o.Value, o.Unit)

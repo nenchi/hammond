@@ -35,13 +35,13 @@ func fakeTankerkoenig(t *testing.T, calls *int32) *httptest.Server {
 
 func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	setupDB(t)
-	_, v := mkUserVehicle(t, "", 43)
+	u, v := mkUserVehicle(t, "", 43)
 	var calls int32
 	srv := fakeTankerkoenig(t, &calls)
 	defer srv.Close()
 
 	v.FuelType, v.FuelGrade = db.PETROL, ""
-	if _, err := NearbyStations(&v, 50.1, 8.76, 2, ""); err == nil || !strings.Contains(err.Error(), "not set up") {
+	if _, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, ""); err == nil || !strings.Contains(err.Error(), "not set up") {
 		t.Fatalf("want 'not set up' without a provider, got %v", err)
 	}
 	custom := func(key string) []db.PriceProfile {
@@ -50,7 +50,7 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	if err := UpdatePriceProfiles(custom("bad-key")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NearbyStations(&v, 50.1, 8.76, 2, ""); err == nil || !strings.Contains(err.Error(), "apikey") || !strings.Contains(err.Error(), "My TK") {
+	if _, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, ""); err == nil || !strings.Contains(err.Error(), "apikey") || !strings.Contains(err.Error(), "My TK") {
 		t.Fatalf("want the provider's message for a wrong key, got %v", err)
 	}
 	if err := UpdatePriceProfiles(custom("good-key")); err != nil {
@@ -58,7 +58,7 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	}
 
 	v.FuelGrade = "e10"
-	res, err := NearbyStations(&v, 50.1, 8.76, 2, "")
+	res, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,14 +77,14 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 	// cached: a second lookup at the same place doesn't call the service again
 	before := atomic.LoadInt32(&calls)
 	v.FuelGrade = "diesel"
-	res, _ = NearbyStations(&v, 50.1, 8.76, 2, "")
+	res, _ = NearbyStations(u.ID, &v, 50.1, 8.76, 2, "")
 	if atomic.LoadInt32(&calls) != before || res.Stations[0].ID != "b" || *res.Stations[0].Price != 1.599 {
 		t.Fatalf("want cached diesel prices without a new call: calls %d→%d %+v", before, calls, res.Stations[0])
 	}
 
 	// several accepted grades, preferred first: E10, else E5 — the station without E10 gets its E5 price
 	v.FuelGrade = "e10,e5"
-	res, _ = NearbyStations(&v, 50.1, 8.76, 2, "")
+	res, _ = NearbyStations(u.ID, &v, 50.1, 8.76, 2, "")
 	byID := map[string]Station{}
 	for _, st := range res.Stations {
 		byID[st.ID] = st
@@ -106,7 +106,7 @@ func TestNearbyStationsTankerkoenigFormat(t *testing.T) {
 		t.Fatalf("diesel vehicle → %v", g)
 	}
 	v.FuelType = db.ELECTRIC
-	if _, err := NearbyStations(&v, 50.1, 8.76, 2, ""); err == nil {
+	if _, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, ""); err == nil {
 		t.Fatal("electric vehicles have no fuel price")
 	}
 }
@@ -117,7 +117,7 @@ func TestFuelPriceKeyNeverSent(t *testing.T) {
 	if err := UpdatePriceProfiles(tk); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(GetSettings())
+	b, _ := json.Marshal(GetSettings(true))
 	if strings.Contains(string(b), "secret-key-123") || !strings.Contains(string(b), `"keySet":true`) {
 		t.Fatalf("settings JSON must hide the key but say it's set: %s", b)
 	}
@@ -193,7 +193,7 @@ func fakeEControl(t *testing.T) *httptest.Server {
 
 func TestEControlAndAutoPick(t *testing.T) {
 	setupDB(t)
-	_, v := mkUserVehicle(t, "", 43)
+	u, v := mkUserVehicle(t, "", 43)
 	var calls int32
 	tk, ec := fakeTankerkoenig(t, &calls), fakeEControl(t)
 	defer tk.Close()
@@ -205,7 +205,7 @@ func TestEControlAndAutoPick(t *testing.T) {
 		t.Fatal(err)
 	}
 	v.FuelGrade = "e10,e5,diesel"
-	res, err := NearbyStations(&v, 47.07, 15.44, 2, "")
+	res, err := NearbyStations(u.ID, &v, 47.07, 15.44, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,16 +221,16 @@ func TestEControlAndAutoPick(t *testing.T) {
 		t.Fatalf("station without price last: %+v", res.Stations[1])
 	}
 	// outside Austria the next profile answers
-	res, err = NearbyStations(&v, 50.1, 8.76, 2, "")
+	res, err = NearbyStations(u.ID, &v, 50.1, 8.76, 2, "")
 	if err != nil || res.Profile != "de" || len(res.Stations) != 3 {
 		t.Fatalf("want the German profile: %+v %v", res, err)
 	}
 	// a chosen profile only asks that one
-	res, err = NearbyStations(&v, 50.1, 8.76, 2, "at")
+	res, err = NearbyStations(u.ID, &v, 50.1, 8.76, 2, "at")
 	if err != nil || res.Profile != "at" || len(res.Stations) != 0 {
 		t.Fatalf("chosen Austria in Germany = no stations: %+v %v", res, err)
 	}
-	if _, err := NearbyStations(&v, 50.1, 8.76, 2, "nope"); err == nil {
+	if _, err := NearbyStations(u.ID, &v, 50.1, 8.76, 2, "nope"); err == nil {
 		t.Fatal("unknown profile must fail")
 	}
 	// diesel only: one request type
@@ -241,7 +241,7 @@ func TestEControlAndAutoPick(t *testing.T) {
 
 func TestHomeAssistantOdometer(t *testing.T) {
 	setupDB(t)
-	_, v := mkUserVehicle(t, "", 43)
+	u, v := mkUserVehicle(t, "", 43)
 	ha := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer ha-token" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -261,40 +261,41 @@ func TestHomeAssistantOdometer(t *testing.T) {
 	}))
 	defer ha.Close()
 
-	if o, err := CurrentOdometer(&v); err != nil || o.Configured {
+	if o, err := CurrentOdometer(u.ID, &v); err != nil || o.Configured {
 		t.Fatalf("not set up = not configured, no error: %+v %v", o, err)
 	}
-	if r := TestHomeAssistant(); r.OK {
+	if r := TestHomeAssistant(u.ID); r.OK {
 		t.Fatal("test without settings must fail")
 	}
-	UpdateHomeAssistantSettings(ha.URL+"/", "ha-token")
+	UpdateHomeAssistantSettings(u.ID, ha.URL+"/", "ha-token")
 	v.OdometerEntity = "sensor.a180_odometer"
 	db.DB.Save(&v)
-	if r := TestHomeAssistant(); !r.OK || r.Name != "Home" || r.Version != "2026.11.1" || !strings.Contains(r.Odometer, "= 21345 km") {
+	if r := TestHomeAssistant(u.ID); !r.OK || r.Name != "Home" || r.Version != "2026.11.1" || !strings.Contains(r.Odometer, "= 21345 km") {
 		t.Fatalf("test connection: %+v", r)
 	}
-	o, err := CurrentOdometer(&v)
+	o, err := CurrentOdometer(u.ID, &v)
 	if err != nil || !o.Configured || o.Value != 21345 || o.Unit != "km" || o.UpdatedAt.Format(time.RFC3339) != "2026-11-08T09:30:00Z" {
 		t.Fatalf("want 21345 km reported 09:30: %+v %v", o, err)
 	}
-	b, _ := json.Marshal(GetSettings())
+	me, _ := db.GetUserById(u.ID)
+	b, _ := json.Marshal(me)
 	if strings.Contains(string(b), "ha-token") || !strings.Contains(string(b), `"haTokenSet":true`) {
 		t.Fatalf("token must stay hidden: %s", b)
 	}
 	v.OdometerEntity = "sensor.offline"
-	if _, err := CurrentOdometer(&v); err == nil || !strings.Contains(err.Error(), "unavailable") {
+	if _, err := CurrentOdometer(u.ID, &v); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("unavailable must be an error: %v", err)
 	}
 	v.OdometerEntity = "sensor.missing"
-	if _, err := CurrentOdometer(&v); err == nil || !strings.Contains(err.Error(), "no entity") {
+	if _, err := CurrentOdometer(u.ID, &v); err == nil || !strings.Contains(err.Error(), "no entity") {
 		t.Fatalf("missing entity: %v", err)
 	}
-	UpdateHomeAssistantSettings(ha.URL, "wrong")
+	UpdateHomeAssistantSettings(u.ID, ha.URL, "wrong")
 	v.OdometerEntity = "sensor.a180_odometer"
-	if _, err := CurrentOdometer(&v); err == nil || !strings.Contains(err.Error(), "token") {
+	if _, err := CurrentOdometer(u.ID, &v); err == nil || !strings.Contains(err.Error(), "token") {
 		t.Fatalf("wrong token: %v", err)
 	}
-	if r := TestHomeAssistant(); r.OK || !strings.Contains(r.Error, "401") {
+	if r := TestHomeAssistant(u.ID); r.OK || !strings.Contains(r.Error, "401") {
 		t.Fatalf("test with a wrong token: %+v", r)
 	}
 	for _, bad := range []string{"../config", "sensor.x/../../api", "Sensor.X", "sensor"} {
@@ -324,4 +325,63 @@ func TestNormalizeGradesAndSubtypes(t *testing.T) {
 	if got := NormalizeFuelSubtypes(" Q Max 95 \nMaxxMotion 100, q max 95\n\n"); got != "Q Max 95\nMaxxMotion 100" {
 		t.Fatalf("got %q", got)
 	}
+}
+
+// users see their own profiles first, then the shared site ones; private site profiles only admins
+func TestPriceProfileSharing(t *testing.T) {
+	setupDB(t)
+	u, _ := mkUserVehicle(t, "", 43)
+	admin := db.User{Email: "admin@example.com", Name: "a", Role: db.ADMIN}
+	db.DB.Create(&admin)
+	if err := UpdatePriceProfiles([]db.PriceProfile{{Name: "Shared DE", Kind: "tankerkoenig", APIKey: "site-key"},
+		{Name: "Admin only", Kind: "econtrol", Private: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateUserPriceProfiles(u.ID, []db.PriceProfile{{Name: "My proxy", Kind: "custom", URL: "http://x.example/json", APIKey: "mine"}}); err != nil {
+		t.Fatal(err)
+	}
+	names := func(ps []db.PriceProfile) (out []string) {
+		for _, p := range ps {
+			out = append(out, p.Name)
+		}
+		return
+	}
+	if got := names(AvailablePriceProfiles(u.ID)); strings.Join(got, ",") != "My proxy,Shared DE" {
+		t.Fatalf("user: own first, then shared, no private: %v", got)
+	}
+	if got := names(AvailablePriceProfiles(admin.ID)); strings.Join(got, ",") != "Shared DE,Admin only" {
+		t.Fatalf("admin: all site profiles: %v", got)
+	}
+	if got := names(PublicPriceProfiles(db.GetOrCreateSetting(), false)); strings.Join(got, ",") != "Shared DE" {
+		t.Fatalf("site settings for users: %v", got)
+	}
+	b, _ := json.Marshal(PublicAvailableProfiles(u.ID))
+	if strings.Contains(string(b), "mine") || strings.Contains(string(b), "site-key") || !strings.Contains(string(b), `"own":true`) {
+		t.Fatalf("keys hidden, own marked: %s", b)
+	}
+	// a user can't take over a site profile by sending its id: it becomes a new own profile
+	siteID := PriceProfiles(db.GetOrCreateSetting())[0].ID
+	UpdateUserPriceProfiles(u.ID, []db.PriceProfile{{ID: siteID, Name: "Copy", Kind: "tankerkoenig"}})
+	if own := UserPriceProfiles(u.ID); len(own) != 1 || own[0].ID == siteID || own[0].KeySet {
+		t.Fatalf("no id/key takeover: %+v", own)
+	}
+	if _, err := NearbyStations(u.ID, &db.Vehicle{FuelGrade: "e10"}, 48.2, 16.37, 2, PriceProfiles(db.GetOrCreateSetting())[1].ID); err == nil {
+		t.Fatal("a user can't use the admin's private profile")
+	}
+}
+
+// the v1.6 site-wide Home Assistant becomes the first admin's own
+func TestMoveSiteConnectionsToAdmin(t *testing.T) {
+	setupDB(t)
+	admin := db.User{Email: "admin@example.com", Name: "a", Role: db.ADMIN}
+	db.DB.Create(&admin)
+	s := db.GetOrCreateSetting()
+	s.HAURL, s.HAToken = "http://ha.local:8123", "old-token"
+	db.UpdateSettings(s)
+	MoveSiteConnectionsToAdmin()
+	u, _ := db.GetUserById(admin.ID)
+	if u.HAURL != "http://ha.local:8123" || u.HAToken != "old-token" || db.GetOrCreateSetting().HAURL != "" {
+		t.Fatalf("moved: %+v", u)
+	}
+	MoveSiteConnectionsToAdmin() // twice: nothing happens
 }

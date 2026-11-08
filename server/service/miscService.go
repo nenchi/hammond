@@ -44,9 +44,8 @@ func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, d
 	return db.UpdateUser(user)
 }
 
-func GetSettings() *db.Setting {
+func GetSettings(isAdmin bool) *db.Setting {
 	s := db.GetOrCreateSetting()
-	s.PriceProfiles = PublicPriceProfiles(s)
-	s.HATokenSet = s.HAToken != ""
+	s.PriceProfiles = PublicPriceProfiles(s, isAdmin)
 	return s
 }

@@ -1,7 +1,6 @@
 <script>
 import axios from 'axios'
 import { mapState } from 'vuex'
-import store from '@state/store'
 
 import { GRADE_LABELS as GRADES } from '@utils/fuel-grades'
 
@@ -14,7 +13,7 @@ export default {
     detection: { type: Object, default: null },
   },
   data() {
-    return { loading: false, error: '', result: null, heading: '', pos: null }
+    return { loading: false, error: '', result: null, heading: '', pos: null, profiles: [], loaded: false }
   },
   computed: {
     ...mapState('utils', ['settings']),
@@ -25,12 +24,9 @@ export default {
     enabled() {
       return this.profiles.length > 0 && this.mode !== 'off'
     },
-    // admins see where to switch it on instead of nothing
+    // where to switch it on instead of nothing (own profiles; admins also share site ones)
     showSetupHint() {
-      return !this.enabled && this.mode !== 'off' && store.state.auth.currentUser && store.state.auth.currentUser.role === 'ADMIN'
-    },
-    profiles() {
-      return (this.settings && this.settings.fuelPriceProfiles) || []
+      return this.loaded && !this.enabled && this.mode !== 'off'
     },
     gradeLabel() {
       return this.result ? this.result.grades.map((g) => GRADES[g] || g).join(' / ') : ''
@@ -43,19 +39,29 @@ export default {
     },
   },
   watch: {
-    detection: {
-      immediate: true,
-      handler(d) {
-        if (d && d.lat !== null && d.lng !== null && d.lat !== undefined && this.mode === 'location') {
-          this.load(d.lat, d.lng, 'Stations near the detected location')
-        }
-      },
+    detection() {
+      this.nearDetection()
     },
   },
   mounted() {
-    if (!this.settings) store.dispatch('utils/getSettings').catch(() => {})
+    // own profiles first, then the shared ones: the order the server asks them in
+    axios
+      .get('/api/fuelPrices/available')
+      .then(({ data }) => (this.profiles = data))
+      .catch(() => {})
+      .finally(() => {
+        this.loaded = true
+        this.nearDetection()
+      })
   },
   methods: {
+    // a detected fill-up with a position: its stations right away (once the profiles are known)
+    nearDetection() {
+      const d = this.detection
+      if (this.loaded && d && d.lat !== null && d.lng !== null && d.lat !== undefined && this.mode === 'location') {
+        this.load(d.lat, d.lng, 'Stations near the detected location')
+      }
+    },
     nearMe() {
       if (!navigator.geolocation) {
         this.error = 'This browser has no location access.'
@@ -109,7 +115,7 @@ export default {
 
 <template>
   <p v-if="showSetupHint" class="help mb-3 station-setup-hint"
-    >📍 Stations nearby with current prices: set up <router-link to="/admin/settings">Site Settings → Fuel prices</router-link
+    >📍 Stations nearby with current prices: add a profile in <router-link to="/settings">Settings → My fuel price profiles</router-link
     >.</p
   >
   <div v-else-if="enabled" class="station-picker mb-4">

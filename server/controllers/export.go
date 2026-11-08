@@ -62,14 +62,15 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			c.JSON(http.StatusNotFound, gin.H{})
 			return
 		}
-		res, err := service.NearbyStations(vehicle, lat, lng, rad, c.Query("profile"))
+		res, err := service.NearbyStations(userID, vehicle, lat, lng, rad, c.Query("profile"))
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, res)
 	})
-	router.GET("/settings/fuelPrices/test", ShouldBeAdmin(), func(c *gin.Context) {
+	// test one profile the user may use (own or shared; admins also the private site ones)
+	router.GET("/settings/fuelPrices/test", func(c *gin.Context) {
 		var lat, lng *float64 // empty = a fixed point in the profile's country
 		if c.Query("lat") != "" || c.Query("lng") != "" {
 			la, err1 := strconv.ParseFloat(c.Query("lat"), 64)
@@ -80,7 +81,7 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			}
 			lat, lng = &la, &ln
 		}
-		res, err := service.TestFuelPriceProvider(c.Query("profile"), lat, lng)
+		res, err := service.TestFuelPriceProvider(c.MustGet("userId").(string), c.Query("profile"), lat, lng)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
 			return
@@ -97,12 +98,33 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, service.GetSettings())
+		c.JSON(http.StatusOK, service.GetSettings(true))
+	})
+	// the user's own profiles (asked before the shared ones)
+	router.GET("/me/fuelPrices", func(c *gin.Context) {
+		c.JSON(http.StatusOK, service.UserPriceProfiles(c.MustGet("userId").(string)))
+	})
+	router.POST("/me/fuelPrices", func(c *gin.Context) {
+		var req models.UpdateFuelPriceSettingsRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		userID := c.MustGet("userId").(string)
+		if err := service.UpdateUserPriceProfiles(userID, req.Profiles); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, service.UserPriceProfiles(userID))
+	})
+	// what the fill-up form asks, in order: own, then shared
+	router.GET("/fuelPrices/available", func(c *gin.Context) {
+		c.JSON(http.StatusOK, service.PublicAvailableProfiles(c.MustGet("userId").(string)))
 	})
 }
 
-// RegisterHomeAssistantController: the car's current odometer for the fill-up form, and the admin
-// settings for the connection (the token is write-only).
+// RegisterHomeAssistantController: the car's current odometer for the fill-up form, and the user's own
+// connection (the token is write-only).
 func RegisterHomeAssistantController(router *gin.RouterGroup) {
 	router.GET("/vehicles/:id/odometer", func(c *gin.Context) {
 		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
@@ -114,26 +136,28 @@ func RegisterHomeAssistantController(router *gin.RouterGroup) {
 			c.JSON(http.StatusNotFound, gin.H{})
 			return
 		}
-		odo, err := service.CurrentOdometer(vehicle)
+		odo, err := service.CurrentOdometer(c.MustGet("userId").(string), vehicle)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, odo)
 	})
-	router.GET("/settings/homeAssistant/test", ShouldBeAdmin(), func(c *gin.Context) {
-		c.JSON(http.StatusOK, service.TestHomeAssistant())
+	router.GET("/me/homeAssistant/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, service.TestHomeAssistant(c.MustGet("userId").(string)))
 	})
-	router.POST("/settings/homeAssistant", ShouldBeAdmin(), func(c *gin.Context) {
+	router.POST("/me/homeAssistant", func(c *gin.Context) {
 		var req models.UpdateHomeAssistantRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 			return
 		}
-		if err := service.UpdateHomeAssistantSettings(req.URL, req.Token); err != nil {
+		userID := c.MustGet("userId").(string)
+		if err := service.UpdateHomeAssistantSettings(userID, req.URL, req.Token); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, service.GetSettings())
+		user, _ := service.GetUserById(userID)
+		c.JSON(http.StatusOK, user)
 	})
 }

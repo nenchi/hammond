@@ -1,10 +1,14 @@
 <script>
 import Layout from '@layouts/main.vue'
 import axios from 'axios'
+import { mapState } from 'vuex'
+import store from '@state/store'
 
 // Charging places for electric cars and how a charge there is priced: price per kWh = the sum of the
 // components (each: the first rule that matches month, day type and time, else its default) + a Home
-// Assistant price sensor (optional). Example Slovenia: "Energy" with VT/MT, "Network" with the time blocks.
+// Assistant price sensor (optional, read from the owner's Home Assistant). Example Slovenia: "Energy" with
+// VT/MT, "Network" with the time blocks. Own places are private; admins can share places with all users.
+// Shared places: everyone uses them, admins edit them.
 const DAYS = { all: 'Every day', work: 'Working days', free: 'Weekend + holidays' }
 
 export default {
@@ -12,6 +16,12 @@ export default {
   page: { title: 'Charging places' },
   data() {
     return { places: [], loading: true, days: DAYS, saving: '' }
+  },
+  computed: {
+    ...mapState('users', ['me']),
+    isAdmin() {
+      return store.state.auth.currentUser && store.state.auth.currentUser.role === 'ADMIN'
+    },
   },
   mounted() {
     this.load()
@@ -54,9 +64,13 @@ export default {
         })),
       }
     },
+    canEdit(p) {
+      return !p.id || p.ownerId === (this.me && this.me.id) || (this.isAdmin && p.shared)
+    },
     addPlace() {
       this.places.push({
         id: '',
+        shared: false,
         name: this.places.length ? '' : 'Home',
         lat: null,
         lng: null,
@@ -117,12 +131,18 @@ export default {
     <b-loading :active="loading" :is-full-page="false"></b-loading>
     <div v-for="(p, i) in places" :key="p.id || 'new' + i" class="box charging-place">
       <div class="is-flex is-justify-content-space-between is-align-items-center" @click="p.open = !p.open">
-        <strong>{{ p.name || 'New place' }}</strong>
+        <strong
+          >{{ p.name || 'New place' }}
+          <b-tag v-if="p.shared" size="is-small" type="is-info" class="ml-1">shared</b-tag></strong
+        >
         <small class="has-text-grey"
           >{{ p.components.length }} part(s){{ p.priceEntity ? ' + ' + p.priceEntity : '' }}{{ p.lat !== null && p.lat !== '' ? ' · 📍' : '' }}</small
         >
       </div>
-      <form v-if="p.open" class="mt-3" @submit.prevent="save(p)">
+      <p v-if="p.open && !canEdit(p)" class="mt-3 help shared-readonly"
+        >Shared by an admin: you can use it, only admins change it.</p
+      >
+      <form v-if="p.open && canEdit(p)" class="mt-3" @submit.prevent="save(p)">
         <b-field grouped group-multiline>
           <b-field label="Name" expanded><b-input v-model="p.name" required maxlength="60" :has-counter="false"></b-input></b-field>
           <b-field label="Session fee"><b-input v-model.number="p.sessionFee" type="number" min="0" step=".01"></b-input></b-field>
@@ -182,6 +202,9 @@ export default {
         >
         <b-field label="Holidays (count as free days)" message="One per line: MM-DD every year (12-25), or YYYY-MM-DD once (2027-03-29)">
           <b-input v-model="p.holidays" type="textarea" rows="3"></b-input>
+        </b-field>
+        <b-field v-if="isAdmin">
+          <b-checkbox v-model="p.shared" class="share-place">Share with all users (they can use it, only admins change it)</b-checkbox>
         </b-field>
         <div class="buttons">
           <b-button native-type="submit" type="is-primary" :loading="saving === (p.id || 'new')">Save</b-button>

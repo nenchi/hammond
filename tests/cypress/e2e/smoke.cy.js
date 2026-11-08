@@ -312,11 +312,11 @@ describe('hammond UI', () => {
   })
 
   it('stations nearby: admin sets the provider, the form lists E10 prices and fills one in', () => {
-    // not set up yet (the API smoke test set one up before Cypress runs: switch it off first): admins see
-    // where to switch it on instead of nothing
+    // not set up yet (the API smoke test set one up before Cypress runs: switch it off first): the form
+    // says where to add one instead of showing nothing
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders, body: { profiles: [] } })
     visit(`/vehicles/${vehicleId}/fillup`)
-    cy.get('.station-setup-hint').contains('a', 'Site Settings → Fuel prices').should('have.attr', 'href', '/admin/settings')
+    cy.get('.station-setup-hint').contains('a', 'Settings → My fuel price profiles').should('have.attr', 'href', '/settings')
     cy.contains('button', 'Stations nearby').should('not.exist')
     // fake Tankerkönig on 127.0.0.1:3999 (tests/fake_fuelprices.py, started by the workflow)
     cy.request({ method: 'POST', url: '/api/settings/fuelPrices', headers: apiHeaders,
@@ -327,6 +327,7 @@ describe('hammond UI', () => {
     visit('/admin/settings')
     cy.get('.price-profile').should('have.length', 1)
     cy.get('.price-profile select').should('have.value', 'custom')
+    cy.get('.price-profile .share-profile input').should('be.checked') // shared with users by default
     cy.get('.price-profile input[type=password]').should('have.attr', 'placeholder', '••••••••').and('have.value', '')
     cy.document().its('documentElement.outerHTML').should('not.contain', 'ci-key')
     cy.get('.fuel-prices').contains('button', 'Test connection').click()
@@ -385,8 +386,9 @@ describe('hammond UI', () => {
   })
 
   it('home assistant: a new fill-up is pre-filled with the car odometer', () => {
-    // fake HA on 127.0.0.1:3999 (tests/fake_fuelprices.py)
-    visit('/admin/settings')
+    // fake HA on 127.0.0.1:3999 (tests/fake_fuelprices.py); each user connects their own HA in Settings
+    visit('/settings')
+    cy.get('.my-price-profiles').should('contain', 'My fuel price profiles')
     cy.get('.home-assistant input[type=url]').clear().type('http://127.0.0.1:3999')
     cy.get('.home-assistant input[type=password]').type('ci-ha-token')
     cy.get('.home-assistant button[type=submit]').click()
@@ -406,7 +408,7 @@ describe('hammond UI', () => {
     noConsoleErrors()
     cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).then(({ body: v }) =>
       cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, odometerEntity: '' } }))
-    cy.request({ method: 'POST', url: '/api/settings/homeAssistant', headers: apiHeaders, body: { url: '', token: '-' } })
+    cy.request({ method: 'POST', url: '/api/me/homeAssistant', headers: apiHeaders, body: { url: '', token: '-' } })
   })
 
   it('electric: a charge at a charging place is priced by its tariff', () => {
@@ -415,7 +417,7 @@ describe('hammond UI', () => {
       cy.request({ method: 'POST', url: '/api/chargingPlaces', headers: apiHeaders,
         body: { name: 'Home', lossPercent: 0, components: [{ name: 'Energy', price: 0.1,
           rules: [{ label: 'NT', days: 'all', from: '22:00', to: '06:00', price: 0.05 }] }] } }).its('body.id').then((placeId) => {
-        visit('/admin/charging')
+        visit('/charging')
         cy.contains('.charging-place', 'Home').click()
         cy.get('.tariff-rules tbody tr').should('have.length', 1)
         cy.contains('button', 'Rule').click()

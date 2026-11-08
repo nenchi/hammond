@@ -16,9 +16,9 @@ import (
 	"github.com/akhilrex/hammond/models"
 )
 
-// EVCC import: finished sessions of vehicles linked by name (Edit vehicle → EVCC vehicle) become
-// detections the user confirms, priced with the EVCC charging place (else EVCC's own price).
-// GET <url>/api/sessions needs no login in EVCC.
+// EVCC import, per user (Settings → EVCC): finished sessions of the user's vehicles linked by name
+// (Edit vehicle → EVCC vehicle) become detections the user confirms, priced with the user's EVCC
+// charging place (else EVCC's own price). GET <url>/api/sessions needs no login in EVCC.
 
 type evccSession struct {
 	ID            int       `json:"id"`
@@ -65,22 +65,22 @@ type EvccSyncResult struct {
 	Notes    []string `json:"notes"`
 }
 
-func SyncEvcc() (*EvccSyncResult, error) {
+func SyncEvcc(userID string) (*EvccSyncResult, error) {
 	evccMu.Lock()
 	defer evccMu.Unlock()
-	s := db.GetOrCreateSetting()
-	if s.EvccURL == "" {
-		return nil, errors.New("EVCC is not set up (Admin → Site Settings → EVCC)")
+	s := getUser(userID)
+	if s == nil || s.EvccURL == "" {
+		return nil, errors.New("EVCC is not set up (Settings → EVCC)")
 	}
 	sessions, err := fetchEvccSessions(s.EvccURL)
 	if err != nil {
 		return nil, err
 	}
 	var vehicles []db.Vehicle
-	db.DB.Where("evcc_vehicle <> ''").Find(&vehicles)
+	db.DB.Where("evcc_vehicle <> '' AND id IN (?)", db.DB.Model(&db.UserVehicle{}).Select("vehicle_id").Where("user_id = ?", userID)).Find(&vehicles)
 	var place *db.ChargingPlace
 	if s.EvccPlaceID != "" {
-		place, _ = GetChargingPlace(s.EvccPlaceID)
+		place, _ = GetChargingPlace(userID, s.EvccPlaceID)
 	}
 	res := &EvccSyncResult{Notes: []string{}}
 	for _, ses := range sessions {
@@ -97,15 +97,10 @@ func SyncEvcc() (*EvccSyncResult, error) {
 			res.Skipped++
 			continue
 		}
-		var owner db.UserVehicle
-		if db.DB.Where("vehicle_id = ? AND is_owner = ?", v.ID, true).Limit(1).Find(&owner); owner.UserID == "" {
-			res.Skipped++
-			continue
-		}
 		kwh := float32(math.Round(ses.ChargedEnergy*100) / 100)
 		full := ses.SocEnd <= 0 || ses.SocEnd >= 95
 		created, finished := ses.Created, ses.Finished
-		det, err := CreateDetection(owner.UserID, v.ID, models.CreateDetectionRequest{
+		det, err := CreateDetection(userID, v.ID, models.CreateDetectionRequest{
 			OdoReading: int(math.Round(ses.Odometer)), Date: &created, FuelQuantity: &kwh, IsTankFull: &full, Source: "EVCC"})
 		if err != nil {
 			res.Notes = append(res.Notes, fmt.Sprintf("session %d: %s", ses.ID, err))
@@ -116,7 +111,7 @@ func SyncEvcc() (*EvccSyncResult, error) {
 		if place != nil {
 			upd["station"] = place.Name
 			if len(place.Components) > 0 || place.PriceEntity != "" {
-				q, err := QuoteChargeAt(place.ID, created, finished, float64(kwh), false) // EVCC meters at the wallbox
+				q, err := QuoteChargeAt(userID, place.ID, created, finished, float64(kwh), false) // EVCC meters at the wallbox
 				if err == nil {
 					price = &q.PerUnitPrice
 				} else {
@@ -136,35 +131,41 @@ func SyncEvcc() (*EvccSyncResult, error) {
 	return res, nil
 }
 
-// UpdateEvccSettings (admin)
-func UpdateEvccSettings(req models.UpdateEvccRequest) error {
-	s := db.GetOrCreateSetting()
+// UpdateEvccSettings (the user's own)
+func UpdateEvccSettings(userID string, req models.UpdateEvccRequest) error {
+	u := getUser(userID)
+	if u == nil {
+		return errors.New("user not found")
+	}
 	if req.PlaceID != "" {
-		if _, err := GetChargingPlace(req.PlaceID); err != nil {
+		if _, err := GetChargingPlace(userID, req.PlaceID); err != nil {
 			return err
 		}
 	}
-	if s.EvccURL == "" && req.URL != "" && req.Since == nil {
+	if u.EvccURL == "" && req.URL != "" && req.Since == nil {
 		now := time.Now().AddDate(0, 0, -7) // first connection: the last week, not years of history
 		req.Since = &now
 	}
-	s.EvccURL, s.EvccSyncMinutes, s.EvccPlaceID, s.EvccSince = strings.TrimSpace(req.URL), req.SyncMinutes, req.PlaceID, req.Since
-	return db.UpdateSettings(s)
+	return db.DB.Model(u).Updates(map[string]interface{}{"evcc_url": strings.TrimSpace(req.URL),
+		"evcc_sync_minutes": req.SyncMinutes, "evcc_place_id": req.PlaceID, "evcc_since": req.Since}).Error
 }
 
-// EvccTimer: every minute, syncs when the interval set in the settings has passed
+// EvccTimer: every minute, syncs each user whose interval has passed
 func EvccTimer() {
-	var last time.Time
+	last := map[string]time.Time{}
 	for range time.Tick(time.Minute) {
-		s := db.GetOrCreateSetting()
-		if s.EvccURL == "" || s.EvccSyncMinutes <= 0 || time.Since(last) < time.Duration(s.EvccSyncMinutes)*time.Minute {
-			continue
-		}
-		last = time.Now()
-		if r, err := SyncEvcc(); err != nil {
-			log.Println("EVCC sync:", err)
-		} else if r.Imported > 0 {
-			log.Printf("EVCC sync: %d charging sessions imported", r.Imported)
+		var users []db.User
+		db.DB.Where("evcc_url <> '' AND evcc_sync_minutes > 0 AND is_disabled = ?", false).Find(&users)
+		for _, u := range users {
+			if time.Since(last[u.ID]) < time.Duration(u.EvccSyncMinutes)*time.Minute {
+				continue
+			}
+			last[u.ID] = time.Now()
+			if r, err := SyncEvcc(u.ID); err != nil {
+				log.Printf("EVCC sync (%s): %s", u.Email, err)
+			} else if r.Imported > 0 {
+				log.Printf("EVCC sync (%s): %d charging sessions imported", u.Email, r.Imported)
+			}
 		}
 	}
 }
