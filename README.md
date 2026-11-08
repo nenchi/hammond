@@ -13,6 +13,69 @@
 > - `Authorization: Bearer <token>` works (the prefix check was off by one)
 > - Base images pinned by digest, end-to-end smoke test in CI (`tests/smoke_test.py`)
 
+
+## Automatic fill-up detection (Home Assistant / API)
+
+hammond can take **detected fill-ups** from Home Assistant, Node-RED, an OBD script or anything else that can
+send HTTP. A detection becomes a **pending fill-up** (menu item *Detected*); you complete it with the price, and
+only then does it count. Nothing in hammond is car-specific: anything with a fuel/battery level in % and an
+odometer works.
+
+**1. In hammond**
+
+- *Settings → API keys*: create a key (shown once). It works only for `/api/v1`, never for the rest of the app.
+- Vehicle → *Edit*: set the **tank size** (litres; kWh for electric). hammond multiplies the level difference
+  with it. After a few confirmed detections it suggests a size learned from what you actually filled.
+- *Settings → When a detected fill-up matches one I already entered*: **Ask me** (both side by side: keep mine /
+  use the detected values), **My entry wins** (detection ignored), or **Use the detected odometer and quantity**
+  (written into your entry, your price stays). Entering a fill-up yourself always closes a matching pending detection.
+
+**2. Home Assistant**
+
+Two helpers that remember the last valid reading (cars report rarely and sensors go `unavailable`), in
+`configuration.yaml` or *Settings → Helpers*:
+
+```yaml
+input_number:
+  car_last_fuel_level: { min: 0, max: 100, step: 0.1, mode: box }
+  car_last_fuel_odometer: { min: 0, max: 9999999, step: 1, mode: box }
+
+rest_command:
+  hammond_detection:
+    url: "https://hammond.example.com/api/v1/vehicles/{{ vehicle_id }}/detections"
+    method: post
+    headers:
+      Authorization: !secret hammond_api_key   # secrets.yaml: hammond_api_key: "Bearer hmd_..."
+    content_type: application/json
+    payload: "{{ payload | tojson }}"
+```
+
+Then import the blueprint
+[`integrations/home-assistant/hammond_fillup_detection.yaml`](integrations/home-assistant/hammond_fillup_detection.yaml)
+(*Settings → Automations → Blueprints → Import*, paste the raw GitHub URL) and create an automation from it: pick
+the level and odometer sensors, the two helpers, the hammond vehicle ID and your phone's notify service. When the
+level jumps by at least 10 % it waits until the value is stable, sends the detection and notifies you with a link
+to complete it. If the last reading before the fill-up was taken many km earlier, hammond marks the estimate
+*check quantity*.
+
+**3. Any other system**
+
+```bash
+# vehicles visible to the key (ID, tank size)
+curl -H "Authorization: Bearer hmd_..." https://hammond.example.com/api/v1/vehicles
+
+# a detection: levels in % (estimated with the tank size) …
+curl -X POST -H "Authorization: Bearer hmd_..." -H "Content-Type: application/json" \
+  -d '{"odoReading": 81068, "odoAtBefore": 81066, "levelBefore": 74, "levelAfter": 99, "source": "OBD"}' \
+  https://hammond.example.com/api/v1/vehicles/<vehicle-id>/detections
+# … or the quantity directly: {"odoReading": 81068, "fuelQuantity": 11.2}
+```
+
+Fields: `odoReading` (required), `fuelQuantity` *or* `levelBefore` + `levelAfter`, optional `odoAtBefore`,
+`isTankFull` (default: level after ≥ 97 %), `date` (ISO 8601, default now), `source`. The response has `result`
+(`pending`, `duplicate`, `ignored`, `applied`), a ready-to-use notification `message` and the `path` to open.
+
+
 <!-- PROJECT LOGO -->
 <br />
 <p align="center">
