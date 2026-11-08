@@ -1,4 +1,4 @@
-[![Contributors][contributors-shield]][contributors-url] [![Forks][forks-shield]][forks-url] [![Stargazers][stars-shield]][stars-url] [![Issues][issues-shield]][issues-url] [![MIT License][license-shield]][license-url] [![LinkedIn][linkedin-shield]][linkedin-url]
+[![Contributors][contributors-shield]][contributors-url] [![Forks][forks-shield]][forks-url] [![Stargazers][stars-shield]][stars-url] [![Issues][issues-shield]][issues-url] [![AGPL-3.0 License][license-shield]][license-url]
 
 > **Maintained fork** of [akhilrex/hammond](https://github.com/akhilrex/hammond) (unmaintained since 2023).
 > Same app and data format; dependencies are kept patched automatically (Renovate → end-to-end test → patch release).
@@ -89,14 +89,14 @@ Fields: `odoReading` (required), `fuelQuantity` *or* `levelBefore` + `levelAfter
   <p align="center">
     A self-hosted vehicle expense tracking system with support for multiple users.
     <br />
-    <a href="https://github.com/akhilrex/hammond"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/nenchi/hammond"><strong>Explore the docs »</strong></a>
     <br />
     <br />
     <!-- <a href="https://github.com/akhilrex/hammond">View Demo</a>
     · -->
-    <a href="https://github.com/akhilrex/hammond/issues">Report Bug</a>
+    <a href="https://github.com/nenchi/hammond/issues">Report Bug</a>
     ·
-    <a href="https://github.com/akhilrex/hammond/issues">Request Feature</a>
+    <a href="https://github.com/nenchi/hammond/issues">Request Feature</a>
         ·
     <a href="Screenshots.md">Screenshots</a>
   </p>
@@ -166,24 +166,24 @@ The easiest way to run Hammond is to run it as a docker container.
 Simple setup without mounted volumes (for testing and evaluation)
 
 ```sh
-  docker run -d -p 3000:3000 --name=hammond akhilrex/hammond
+  docker run -d -p 3000:3000 --name=hammond ghcr.io/nenchi/hammond:latest
 ```
 
 Binding local volumes to the container
 
 ```sh
-   docker run -d -p 3000:3000 --name=hammond -v "/host/path/to/assets:/assets" -v "/host/path/to/config:/config"  akhilrex/hammond
+   docker run -d -p 3000:3000 --name=hammond -v "/host/path/to/assets:/assets" -v "/host/path/to/config:/config" ghcr.io/nenchi/hammond:latest
 ```
 
 ### Using Docker-Compose
 
-Modify the docker compose file provided [here](https://github.com/akhilrex/hammond/blob/master/docker-compose.yml) to update the volume and port binding and run the following command
+Modify the docker compose file provided [here](https://github.com/nenchi/hammond/blob/main/docker-compose.yml) to update the volume and port binding and run the following command
 
 ```yaml
 version: '2.1'
 services:
   hammond:
-    image: akhilrex/hammond
+    image: ghcr.io/nenchi/hammond:latest
     container_name: hammond
     volumes:
       - /path/to/config:/config
@@ -273,25 +273,30 @@ Distributed under the GPL-3.0 License. See `LICENSE` for more information.
 
 ## Contact
 
-Akhil Gupta - [@akhilrex](https://twitter.com/akhilrex)
+This fork: [github.com/nenchi/hammond](https://github.com/nenchi/hammond), issues and pull requests welcome.
 
-Project Link: [https://github.com/akhilrex/hammond](https://github.com/akhilrex/hammond)
+If the fork is useful to you: <a href="https://paypal.me/nenadd26" target="_blank">buy me a coffee via PayPal</a> ☕
+
+### Original author
+
+hammond was created by Akhil Gupta - [@akhilrex](https://twitter.com/akhilrex) · [LinkedIn](https://linkedin.com/in/akhilrex) -
+[github.com/akhilrex/hammond](https://github.com/akhilrex/hammond)
 
 <a href="https://www.buymeacoffee.com/akhilrex" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="width: 217px !important;height: 60px !important;" ></a>
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 
-[contributors-shield]: https://img.shields.io/github/contributors/akhilrex/hammond.svg?style=flat-square
-[contributors-url]: https://github.com/akhilrex/hammond/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/akhilrex/hammond.svg?style=flat-square
-[forks-url]: https://github.com/akhilrex/hammond/network/members
-[stars-shield]: https://img.shields.io/github/stars/akhilrex/hammond.svg?style=flat-square
-[stars-url]: https://github.com/akhilrex/hammond/stargazers
-[issues-shield]: https://img.shields.io/github/issues/akhilrex/hammond.svg?style=flat-square
-[issues-url]: https://github.com/akhilrex/hammond/issues
-[license-shield]: https://img.shields.io/github/license/akhilrex/hammond.svg?style=flat-square
-[license-url]: https://github.com/akhilrex/hammond/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/nenchi/hammond.svg?style=flat-square
+[contributors-url]: https://github.com/nenchi/hammond/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/nenchi/hammond.svg?style=flat-square
+[forks-url]: https://github.com/nenchi/hammond/network/members
+[stars-shield]: https://img.shields.io/github/stars/nenchi/hammond.svg?style=flat-square
+[stars-url]: https://github.com/nenchi/hammond/stargazers
+[issues-shield]: https://img.shields.io/github/issues/nenchi/hammond.svg?style=flat-square
+[issues-url]: https://github.com/nenchi/hammond/issues
+[license-shield]: https://img.shields.io/github/license/nenchi/hammond.svg?style=flat-square
+[license-url]: https://github.com/nenchi/hammond/blob/main/LICENSE
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=flat-square&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/akhilrex
 [product-screenshot]: images/screenshot.jpg
