@@ -45,7 +45,7 @@ func Init() (*gorm.DB, error) {
 
 // Migrate Database
 func Migrate() {
-	err := DB.AutoMigrate(&Attachment{}, &QuickEntry{}, &User{}, &Vehicle{}, &UserVehicle{}, &VehicleAttachment{}, &Fillup{}, &Expense{}, &Setting{}, &JobLock{}, &Migration{})
+	err := DB.AutoMigrate(&Attachment{}, &QuickEntry{}, &User{}, &Vehicle{}, &UserVehicle{}, &VehicleAttachment{}, &Fillup{}, &Expense{}, &Setting{}, &JobLock{}, &Migration{}, &ApiKey{}, &FillupDetection{})
 	if err != nil {
 		fmt.Println("1 " + err.Error())
 	}

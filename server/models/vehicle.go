@@ -24,6 +24,8 @@ type CreateVehicleRequest struct {
 	FuelUnit          *db.FuelUnit `form:"fuelUnit" json:"fuelUnit" binding:"required"`
 
 	FuelType *db.FuelType `form:"fuelType" json:"fuelType" binding:"required"`
+
+	TankCapacity float32 `form:"tankCapacity" json:"tankCapacity" binding:"min=0"`
 }
 
 type UpdateVehicleRequest struct {
@@ -51,6 +53,8 @@ type CreateFillupRequest struct {
 	UserID          string       `form:"userId" json:"userId" binding:"required"`
 	Date            time.Time    `form:"date" json:"date" binding:"required" time_format:"2006-01-02"`
 	FuelSubType     string       `form:"fuelSubType" json:"fuelSubType"`
+	// set when the fill-up completes a detection (it then becomes "confirmed")
+	DetectionID string `form:"detectionId" json:"detectionId"`
 }
 
 type UpdateFillupRequest struct {

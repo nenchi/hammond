@@ -19,6 +19,7 @@ func CreateVehicle(model models.CreateVehicleRequest, userId string) (*db.Vehicl
 		EngineSize:        model.EngineSize,
 		FuelUnit:          *model.FuelUnit,
 		FuelType:          *model.FuelType,
+		TankCapacity:      model.TankCapacity,
 	}
 
 	tx := db.DB.Create(&vehicle)
@@ -106,6 +107,7 @@ func UpdateVehicle(vehicleID string, model models.UpdateVehicleRequest) error {
 	toUpdate.EngineSize = model.EngineSize
 	toUpdate.FuelUnit = *model.FuelUnit
 	toUpdate.FuelType = *model.FuelType
+	toUpdate.TankCapacity = model.TankCapacity
 	//}).Error
 
 	return db.DB.Omit(clause.Associations).Save(toUpdate).Error
@@ -148,6 +150,7 @@ func CreateFillup(model models.CreateFillupRequest) (*db.Fillup, error) {
 	if tx.Error != nil {
 		return nil, tx.Error
 	}
+	ResolveDetectionsForFillup(&fillup, model.DetectionID)
 
 	return &fillup, nil
 

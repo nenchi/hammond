@@ -124,6 +124,47 @@ except urllib.error.HTTPError as e:
 check("malformed JSON is 422, not a crash", s == 422, s)
 s, _ = call("POST", "/api/me/settings", {**base_settings, "theme": "auto", "prefillFillup": True}, token=tok)
 
+# ---- external API: API keys + detections (Home Assistant etc.) ----
+s, v_upd = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda",
+                                               "model": "Octavia", "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50}, token=tok)
+check("vehicle tank size saved", s == 200 and call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tankCapacity") == 50, (s, v_upd))
+s, k = call("POST", "/api/me/apikeys", {"name": "Home Assistant"}, token=tok)
+check("create API key (shown once)", s == 201 and k["key"].startswith("hmd_"), (s, k))
+key = k["key"]
+s, keys = call("GET", "/api/me/apikeys", token=tok)
+check("API key list has no secret", s == 200 and len(keys) == 1 and key not in json.dumps(keys), (s, keys))
+s, vs = call("GET", "/api/v1/vehicles", token=key)
+check("v1: list vehicles with API key", s == 200 and vs[0]["id"] == vid and vs[0]["tankCapacity"] == 50, (s, vs))
+s, _ = call("GET", "/api/v1/vehicles", token=tok)
+check("v1: login token is not an API key (401)", s == 401, s)
+s, _ = call("GET", "/api/v1/vehicles")
+check("v1: no key is 401", s == 401, s)
+s, _ = call("GET", "/api/me", token=key)
+check("API key can't use the UI API (401)", s == 401, s)
+s, _ = call("POST", "/api/v1/vehicles/00000000-0000-0000-0000-000000000000/detections", {"odoReading": 1, "fuelQuantity": 5}, token=key)
+check("v1: unknown/foreign vehicle is 404", s == 404, s)
+s, r = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 11200, "levelBefore": 20, "levelAfter": 98,
+            "odoAtBefore": 11198, "source": "Home Assistant"}, token=key)
+check("v1: detection from fuel levels (78% of 50 l = 39 l)", s == 201 and r["result"] == "pending"
+      and r["detection"]["fuelQuantity"] == 39 and r["detection"]["isTankFull"] and "~39.0" in r["message"], (s, r))
+did = r["detection"]["id"]
+s, r2 = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 10650, "fuelQuantity": 42}, token=key)
+check("v1: detection near an existing fill-up asks (duplicate)", s == 201 and r2["result"] == "duplicate", (s, r2))
+s, r3 = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 11300, "levelBefore": 90, "levelAfter": 50}, token=key)
+check("v1: falling level refused (422)", s == 422, (s, r3))
+s, pend = call("GET", "/api/detections", token=tok)
+check("pending detections listed", s == 200 and {d["id"] for d in pend} == {did, r2["detection"]["id"]}, (s, pend))
+s, _ = call("POST", f"/api/detections/{r2['detection']['id']}/discard", token=tok)
+s, f = call("POST", f"/api/vehicles/{vid}/fillups", {
+    "vehicleId": vid, "fuelUnit": 0, "fuelQuantity": 38.6, "perUnitPrice": 1.6, "totalAmount": 61.76, "odoReading": 11200,
+    "isTankFull": True, "userId": me["id"], "date": "2026-11-07T12:00:00Z", "detectionId": did}, token=tok)
+s2, pend = call("GET", "/api/detections", token=tok)
+check("completing a detection creates the fill-up and clears it", s == 201 and s2 == 200 and pend == [], (s, f, pend))
+kid = keys[0]["id"]
+s, _ = call("DELETE", f"/api/me/apikeys/{kid}", token=tok)
+s2, _ = call("GET", "/api/v1/vehicles", token=key)
+check("revoked API key stops working", s2 == 401, (s, s2))
+
 s, ref = call("POST", "/api/refresh", {"refreshToken": login["refreshToken"]}, token=tok)
 check("refresh token", s == 200 and ref.get("token"), (s, ref))
 s, _ = call("POST", "/api/refresh", {"refreshToken": "garbage"}, token=tok)
