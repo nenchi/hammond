@@ -18,6 +18,10 @@ export default {
   computed: {
     ...mapState('utils', ['settings']),
     ...mapState('users', ['me']),
+    // Settings → search radius (1–25 km)
+    radius() {
+      return (this.me && this.me.stationRadiusKm) || 2
+    },
     mode() {
       return (this.me && this.me.stationSuggestions) || 'location'
     },
@@ -85,11 +89,11 @@ export default {
       this.error = ''
       this.pos = { lat, lng, heading }
       axios
-        .get(`/api/vehicles/${this.vehicle.id}/stations`, { params: { lat, lng, rad: 2, profile } })
+        .get(`/api/vehicles/${this.vehicle.id}/stations`, { params: { lat, lng, rad: this.radius, profile } })
         .then(({ data }) => {
           this.result = data
           this.heading = heading
-          if (!data.stations.length) this.error = `No stations within 2 km (${data.profileName}).`
+          if (!data.stations.length) this.error = `No stations within ${this.radius} km (${data.profileName}). The radius can be changed in Settings.`
         })
         .catch((ex) => {
           this.error = (ex.response && ex.response.data && ex.response.data.error) || ex.message
@@ -105,6 +109,28 @@ export default {
       return /Android/i.test(navigator.userAgent)
         ? `geo:${ll}?q=${ll}(${encodeURIComponent(st.brand || st.name)})`
         : `https://www.google.com/maps/dir/?api=1&destination=${ll}`
+    },
+    // a link that opens for anyone (geo: only works on Android)
+    mapsUrl(st) {
+      return `https://www.google.com/maps/search/?api=1&query=${st.lat},${st.lng}`
+    },
+    // the phone's share sheet (WhatsApp, Signal, SMS…); elsewhere copied to the clipboard
+    share(st) {
+      const prices = this.result.grades
+        .filter((g) => st.prices[g] !== undefined)
+        .map((g) => `${this.label(g)} ${st.prices[g].toFixed(3)} ${this.me ? this.me.currency : ''}`.trim())
+        .join(', ')
+      const title = st.brand || st.name
+      const text = [title, st.address, prices].filter(Boolean).join('\n')
+      const url = this.mapsUrl(st)
+      if (navigator.share) {
+        navigator.share({ title, text, url }).catch(() => {}) // cancelled: nothing to do
+        return
+      }
+      const all = `${text}\n${url}`
+      const done = () => this.$buefy.toast.open({ message: 'Copied: ' + title, type: 'is-success', duration: 2500 })
+      if (navigator.clipboard) navigator.clipboard.writeText(all).then(done, () => window.prompt('Copy:', all))
+      else window.prompt('Copy:', all)
     },
     // tapping the station takes its preferred grade; tapping a price takes that grade
     pick(st, grade) {
@@ -140,36 +166,40 @@ export default {
     <p v-if="error" class="help is-danger">{{ error }}</p>
     <div v-if="result && result.stations.length" class="box mt-2 p-3">
       <p class="heading">{{ heading }} · {{ gradeLabel }}</p>
-      <a
+      <div
         v-for="st in result.stations"
         :key="st.id"
-        class="station is-flex is-justify-content-space-between is-align-items-center py-2"
+        class="station py-2"
         :class="{ 'has-text-grey': !st.price }"
         @click="pick(st)"
       >
-        <span>
-          <strong>{{ st.brand || st.name }}</strong>
-          <b-tag v-if="!st.isOpen" size="is-small">closed</b-tag><br />
-          <small>{{ st.address }} · {{ st.dist.toFixed(1) }} km</small>
-          <a v-if="st.lat || st.lng" :href="navUrl(st)" target="_blank" rel="noopener" class="navigate ml-1" title="Navigate" @click.stop
-            ><b-icon icon="directions" size="is-small"></b-icon
-          ></a>
-        </span>
-        <span class="ml-2 has-text-right prices">
-          <template v-if="Object.keys(st.prices).length">
-            <a
-              v-for="g in result.grades.filter((x) => st.prices[x] !== undefined)"
-              :key="g"
-              class="price is-block"
-              :class="{ 'has-text-weight-bold has-text-success cheapest': st.prices[g] === cheapest }"
-              :data-grade="g"
-              @click.stop="pick(st, g)"
-              >{{ label(g) }} {{ st.prices[g].toFixed(3) }} {{ me ? me.currency : '' }}</a
-            >
-          </template>
-          <strong v-else>no {{ gradeLabel }}</strong>
-        </span>
-      </a>
+        <div class="is-flex is-justify-content-space-between is-align-items-center">
+          <span>
+            <strong>{{ st.brand || st.name }}</strong>
+            <b-tag v-if="!st.isOpen" size="is-small">closed</b-tag><br />
+            <small>{{ st.address }} · {{ st.dist.toFixed(1) }} km</small>
+          </span>
+          <span class="ml-2 has-text-right prices">
+            <template v-if="Object.keys(st.prices).length">
+              <a
+                v-for="g in result.grades.filter((x) => st.prices[x] !== undefined)"
+                :key="g"
+                class="price is-block"
+                :class="{ 'has-text-weight-bold has-text-success cheapest': st.prices[g] === cheapest }"
+                :data-grade="g"
+                @click.stop="pick(st, g)"
+                >{{ label(g) }} {{ st.prices[g].toFixed(3) }} {{ me ? me.currency : '' }}</a
+              >
+            </template>
+            <strong v-else>no {{ gradeLabel }}</strong>
+          </span>
+        </div>
+        <!-- finger-sized: the small icon link was hard to hit on a phone -->
+        <div v-if="st.lat || st.lng" class="buttons mt-1 mb-0 station-actions" @click.stop>
+          <b-button tag="a" :href="navUrl(st)" target="_blank" rel="noopener" icon-left="directions" class="navigate">Navigate</b-button>
+          <b-button icon-left="share-alt" class="share" @click="share(st)">Share</b-button>
+        </div>
+      </div>
       <p class="help">{{ result.profileName }} · {{ result.attribution }} · today's price, check it on the receipt</p>
     </div>
   </div>

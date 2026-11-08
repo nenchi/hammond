@@ -34,6 +34,7 @@ export default {
         detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
         showFillupTime: this.me.showFillupTime !== false,
         stationSuggestions: this.me.stationSuggestions || 'location',
+        stationRadiusKm: this.me.stationRadiusKm || 2,
         customFuelSubtypes: this.me.customFuelSubtypes || '',
       },
       apiKeys: [],
@@ -241,12 +242,15 @@ export default {
           <b-field label="My fuel types" message="One per line, e.g. Q Max 95 or MaxxMotion 100: added to the fuel subtype list">
             <b-input v-model="settingsModel.customFuelSubtypes" type="textarea" rows="2" class="my-fuel-types"></b-input>
           </b-field>
-          <b-field label="Stations nearby (fill-up form)" message="Needs fuel prices set up by an admin (Site Settings)">
+          <b-field label="Stations nearby (fill-up form)" message="Uses your own fuel price profiles (below) and the ones the admin shares">
             <b-select v-model="settingsModel.stationSuggestions" expanded>
               <option value="location">Button, plus stations near a detected fill-up's location</option>
               <option value="button">Only the "Stations nearby" button</option>
               <option value="off">Off</option>
             </b-select>
+          </b-field>
+          <b-field label="Stations nearby: search radius (km)" message="1–25 km; Croatia lists every station in the radius, so larger = longer list">
+            <b-input v-model.number="settingsModel.stationRadiusKm" type="number" min="1" max="25" step="1" class="station-radius"></b-input>
           </b-field>
           <b-field label="When a detected fill-up matches one I already entered">
             <b-select v-model="settingsModel.detectionDuplicateMode" expanded>
