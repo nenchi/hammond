@@ -1,6 +1,6 @@
 <script>
 import Layout from '@layouts/main.vue'
-import { parseAndFormatDate } from '@utils/format-date'
+import { parseAndFormatDate, parseAndFormatFillupDate } from '@utils/format-date'
 import { mapState } from 'vuex'
 import { addDays, addMonths } from 'date-fns'
 import axios from 'axios'
@@ -241,6 +241,9 @@ export default {
     formatDate(date) {
       return parseAndFormatDate(date)
     },
+    formatFillupDate(date) {
+      return parseAndFormatFillupDate(date, this.me.showFillupTime !== false)
+    },
     formatCurrency(number, currencyCode) {
       if (!currencyCode) {
         currencyCode = this.me.currency
@@ -370,7 +373,7 @@ export default {
 
       <b-table :data="fillups" hoverable mobile-cards :detailed="isMobile" detail-key="id" paginated per-page="10">
         <b-table-column v-slot="props" field="date" label="Date" :td-attrs="columnTdAttrs" sortable date>
-          {{ formatDate(props.row.date) }}
+          {{ formatFillupDate(props.row.date) }}
         </b-table-column>
         <b-table-column v-slot="props" field="fuelSubType" label="Fuel Sub Type" :td-attrs="columnTdAttrs">
           {{ props.row.fuelSubType }}

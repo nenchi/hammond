@@ -7,7 +7,7 @@ import CreateQuickEntry from '@components/createQuickEntry.vue'
 import StatsWidget from '@components/statsWidget.vue'
 import { chunk } from 'lodash'
 
-import { parseAndFormatDate } from '@utils/format-date'
+import { parseAndFormatDate, parseAndFormatFillupDate } from '@utils/format-date'
 // import store from '@state/store'
 import { mapGetters, mapState } from 'vuex'
 
@@ -51,6 +51,9 @@ export default {
   methods: {
     formatDate(date) {
       return parseAndFormatDate(date)
+    },
+    formatFillupDate(date) {
+      return parseAndFormatFillupDate(date, !this.me || this.me.showFillupTime !== false)
     },
     formatCurrency(number) {
       return currencyFormtter.format(number, { code: this.me.currency })
@@ -127,7 +130,7 @@ export default {
                   <div class="columns">
                     <div class="column is-one-third">Last Fillup</div>
                     <div class="column"
-                      >{{ formatDate(vehicle.fillups[0].date) }} <br />
+                      >{{ formatFillupDate(vehicle.fillups[0].date) }} <br />
                       {{ `${formatCurrency(vehicle.fillups[0].totalAmount)}` }} ({{
                         `${vehicle.fillups[0].fuelQuantity} ${vehicle.fillups[0].fuelUnitDetail.short}`
                       }}

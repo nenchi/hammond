@@ -259,6 +259,27 @@ describe('hammond UI', () => {
     cy.contains('td', 'Support this fork').next().find('a').should('have.attr', 'href', 'https://paypal.me/nenadd26')
   })
 
+  it('fill-up time: entered in the form, shown in the list, can be hidden in the settings', () => {
+    cy.intercept('POST', `/api/vehicles/${vehicleId}/fillups`).as('createFillup')
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('.field', 'Quantity').find('input[type=number]').first().clear().type('9.5')
+    cy.contains('.field', 'Price per').find('input').clear().type('1.7')
+    cy.contains('.field', 'Odometer Reading').find('input').clear().type('21450')
+    cy.get('.fillup-time input').clear().type('07:45')
+    cy.get('form [type=submit]').first().click()
+    cy.wait('@createFillup').its('request.body.date').then((iso) => {
+      const d = new Date(iso)
+      expect([d.getHours(), d.getMinutes()], 'saved with the entered time').to.deep.eq([7, 45])
+    })
+    visit(`/vehicles/${vehicleId}`)
+    cy.contains('td', /[A-Z][a-z]{2} \d{2}, \d{4} 07:45/)
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showFillupTime: false } })
+    visit(`/vehicles/${vehicleId}`)
+    cy.contains('td', '21450')
+    cy.contains('td', '07:45').should('not.exist')
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showFillupTime: true } })
+  })
+
   it('logs out, and a wrong password is refused', () => {
     // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
     // and typing into the first login page raced the second (flaky in CI)

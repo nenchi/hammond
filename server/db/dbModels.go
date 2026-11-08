@@ -26,6 +26,8 @@ type User struct {
 	// what a detection (e.g. from Home Assistant) does when a matching fill-up already exists:
 	// "ask" (empty), "manual" (my entry wins, ignore) or "detection" (write its values into my entry)
 	DetectionDuplicateMode string `json:"detectionDuplicateMode"`
+	// show the time of fill-ups in lists (entries without a time always show the date only)
+	ShowFillupTime bool `gorm:"default:true" json:"showFillupTime"`
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {

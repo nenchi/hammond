@@ -7,6 +7,7 @@ import { mapState } from 'vuex'
 import axios from 'axios'
 import { round } from 'lodash'
 import { format } from 'date-fns'
+import { timeOf } from '@utils/format-date'
 
 export default {
   page: {
@@ -40,6 +41,8 @@ export default {
       processQuickEntry: false,
       lastOdoReading: null,
       detection: null,
+      // HH:mm next to the date picker (which only sets whole days); combined on save
+      fillupTime: '',
     }
   },
 
@@ -76,6 +79,11 @@ export default {
     this.selectedVehicle = this.vehicle
     this.fetchVehicleUsers()
     this.fetchVehicleFuelSubTypes()
+    if (this.fillup.id) {
+      this.fillupTime = timeOf(this.fillup.date)
+    } else {
+      this.fillupTime = format(new Date(), 'HH:mm')
+    }
     if (!this.fillup.id) {
       this.fillupModel = this.getEmptyFillup()
       this.fillupModel.userId = this.me.id
@@ -118,6 +126,7 @@ export default {
           date: new Date(d.date),
           isTankFull: d.isTankFull,
         })
+        this.fillupTime = format(new Date(d.date), 'HH:mm')
       })
     },
     // last price, station and fuel subtype (setting "pre-fill"); the odometer only as a hint, a copied
@@ -159,6 +168,10 @@ export default {
     },
     async createFillup() {
       this.tryingToCreate = true
+      const when = new Date(this.fillupModel.date)
+      const [h, m] = (this.fillupTime || '00:00').split(':').map(Number)
+      when.setHours(h || 0, m || 0, 0, 0)
+      this.fillupModel.date = when
       this.fillupModel.vehicleId = this.selectedVehicle.id
       //  this.fillupModel.userId = this.me.id
       if (this.fillup.id) {
@@ -274,6 +287,9 @@ export default {
           :max-date="new Date()"
         >
         </b-datepicker>
+      </b-field>
+      <b-field label="Time" message="Optional; empty = no time">
+        <b-input v-model="fillupTime" type="time" class="fillup-time"></b-input>
       </b-field>
       <b-field label="Fuel Subtype">
         <b-autocomplete

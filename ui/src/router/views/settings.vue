@@ -29,6 +29,7 @@ export default {
         theme: this.me.theme || 'auto',
         prefillFillup: this.me.prefillFillup !== false,
         detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
+        showFillupTime: this.me.showFillupTime !== false,
       },
       apiKeys: [],
       newKeyName: 'Home Assistant',
@@ -224,6 +225,9 @@ export default {
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </b-select>
+          </b-field>
+          <b-field>
+            <b-checkbox v-model="settingsModel.showFillupTime">Show the time of fill-ups (e.g. several on one day)</b-checkbox>
           </b-field>
           <b-field>
             <b-checkbox v-model="settingsModel.prefillFillup">Pre-fill new fill-ups with the last price and station</b-checkbox>
