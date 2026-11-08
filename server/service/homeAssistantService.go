@@ -206,3 +206,19 @@ func TestHomeAssistant(userID string) HATestResult {
 	}
 	return r
 }
+
+// CheckHAEntity ("Check" next to the odometer entity in Edit vehicle): reads any entity id from the
+// user's HA before it's saved; a clear error when HA isn't set up, the entity doesn't exist or isn't a number
+func CheckHAEntity(userID, entity string) (*Odometer, error) {
+	if entity == "" || !ValidEntityID(entity) {
+		return nil, errors.New("not an entity id (like sensor.car_odometer)")
+	}
+	o, err := CurrentOdometer(userID, &db.Vehicle{OdometerEntity: entity})
+	if err != nil {
+		return nil, err
+	}
+	if !o.Configured {
+		return nil, errors.New("set up your Home Assistant first (Settings → Home Assistant)")
+	}
+	return o, nil
+}

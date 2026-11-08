@@ -401,6 +401,11 @@ describe('hammond UI', () => {
       cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}`, headers: apiHeaders, body: { ...v, odometerEntity: 'sensor.ci_odometer' } }))
     visit(`/vehicles/${vehicleId}/edit`)
     cy.contains('.field', 'Home Assistant odometer entity').find('input').should('have.value', 'sensor.ci_odometer')
+    cy.get('.check-entity').click()
+    cy.get('.entity-check').should('contain', '✓ Found: 23456 km')
+    cy.contains('.field', 'Home Assistant odometer entity').find('input').clear().type('sensor.nope')
+    cy.get('.check-entity').click()
+    cy.get('.entity-check').should('contain', '✗ Home Assistant has no entity sensor.nope')
 
     visit(`/vehicles/${vehicleId}/fillup`)
     cy.contains('.field', 'Odometer Reading').find('input').should('have.value', '23456')
@@ -420,6 +425,7 @@ describe('hammond UI', () => {
         visit('/charging')
         cy.contains('.charging-place', 'Home').click()
         cy.get('.tariff-rules tbody tr').should('have.length', 1)
+        cy.get('.charging-place').should('not.contain', '&nbsp;') // spacer labels, not literal text
         cy.contains('button', 'Rule').click()
         cy.get('.tariff-rules tbody tr').should('have.length', 2) // not saved
 

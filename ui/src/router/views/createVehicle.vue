@@ -19,6 +19,8 @@ export default {
   },
   data() {
     return {
+      entityCheck: null, // { ok, text } from "Check" next to the odometer entity
+      entityChecking: false,
       authError: null,
       tryingToCreate: false,
       showMore: false,
@@ -73,6 +75,23 @@ export default {
     }
   },
   methods: {
+    // asks your Home Assistant for the entity right away (before saving)
+    checkEntity() {
+      this.entityChecking = true
+      this.entityCheck = null
+      axios
+        .get('/api/me/homeAssistant/entity', { params: { entity: this.vehicleModel.odometerEntity } })
+        .then(({ data }) => {
+          const min = Math.max(0, Math.round((Date.now() - new Date(data.updatedAt)) / 60000))
+          const ago = min < 60 ? `${min} min` : min < 2880 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} days`
+          this.entityCheck = { ok: true, text: `✓ Found: ${data.value} ${data.unit || ''}, updated ${ago} ago` }
+        })
+        .catch((ex) => {
+          const msg = (ex.response && ex.response.data && ex.response.data.error) || ex.message
+          this.entityCheck = { ok: false, text: '✗ ' + msg }
+        })
+        .finally(() => (this.entityChecking = false))
+    },
     resetGauge() {
       this.$buefy.dialog.confirm({
         title: 'Reset gauge calibration',
@@ -232,8 +251,12 @@ export default {
         message="Pre-fills new fill-ups with the car's current odometer, e.g. sensor.a180_odometer (Settings → Home Assistant)"
       >
         <b-input v-model.trim="vehicleModel.odometerEntity" pattern="[a-z0-9_]+\.[a-z0-9_]+" maxlength="100" :has-counter="false"
-          placeholder="sensor.…_odometer"></b-input>
+          placeholder="sensor.…_odometer" expanded></b-input>
+        <p class="control">
+          <b-button class="check-entity" :loading="entityChecking" :disabled="!vehicleModel.odometerEntity" @click="checkEntity">Check</b-button>
+        </p>
       </b-field>
+      <p v-if="entityCheck" class="help mb-3 entity-check" :class="entityCheck.ok ? 'is-success' : 'is-danger'">{{ entityCheck.text }}</p>
       <b-field
         v-if="vehicleModel.fuelType === 4"
         label="EVCC vehicle"
