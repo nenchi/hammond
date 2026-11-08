@@ -37,7 +37,7 @@ before(() => {
       cy.request({
         method: 'POST', url: '/api/vehicles', headers,
         body: { nickname: 'Cypress', registration: 'CY 1234', make: 'Skoda', model: 'Octavia',
-                yearOfManufacture: 2020, engineSize: 1.6, fuelUnit: 0, fuelType: 1 },
+                yearOfManufacture: 2020, engineSize: 1598, // cc: the form field is whole numbers, 1.6 blocked the save fuelUnit: 0, fuelType: 1 },
       }).then(({ body: v }) => {
         vehicleId = v.id
         ;[[20000, 40], [20640, 42.5]].forEach(([odo, qty]) =>
