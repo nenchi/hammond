@@ -4,6 +4,7 @@ import { parseAndFormatDate, parseAndFormatFillupDate } from '@utils/format-date
 import { mapState } from 'vuex'
 import { addDays, addMonths } from 'date-fns'
 import axios from 'axios'
+import { suspiciousFillups } from '@utils/odometer'
 import currencyFormtter from 'currency-formatter'
 import store from '@state/store'
 import ShareVehicle from '@components/shareVehicle.vue'
@@ -55,6 +56,9 @@ export default {
     // on every render, which made the chart refetch and redraw in a loop
     startDate() {
       return this.getStartDate()
+    },
+    suspicious() {
+      return suspiciousFillups(this.fillups)
     },
     ...mapState('users', ['me']),
     ...mapState('auth', ['currentUser']),
@@ -370,8 +374,17 @@ export default {
     </div>
     <div class="box">
       <h1 class="title is-4">Past Fillups</h1>
+      <b-notification v-if="suspicious.length" type="is-warning" :closable="false" class="odo-warning">
+        Odometer looks wrong (typo?) — distance and mileage are off until fixed:
+        <span v-for="f in suspicious" :key="f.id">
+          <router-link :to="{ name: 'vehicle-edit-fillup', params: { fillupId: f.id, vehicleId: vehicle.id } }">
+            {{ formatFillupDate(f.date) }}: {{ f.odoReading }} {{ me.distanceUnitDetail.short }}</router-link
+          >;
+        </span>
+        A skipped entry? Edit it and tick "Did you miss the fillup entry before this one?".
+      </b-notification>
 
-      <b-table :data="fillups" hoverable mobile-cards :detailed="isMobile" detail-key="id" paginated per-page="10">
+      <b-table :data="fillups" :row-class="(r) => (suspicious.includes(r) ? 'is-suspicious' : '')" hoverable mobile-cards :detailed="isMobile" detail-key="id" paginated per-page="10">
         <b-table-column v-slot="props" field="date" label="Date" :td-attrs="columnTdAttrs" sortable date>
           {{ formatFillupDate(props.row.date) }}
         </b-table-column>
@@ -557,3 +570,10 @@ export default {
     </div>
   </Layout>
 </template>
+
+<style module>
+/* global: b-table renders the rows */
+:global(tr.is-suspicious td) {
+  background: rgba(255, 221, 87, 0.25);
+}
+</style>
