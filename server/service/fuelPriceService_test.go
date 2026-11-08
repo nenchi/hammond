@@ -267,6 +267,9 @@ func TestHomeAssistantOdometer(t *testing.T) {
 	if r := TestHomeAssistant(u.ID); r.OK {
 		t.Fatal("test without settings must fail")
 	}
+	if _, err := CheckHAEntity(u.ID, "sensor.a180_odometer"); err == nil || !strings.Contains(err.Error(), "Settings → Home Assistant") {
+		t.Fatalf("check without HA: %v", err)
+	}
 	UpdateHomeAssistantSettings(u.ID, ha.URL+"/", "ha-token")
 	v.OdometerEntity = "sensor.a180_odometer"
 	db.DB.Save(&v)
@@ -281,6 +284,15 @@ func TestHomeAssistantOdometer(t *testing.T) {
 	b, _ := json.Marshal(me)
 	if strings.Contains(string(b), "ha-token") || !strings.Contains(string(b), `"haTokenSet":true`) {
 		t.Fatalf("token must stay hidden: %s", b)
+	}
+	if o, err := CheckHAEntity(u.ID, "sensor.a180_odometer"); err != nil || o.Value != 21345 || o.Unit != "km" {
+		t.Fatalf("check entity: %+v %v", o, err)
+	}
+	if _, err := CheckHAEntity(u.ID, "sensor.missing"); err == nil || !strings.Contains(err.Error(), "no entity") {
+		t.Fatalf("check missing entity: %v", err)
+	}
+	if _, err := CheckHAEntity(u.ID, "../api"); err == nil {
+		t.Fatal("check must refuse non-entity ids")
 	}
 	v.OdometerEntity = "sensor.offline"
 	if _, err := CurrentOdometer(u.ID, &v); err == nil || !strings.Contains(err.Error(), "unavailable") {

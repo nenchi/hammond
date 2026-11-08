@@ -249,6 +249,10 @@ s, r = call("GET", "/api/me/homeAssistant/test", token=tok)
 check("HA test connection", s == 200 and r["ok"] and r["name"] == "CI Home", (s, r))
 s, r = call("GET", "/api/me/homeAssistant/test", token=ptok)
 check("another user's HA isn't shared", s == 200 and not r["ok"], (s, r))
+s, r = call("GET", "/api/me/homeAssistant/entity?entity=sensor.ci_odometer", token=tok)
+check("check an entity before saving it", s == 200 and r["value"] == 23456 and r["unit"] == "km", (s, r))
+s, r = call("GET", "/api/me/homeAssistant/entity?entity=sensor.nope", token=tok)
+check("check: a missing entity is a clear error", s == 422 and "no entity" in r, (s, r))
 veh = {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia", "fuelUnit": 0, "fuelType": 1,
        "tankCapacity": 50, "fuelGrade": "e10"}
 s, _ = call("PUT", f"/api/vehicles/{vid}", {**veh, "odometerEntity": "../../api/config"}, token=tok)
