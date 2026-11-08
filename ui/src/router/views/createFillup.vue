@@ -10,6 +10,7 @@ import { round } from 'lodash'
 import { format } from 'date-fns'
 import { timeOf } from '@utils/format-date'
 import { fuelSubtypes, defaultFuelSubtype } from '@utils/fuel-grades'
+import { gapLimit } from '@utils/odometer'
 
 export default {
   page: {
@@ -41,6 +42,8 @@ export default {
       fillupModel: this.fillup,
       processQuickEntry: false,
       lastOdoReading: null,
+      typicalGap: null,
+      gapLimit: 1500,
       detection: null,
       // HH:mm next to the date picker (which only sets whole days); combined on save
       fillupTime: '',
@@ -64,6 +67,17 @@ export default {
     subtypeOptions() {
       const custom = ((this.me && this.me.customFuelSubtypes) || '').split('\n').filter(Boolean)
       return fuelSubtypes(this.selectedVehicle.fuelType, this.fillupModel.fuelSubType, custom)
+    },
+    // soft warning only (typo check), saving still works: back-dated entries and long trips are legit
+    odoWarning() {
+      const odo = this.fillupModel.odoReading
+      if (!this.lastOdoReading || !odo) return ''
+      const unit = this.me.distanceUnitDetail.short
+      const d = odo - this.lastOdoReading
+      if (d < 0) return `Lower than the last fill-up (${this.lastOdoReading} ${unit}). Back-dated entry? Otherwise check the number.`
+      if (d > this.gapLimit && !this.fillupModel.hasMissedFillup)
+        return `${d} ${unit} since the last fill-up${this.typicalGap ? ` (usually ~${this.typicalGap})` : ''}. Typo? If you skipped an entry, tick "Did you miss the fillup entry before this one?".`
+      return ''
     },
     filteredFuelSubtypes() {
       if (!this.fillupModel.fuelSubType) {
@@ -157,6 +171,7 @@ export default {
           const last = (data || []).reduce((a, b) => (!a || b.odoReading > a.odoReading ? b : a), null)
           if (!last || this.fillup.id) return
           this.lastOdoReading = last.odoReading
+          ;({ median: this.typicalGap, limit: this.gapLimit } = gapLimit(data))
           if (this.me.prefillFillup === false) return
           if (!this.fillupModel.perUnitPrice) this.fillupModel.perUnitPrice = last.perUnitPrice
           if (!this.fillupModel.fillingStation && last.fillingStation) {
@@ -336,7 +351,11 @@ export default {
         </p>
         <b-input v-model.number="fillupModel.totalAmount" type="number" min="0" step=".001" expanded required></b-input>
       </b-field>
-      <b-field label="Odometer Reading" :message="lastOdoReading ? `Last fill-up: ${lastOdoReading} ${me.distanceUnitDetail.short}` : ''">
+      <b-field
+        label="Odometer Reading"
+        :type="odoWarning ? 'is-warning' : ''"
+        :message="odoWarning || (lastOdoReading ? `Last fill-up: ${lastOdoReading} ${me.distanceUnitDetail.short}` : '')"
+      >
         <p class="control">
           <span class="button is-static">{{ me.distanceUnitDetail.short }}</span>
         </p>

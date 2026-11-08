@@ -89,6 +89,27 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  it('warns about an odometer typo in the form and lists saved ones on the vehicle page', () => {
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.contains('.field', 'Odometer Reading').find('input').type('206400')
+    cy.contains('185760 Km since the last fill-up. Typo?')
+    cy.contains('.field', 'Odometer Reading').find('input').clear().type('21200')
+    cy.contains('Typo?').should('not.exist')
+    // a saved typo (dated before the other seeds, so later tests' "last fill-up" stays 20640)
+    cy.request({ url: '/api/me', headers: apiHeaders }).then(({ body: me }) =>
+      cy.request({
+        method: 'POST', url: `/api/vehicles/${vehicleId}/fillups`, headers: apiHeaders,
+        body: { vehicleId, fuelUnit: 0, fuelQuantity: 30, perUnitPrice: 1.5, totalAmount: 45, odoReading: 1950,
+                isTankFull: true, userId: me.id, date: '2026-11-01T10:00:00Z' },
+      })).then(({ body: f }) => {
+        visit(`/vehicles/${vehicleId}`)
+        cy.contains('.odo-warning', 'Odometer looks wrong').should('contain', '1950 Km').and('not.contain', '20000 Km')
+        cy.get('tr.is-suspicious').should('have.length', 1)
+        cy.request({ method: 'DELETE', url: `/api/vehicles/${vehicleId}/fillups/${f.id}`, headers: apiHeaders })
+      })
+    noConsoleErrors()
+  })
+
   it('pre-fill can be turned off in the settings', () => {
     cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, prefillFillup: false } })
     visit(`/vehicles/${vehicleId}/fillup`)
