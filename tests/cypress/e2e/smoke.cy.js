@@ -346,7 +346,7 @@ describe('hammond UI', () => {
     cy.wait('@stations').its('request.url').should('contain', 'rad=2') // default radius (Settings)
     cy.get('.station-picker').within(() => {
       cy.contains('Stations nearby · 95 E10 / 95')
-      cy.get('.price-profile-switch').should('not.exist') // only one profile
+      cy.get('.price-profile-switch').should('exist') // own profile + the built-in free sources
       // both accepted grades per station; the station without E10 shows its E5 price; cheapest highlighted
       cy.contains('.station', 'ARAL').find('.price[data-grade=e10]').should('contain', '1.739')
       cy.contains('.station', 'ARAL').find('.price[data-grade=e5]').should('contain', '1.799')
