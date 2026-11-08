@@ -426,6 +426,8 @@ func fakeSIHR(t *testing.T) *httptest.Server {
 			 "gorivos":[{"id":10,"vrsta_goriva_id":1},{"id":11,"vrsta_goriva_id":2},{"id":12,"vrsta_goriva_id":8},{"id":13,"vrsta_goriva_id":9}],
 			 "obvezniks":[{"id":5,"naziv":"Tifon d.o.o."}]}`))
 			gz.Close()
+		case "/broken/search/gas-stations/by-address":
+			http.Error(w, "down", http.StatusBadGateway)
 		default:
 			t.Errorf("unexpected request %s", r.URL)
 		}
@@ -475,5 +477,91 @@ func TestSloveniaCroatia(t *testing.T) {
 	res, err = NearbyStations(u.ID, &v, 45.8150, 15.9819, 2, "hr")
 	if err != nil || res.Stations[0].Grade != "e5" || res.Stations[0].Prices["e5"] != 1.49 {
 		t.Fatalf("cache must be per grade list: %+v %v", res, err)
+	}
+
+	// nowhere near: the empty answer names every profile asked, not just the first
+	res, err = NearbyStations(u.ID, &v, 48.2, 16.37, 2, "")
+	if err != nil || len(res.Stations) != 0 || res.ProfileName != "Slovenia, Croatia" || res.Errors != nil {
+		t.Fatalf("empty answer must name every profile asked: %+v %v", res, err)
+	}
+	// a failing profile shows up next to the empty answer instead of being hidden
+	if err := UpdatePriceProfiles([]db.PriceProfile{
+		{ID: "at", Name: "Austria", Kind: "econtrol", URL: srv.URL + "/broken"},
+		{ID: "si", Name: "Slovenia", Kind: "goriva", URL: srv.URL + "/api/v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	res, err = NearbyStations(u.ID, &v, 48.2, 16.37, 2, "")
+	if err != nil || res.ProfileName != "Slovenia" || len(res.Errors) != 1 || !strings.HasPrefix(res.Errors[0], "Austria: ") {
+		t.Fatalf("Austria's error must be reported: %+v %v", res, err)
+	}
+}
+
+// fake Nominatim: Graz → Austria, Ljubljana → Slovenia, Rome → Italy, else sea
+func fakeNominatim(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "" || r.URL.Query().Get("zoom") != "3" {
+			t.Errorf("unexpected request %s", r.URL)
+		}
+		switch r.URL.Query().Get("lat") {
+		case "47.07":
+			w.Write([]byte(`{"address":{"country":"Austria","country_code":"at"}}`))
+		case "46.05":
+			w.Write([]byte(`{"address":{"country":"Slovenia","country_code":"si"}}`))
+		case "41.9":
+			w.Write([]byte(`{"address":{"country":"Italy","country_code":"it"}}`))
+		default:
+			w.Write([]byte(`{"error":"Unable to geocode"}`))
+		}
+	}))
+}
+
+func TestCountryPicksProfile(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 43)
+	var calls int32
+	tk, ec, sihr, geo := fakeTankerkoenig(t, &calls), fakeEControl(t), fakeSIHR(t), fakeNominatim(t)
+	defer tk.Close()
+	defer ec.Close()
+	defer sihr.Close()
+	defer geo.Close()
+	GeocodeURL = geo.URL
+	countryCache = map[string][2]string{}
+	// Germany first: its fake answers stations everywhere, so without the country it would always win
+	if err := UpdatePriceProfiles([]db.PriceProfile{
+		{ID: "de", Name: "Germany", Kind: "tankerkoenig", URL: tk.URL + "/json", APIKey: "good-key"},
+		{ID: "si", Name: "Slovenia", Kind: "goriva", URL: sihr.URL + "/api/v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	v.FuelGrade = "e10,e5,diesel"
+	res, err := NearbyStations(u.ID, &v, 46.05, 14.5, 2, "")
+	if err != nil || res.Profile != "si" || res.Country != "Slovenia" {
+		t.Fatalf("in Slovenia only the Slovenian profile: %+v %v", res, err)
+	}
+	// Austria without an Austrian profile: say so, don't answer with German stations
+	_, err = NearbyStations(u.ID, &v, 47.07, 15.44, 2, "")
+	if err == nil || !strings.Contains(err.Error(), "Austria") || !strings.Contains(err.Error(), "Austria – E-Control") {
+		t.Fatalf("want 'add Austria – E-Control': %v", err)
+	}
+	// with the Austrian profile it answers, and an empty answer names the country
+	UpdatePriceProfiles([]db.PriceProfile{
+		{ID: "de", Name: "Germany", Kind: "tankerkoenig", URL: tk.URL + "/json", APIKey: "good-key"},
+		{ID: "at", Name: "Austria", Kind: "econtrol", URL: ec.URL + "/sprit/1.0"}})
+	res, err = NearbyStations(u.ID, &v, 47.07, 15.44, 2, "")
+	if err != nil || res.Profile != "at" || res.Country != "Austria" {
+		t.Fatalf("in Graz Austria: %+v %v", res, err)
+	}
+	// a country without any source
+	if _, err = NearbyStations(u.ID, &v, 41.9, 12.5, 2, ""); err == nil || !strings.Contains(err.Error(), "Italy") {
+		t.Fatalf("want 'no station prices for Italy': %v", err)
+	}
+	// unknown country (sea, Nominatim down): every profile in order, as before
+	res, err = NearbyStations(u.ID, &v, 50.1, 8.76, 2, "")
+	if err != nil || res.Profile != "de" || res.Country != "" {
+		t.Fatalf("unknown country: all profiles: %+v %v", res, err)
+	}
+	// a chosen profile: no country check
+	res, err = NearbyStations(u.ID, &v, 47.07, 15.44, 2, "de")
+	if err != nil || res.Profile != "de" {
+		t.Fatalf("chosen profile is asked: %+v %v", res, err)
 	}
 }

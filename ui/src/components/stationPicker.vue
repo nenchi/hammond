@@ -93,7 +93,12 @@ export default {
         .then(({ data }) => {
           this.result = data
           this.heading = heading
-          if (!data.stations.length) this.error = `No stations within ${this.radius} km (${data.profileName}). The radius can be changed in Settings.`
+          if (!data.stations.length)
+            this.error =
+              (data.country ? data.country + ': n' : 'N') +
+              `o stations within ${this.radius} km (asked: ${data.profileName}).` +
+              (data.errors ? ' Failed: ' + data.errors.join('; ') + '.' : '') +
+              ' The radius can be changed in Settings.'
         })
         .catch((ex) => {
           this.error = (ex.response && ex.response.data && ex.response.data.error) || ex.message

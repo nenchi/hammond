@@ -60,7 +60,8 @@ to complete it. If the last reading before the fill-up was taken many km earlier
 
 **Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
 [Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE, no key;
-or any Tankerkönig-compatible URL; the first profile with stations nearby answers), the fill-up form has a
+or any Tankerkönig-compatible URL; hammond looks up the country of the position via OpenStreetMap Nominatim and
+asks only that country's profiles, then custom ones, and says when a country has no profile), the fill-up form has a
 **Stations nearby** button (uses the phone's location) and, if the detection sent a position (blueprint input
 *Location*: your phone's `device_tracker`, or the car's), lists the stations near it. Picking one fills in station,
 price and grade (per vehicle: E5 / E10 / Diesel); the arrow next to the address opens navigation to the station

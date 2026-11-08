@@ -55,6 +55,61 @@ type StationsResult struct {
 	Grades      []string  `json:"grades"` // accepted, preferred first
 	Attribution string    `json:"attribution"`
 	Stations    []Station `json:"stations"`
+	Errors      []string  `json:"errors,omitempty"` // profiles that failed (only when no stations were found)
+	Country     string    `json:"country"`          // where the position is ("" = unknown: every profile asked)
+}
+
+// country of each kind ("custom" has none: asked everywhere, after the country's own profiles)
+var kindCountry = map[string]string{"tankerkoenig": "de", "econtrol": "at", "goriva": "si", "mzoe": "hr", "france": "fr", "portugal": "pt"}
+
+var kindLabel = map[string]string{"tankerkoenig": "Germany – Tankerkönig", "econtrol": "Austria – E-Control", "goriva": "Slovenia – goriva.si",
+	"mzoe": "Croatia – MZOE", "france": "France – prix-carburants", "portugal": "Portugal – DGEG"}
+
+// GeocodeURL: OpenStreetMap Nominatim reverse geocoding, only for the country of a station search
+// ("" = off: every profile is asked in order, as before)
+var GeocodeURL = "https://nominatim.openstreetmap.org/reverse"
+
+var (
+	countryCache   = map[string][2]string{}
+	countryCacheMu sync.Mutex
+)
+
+// countryAt: ISO code and English name of the country at a position, "" when unknown (sea, Nominatim
+// down). ponytail: cached per ~1 km forever, never evicted; fine for one household's fill-ups
+// (Nominatim allows 1 request/s, a fill-up is far rarer).
+func countryAt(lat, lng float64) (code, name string) {
+	if GeocodeURL == "" {
+		return "", ""
+	}
+	key := fmt.Sprintf("%.2f,%.2f", lat, lng)
+	countryCacheMu.Lock()
+	c, ok := countryCache[key]
+	countryCacheMu.Unlock()
+	if ok {
+		return c[0], c[1]
+	}
+	q := url.Values{"format": {"jsonv2"}, "lat": {fmt.Sprint(lat)}, "lon": {fmt.Sprint(lng)}, "zoom": {"3"}, "accept-language": {"en"}}
+	req, _ := http.NewRequest("GET", GeocodeURL+"?"+q.Encode(), nil)
+	req.Header.Set("User-Agent", "hammond (https://github.com/nenchi/hammond)") // Nominatim policy: identify the app
+	resp, err := priceClient.Do(req)
+	if err != nil {
+		return "", ""
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Address struct {
+			Country     string `json:"country"`
+			CountryCode string `json:"country_code"`
+		} `json:"address"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || resp.StatusCode != http.StatusOK {
+		return "", "" // not cached: try again next time
+	}
+	c = [2]string{strings.ToLower(body.Address.CountryCode), body.Address.Country}
+	countryCacheMu.Lock()
+	countryCache[key] = c
+	countryCacheMu.Unlock()
+	return c[0], c[1]
 }
 
 // accepted grades, preferred first: the vehicle's list, else from its fuel type
@@ -326,27 +381,60 @@ func NearbyStations(userID string, vehicle *db.Vehicle, lat, lng, radiusKm float
 	}
 	radiusKm = math.Min(math.Max(radiusKm, 1), 25) // Tankerkönig: max 25 km
 
-	var firstErr error
+	// no profile chosen: only the profiles of the country the position is in (own country's first, then
+	// "custom" ones), so in Austria it never answers "nothing in Germany"
+	country := ""
+	if profileID == "" {
+		if code, name := countryAt(lat, lng); code != "" {
+			country = name
+			var mine, custom []db.PriceProfile
+			for _, p := range profiles {
+				switch kindCountry[p.Kind] {
+				case code:
+					mine = append(mine, p)
+				case "":
+					custom = append(custom, p)
+				}
+			}
+			if len(mine)+len(custom) == 0 {
+				for kind, cc := range kindCountry {
+					if cc == code {
+						return nil, fmt.Errorf("you are in %s, but no price profile for it is set up: add “%s” in Settings → My fuel price profiles", name, kindLabel[kind])
+					}
+				}
+				return nil, fmt.Errorf("you are in %s: hammond has no station prices for this country", name)
+			}
+			profiles = append(mine, custom...)
+		}
+	}
+
+	var errs, asked []string
 	var empty *StationsResult
 	for _, p := range profiles {
 		res, err := profileStations(p, grades, lat, lng, radiusKm)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("%s: %w", p.Name, err)
-			}
+			errs = append(errs, fmt.Sprintf("%s: %s", p.Name, err))
 			continue
 		}
+		res.Country = country
 		if len(res.Stations) > 0 {
 			return res, nil
 		}
+		asked = append(asked, p.Name)
 		if empty == nil {
 			empty = res
 		}
 	}
-	if empty != nil {
-		return empty, nil // answered, but nothing here: "no stations within 2 km"
+	if empty == nil {
+		if country != "" {
+			return nil, fmt.Errorf("%s: %s", country, strings.Join(errs, "; "))
+		}
+		return nil, errors.New(strings.Join(errs, "; "))
 	}
-	return nil, firstErr
+	// answered, but nothing here: name every profile asked, not just the first (that read as "it only
+	// asks Germany" when in Austria), and say which ones failed
+	empty.ProfileName, empty.Errors = strings.Join(asked, ", "), errs
+	return empty, nil
 }
 
 func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) (*StationsResult, error) {
