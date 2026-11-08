@@ -24,10 +24,15 @@ export default {
       showMore: false,
       myVehicles: [],
       vehicleModel: {},
+      tankSuggestion: null,
     }
   },
 
   computed: {
+    tankUnit() {
+      const u = this.fuelUnitMasters && this.fuelUnitMasters[this.vehicleModel.fuelUnit]
+      return u ? u.short : ''
+    },
     ...mapState('users', ['me']),
     ...mapState('vehicles', ['fuelUnitMasters', 'fuelTypeMasters', 'vehicles']),
   },
@@ -39,6 +44,14 @@ export default {
       this.vehicleModel = this.getEmptyVehicle(this.vehicle)
     }
     this.myVehicles = this.vehicles
+    if (this.vehicle && this.vehicle.id) {
+      axios
+        .get(`/api/vehicles/${this.vehicle.id}/tankSuggestion`)
+        .then(({ data }) => {
+          if (data.samples >= 2 && data.tankCapacity > 0) this.tankSuggestion = data
+        })
+        .catch(() => {})
+    }
   },
   methods: {
     getEmptyVehicle(veh) {
@@ -49,6 +62,7 @@ export default {
           registration: '',
           nickname: '',
           engineSize: null,
+          tankCapacity: null,
           make: '',
           model: '',
           yearOfManufacture: null,
@@ -60,6 +74,7 @@ export default {
           registration: veh.registration,
           nickname: veh.nickname,
           engineSize: veh.engineSize,
+          tankCapacity: veh.tankCapacity || null,
           make: veh.make,
           model: veh.model,
           yearOfManufacture: veh.yearOfManufacture,
@@ -154,6 +169,16 @@ export default {
         </b-select>
       </b-field>
 
+      <b-field
+        :label="`Tank size (${tankUnit || 'litres'})`"
+        message="Used to estimate fill-ups detected from the fuel level (Home Assistant etc.)"
+      >
+        <b-input v-model.number="vehicleModel.tankCapacity" type="number" min="0" step=".1" expanded></b-input>
+      </b-field>
+      <p v-if="tankSuggestion && tankSuggestion.tankCapacity !== vehicleModel.tankCapacity" class="help mb-3 tank-suggestion">
+        Suggested from {{ tankSuggestion.samples }} confirmed detections: {{ tankSuggestion.tankCapacity }} {{ tankUnit }} ·
+        <a @click="vehicleModel.tankCapacity = tankSuggestion.tankCapacity">use it</a>
+      </p>
       <b-field label="Make / Company*">
         <b-input v-model="vehicleModel.make" type="text" required expanded></b-input>
       </b-field>

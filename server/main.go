@@ -33,6 +33,8 @@ func main() {
 		//fmt.'Println(c.Request.URL.Path)
 		c.File("dist/index.html")
 	})
+	// external API (API keys), registered before the UI API's JWT middleware
+	controllers.RegisterApiV1(r.Group("/api/v1"))
 	router := r.Group("/api")
 
 	dataPath := os.Getenv("DATA")
@@ -51,6 +53,7 @@ func main() {
 	controllers.RegisterFilesController(router)
 	controllers.RegisteImportController(router)
 	controllers.RegisterReportsController(router)
+	controllers.RegisterDetectionController(router)
 
 	go assetEnv()
 	go intiCron()

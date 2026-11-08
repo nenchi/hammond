@@ -23,6 +23,9 @@ type User struct {
 	Theme string `json:"theme"`
 	// pre-fill new fill-ups with the vehicle's last price and station
 	PrefillFillup bool `gorm:"default:true" json:"prefillFillup"`
+	// what a detection (e.g. from Home Assistant) does when a matching fill-up already exists:
+	// "ask" (empty), "manual" (my entry wins, ignore) or "detection" (write its values into my entry)
+	DetectionDuplicateMode string `json:"detectionDuplicateMode"`
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {
@@ -62,19 +65,21 @@ func (u *User) CheckPassword(password string) error {
 
 type Vehicle struct {
 	Base
-	Nickname          string       `json:"nickname"`
-	Registration      string       `json:"registration"`
-	Make              string       `json:"make"`
-	Model             string       `json:"model"`
-	YearOfManufacture int          `json:"yearOfManufacture"`
-	EngineSize        float32      `json:"engineSize"`
-	FuelUnit          FuelUnit     `json:"fuelUnit"`
-	FuelType          FuelType     `json:"fuelType"`
-	Users             []User       `gorm:"many2many:user_vehicles;" json:"users"`
-	Fillups           []Fillup     `json:"fillups"`
-	Expenses          []Expense    `json:"expenses"`
-	Attachments       []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
-	IsOwner           bool         `gorm:"->" json:"isOwner"`
+	Nickname          string   `json:"nickname"`
+	Registration      string   `json:"registration"`
+	Make              string   `json:"make"`
+	Model             string   `json:"model"`
+	YearOfManufacture int      `json:"yearOfManufacture"`
+	EngineSize        float32  `json:"engineSize"`
+	FuelUnit          FuelUnit `json:"fuelUnit"`
+	FuelType          FuelType `json:"fuelType"`
+	// litres (or kWh for electric); used to estimate quantities from detected fuel levels
+	TankCapacity float32      `json:"tankCapacity"`
+	Users        []User       `gorm:"many2many:user_vehicles;" json:"users"`
+	Fillups      []Fillup     `json:"fillups"`
+	Expenses     []Expense    `json:"expenses"`
+	Attachments  []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
+	IsOwner      bool         `gorm:"->" json:"isOwner"`
 }
 
 func (b *Vehicle) MarshalJSON() ([]byte, error) {

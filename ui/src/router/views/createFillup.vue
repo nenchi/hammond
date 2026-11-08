@@ -39,6 +39,7 @@ export default {
       fillupModel: this.fillup,
       processQuickEntry: false,
       lastOdoReading: null,
+      detection: null,
     }
   },
 
@@ -79,6 +80,7 @@ export default {
       this.fillupModel = this.getEmptyFillup()
       this.fillupModel.userId = this.me.id
       this.prefillFromLastFillup()
+      if (this.$route.query.detection) this.prefillFromDetection(this.$route.query.detection)
     }
   },
   methods: {
@@ -101,6 +103,22 @@ export default {
           this.fuelSubTypes = data
         })
         .catch((err) => console.log(err))
+    },
+    // "Complete" on a detected fill-up (Home Assistant etc.): odometer, quantity, date and tank-full from
+    // the detection; saving links it (detectionId) so it's marked confirmed
+    prefillFromDetection(id) {
+      store.dispatch('vehicles/fetchDetections').then((list) => {
+        const d = (list || []).find((x) => x.id === id && x.vehicleId === this.selectedVehicle.id)
+        if (!d) return
+        this.detection = d
+        Object.assign(this.fillupModel, {
+          detectionId: d.id,
+          odoReading: d.odoReading,
+          fuelQuantity: d.fuelQuantity,
+          date: new Date(d.date),
+          isTankFull: d.isTankFull,
+        })
+      })
     },
     // last price, station and fuel subtype (setting "pre-fill"); the odometer only as a hint, a copied
     // value that isn't changed would make the mileage wrong
@@ -183,6 +201,12 @@ export default {
             if (this.processQuickEntry) {
               store.dispatch('vehicles/setQuickEntryAsProcessed', { id: this.quickEntry.id }).then((data) => {})
             }
+            // the server confirmed/merged matching detections: refresh the badge, go back to the list
+            store.dispatch('vehicles/fetchDetections').catch(() => {})
+            if (this.detection) {
+              this.detection = null
+              this.$router.push({ name: 'detections' })
+            }
           })
           .catch((ex) => {
             this.$buefy.toast.open({
@@ -216,6 +240,15 @@ export default {
         </div>
       </div>
     </div>
+    <b-notification v-if="detection" :type="detection.uncertain ? 'is-warning' : 'is-info'" :closable="false" class="detection-note">
+      Completing a fill-up detected by <strong>{{ detection.source }}</strong>:
+      {{ detection.estimated ? 'estimated' : '' }} {{ detection.fuelQuantity }} {{ selectedVehicle.fuelUnitDetail.short }}
+      <span v-if="detection.levelBefore !== null && detection.levelAfter !== null"
+        >({{ detection.levelBefore }}% → {{ detection.levelAfter }}%)</span
+      >
+      at {{ detection.odoReading }}. Check the quantity and add the price.
+      <span v-if="detection.uncertain"><br />The estimate may be low: {{ detection.uncertainNote }}.</span>
+    </b-notification>
     <form class="" @submit.prevent="createFillup">
       <b-field label="Select a vehicle">
         <b-select v-model="selectedVehicle" placeholder="Vehicle" required expanded :disabled="fillup.id">

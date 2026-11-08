@@ -3,6 +3,7 @@ import Layout from '@layouts/main.vue'
 import { mapState } from 'vuex'
 import store from '@state/store'
 import axios from 'axios'
+import { parseAndFormatDateTime } from '@utils/format-date'
 
 export default {
   page: {
@@ -27,7 +28,11 @@ export default {
         dateFormat: this.me.dateFormat,
         theme: this.me.theme || 'auto',
         prefillFillup: this.me.prefillFillup !== false,
+        detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
       },
+      apiKeys: [],
+      newKeyName: 'Home Assistant',
+      createdKey: null,
       tryingToSave: false,
       changePassModel: {
         old: '',
@@ -36,6 +41,9 @@ export default {
       },
       dateFormatMasters: ['dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy/MM/dd'],
     }
+  },
+  mounted() {
+    this.fetchApiKeys()
   },
   computed: {
     ...mapState('vehicles', ['currencyMasters', 'distanceUnitMasters']),
@@ -62,6 +70,7 @@ export default {
     },
   },
   methods: {
+    parseAndFormatDateTime,
     changePassword() {
       if (!this.passwordValid) {
         return
@@ -125,6 +134,32 @@ export default {
           this.tryingToSave = false
         })
     },
+    fetchApiKeys() {
+      axios.get('/api/me/apikeys').then(({ data }) => (this.apiKeys = data || []))
+    },
+    createApiKey() {
+      axios
+        .post('/api/me/apikeys', { name: this.newKeyName })
+        .then(({ data }) => {
+          this.createdKey = data.key
+          this.fetchApiKeys()
+        })
+        .catch((ex) => this.$buefy.toast.open({ duration: 5000, message: ex.message, position: 'is-bottom', type: 'is-danger' }))
+    },
+    copyKey() {
+      navigator.clipboard.writeText(this.createdKey).then(() =>
+        this.$buefy.toast.open({ message: 'API key copied', type: 'is-success', duration: 2000 })
+      )
+    },
+    revokeApiKey(k) {
+      this.$buefy.dialog.confirm({
+        title: 'Revoke API key',
+        message: `Anything using "${k.name}" (${k.prefix}…) stops working.`,
+        confirmText: 'Revoke',
+        type: 'is-danger',
+        onConfirm: () => axios.delete(`/api/me/apikeys/${k.id}`).then(() => this.fetchApiKeys()),
+      })
+    },
     formatCurrency(option) {
       return `${option.namePlural} (${option.code})`
     },
@@ -178,6 +213,13 @@ export default {
           <b-field>
             <b-checkbox v-model="settingsModel.prefillFillup">Pre-fill new fill-ups with the last price and station</b-checkbox>
           </b-field>
+          <b-field label="When a detected fill-up matches one I already entered">
+            <b-select v-model="settingsModel.detectionDuplicateMode" expanded>
+              <option value="ask">Ask me</option>
+              <option value="manual">My entry wins (ignore the detection)</option>
+              <option value="detection">Use the detected odometer and quantity (keep my price)</option>
+            </b-select>
+          </b-field>
           <b-field>
             <b-button tag="input" native-type="submit" :disabled="tryingToSave" type="is-primary" value="Save" expanded> </b-button>
           </b-field>
@@ -203,6 +245,38 @@ export default {
       </div>
     </div>
     <hr />
+    <div class="columns">
+      <div class="column">
+        <div class="box api-keys">
+          <h1 class="subtitle">API keys</h1>
+          <p class="mb-3"
+            >For Home Assistant, Node-RED or scripts to send detected fill-ups (<code>/api/v1</code>). A key can't do anything
+            else.</p
+          >
+          <b-notification v-if="createdKey" type="is-success" :closable="false">
+            Copy the key now, it won't be shown again:
+            <b-field class="mt-2">
+              <b-input :value="createdKey" readonly expanded class="created-key"></b-input>
+              <p class="control"><b-button type="is-primary" @click="copyKey">Copy</b-button></p>
+            </b-field>
+          </b-notification>
+          <form @submit.prevent="createApiKey">
+            <b-field label="Name">
+              <b-input v-model="newKeyName" required maxlength="64" expanded></b-input>
+              <p class="control"><b-button tag="input" native-type="submit" type="is-primary" value="Create key"></b-button></p>
+            </b-field>
+          </form>
+          <table v-if="apiKeys.length" class="table is-fullwidth mt-3">
+            <tr v-for="k in apiKeys" :key="k.id">
+              <td>{{ k.name }}</td>
+              <td><code>{{ k.prefix }}…</code></td>
+              <td>{{ k.lastUsedAt ? 'used ' + parseAndFormatDateTime(k.lastUsedAt) : 'never used' }}</td>
+              <td><a class="has-text-danger" @click="revokeApiKey(k)">Revoke</a></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
     <div class="columns">
       <div class="twelve">
         <h3 class="title">More Info</h3>

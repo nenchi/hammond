@@ -38,10 +38,14 @@ export default {
             to={route}
             exact-active-class={$style.active}
           >
-            <a>{getRouteTitle(route)}</a>
-            <b-tag rounded type='is-danger is-light'>
-              {getRouteBadge(route)}
-            </b-tag>
+            {/* badge inside the <a>: vue-router puts the click handler on the first <a> only, so a badge
+                next to it wasn't clickable */}
+            <a>
+              {getRouteTitle(route)}{' '}
+              <b-tag rounded type='is-danger is-light'>
+                {getRouteBadge(route)}
+              </b-tag>
+            </a>
           </BaseLink>
         )
       } else {

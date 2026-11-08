@@ -14,7 +14,7 @@ func UpdateSettings(currency string, distanceUnit db.DistanceUnit) error {
 	setting.DistanceUnit = distanceUnit
 	return db.UpdateSettings(setting)
 }
-func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, dateFormat string, theme *string, prefillFillup *bool) error {
+func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, dateFormat string, theme *string, prefillFillup *bool, duplicateMode *string) error {
 	user, err := db.GetUserById(userId)
 	if err != nil {
 		return err
@@ -28,6 +28,9 @@ func UpdateUserSettings(userId, currency string, distanceUnit db.DistanceUnit, d
 	}
 	if prefillFillup != nil {
 		user.PrefillFillup = *prefillFillup
+	}
+	if duplicateMode != nil {
+		user.DetectionDuplicateMode = *duplicateMode
 	}
 	return db.UpdateUser(user)
 }

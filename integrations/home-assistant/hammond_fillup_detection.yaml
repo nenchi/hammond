@@ -1,0 +1,149 @@
+blueprint:
+  name: hammond – detect fill-ups from the fuel level
+  description: >-
+    Sends a detected fill-up to hammond when a vehicle's fuel (or battery) level jumps up, then
+    notifies your phone with a link to complete it (add the price). Works with any integration that
+    has a level sensor in % and an odometer sensor (Mercedes, BMW, VW/Škoda, Tesla, Renault, OBD…).
+
+    Needs: a rest_command named `hammond_detection` (see the hammond README) and two
+    input_number helpers that remember the last valid reading, so gaps ("unavailable") and cars
+    that report rarely don't lose the level before the fill-up.
+  domain: automation
+  source_url: https://github.com/nenchi/hammond/blob/main/integrations/home-assistant/hammond_fillup_detection.yaml
+  input:
+    level_sensor:
+      name: Fuel / battery level (%)
+      selector:
+        entity:
+          domain: sensor
+    odometer_sensor:
+      name: Odometer
+      selector:
+        entity:
+          domain: sensor
+    last_level_helper:
+      name: Helper – last level
+      description: "input_number, 0–100, step 0.1 (e.g. input_number.a180_last_fuel_level)"
+      selector:
+        entity:
+          domain: input_number
+    last_odometer_helper:
+      name: Helper – odometer at last level
+      description: "input_number, 0–9999999, step 1 (e.g. input_number.a180_last_fuel_odometer)"
+      selector:
+        entity:
+          domain: input_number
+    vehicle_id:
+      name: hammond vehicle ID
+      description: From GET /api/v1/vehicles (or the vehicle page URL in hammond)
+      selector:
+        text:
+    min_increase:
+      name: Minimum increase (%)
+      description: Smaller jumps are ignored (sensor noise, parking on a slope)
+      default: 10
+      selector:
+        number:
+          min: 2
+          max: 50
+          unit_of_measurement: "%"
+    settle_minutes:
+      name: Wait until the level is stable (minutes)
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: min
+    notify_service:
+      name: Notify service
+      description: "e.g. notify.mobile_app_my_phone (empty = no notification)"
+      default: ""
+      selector:
+        text:
+    hammond_url:
+      name: hammond URL (for the notification link)
+      default: ""
+      selector:
+        text:
+          type: url
+
+mode: queued
+max: 5
+
+trigger:
+  - platform: state
+    entity_id: !input level_sensor
+    not_to: ["unavailable", "unknown"]
+
+variables:
+  level_sensor: !input level_sensor
+  odometer_sensor: !input odometer_sensor
+  last_level_helper: !input last_level_helper
+  last_odometer_helper: !input last_odometer_helper
+  vehicle_id: !input vehicle_id
+  min_increase: !input min_increase
+  settle_minutes: !input settle_minutes
+  notify_service: !input notify_service
+  hammond_url: !input hammond_url
+  level: "{{ states(level_sensor) | float(-1) }}"
+  previous: "{{ states(last_level_helper) | float(-1) }}"
+  previous_odometer: "{{ states(last_odometer_helper) | int(0) }}"
+
+condition:
+  - condition: template
+    value_template: "{{ level >= 0 }}"
+
+action:
+  - if:
+      - condition: template
+        # first run (helper still 0 with odometer 0) only stores the reading
+        value_template: "{{ previous_odometer > 0 and level - previous >= min_increase }}"
+    then:
+      - delay:
+          minutes: "{{ settle_minutes }}"
+      - variables:
+          level_after: "{{ [states(level_sensor) | float(level), level] | max }}"
+          odometer: "{{ states(odometer_sensor) | int(previous_odometer) }}"
+          payload:
+            source: Home Assistant
+            odoReading: "{{ odometer }}"
+            odoAtBefore: "{{ previous_odometer }}"
+            levelBefore: "{{ previous }}"
+            levelAfter: "{{ level_after }}"
+            date: "{{ now().isoformat() }}"
+      - service: rest_command.hammond_detection
+        data:
+          vehicle_id: "{{ vehicle_id }}"
+          payload: "{{ payload }}"
+        response_variable: hammond
+      - if:
+          - condition: template
+            value_template: "{{ notify_service != '' and hammond.status == 201 and hammond.content.result != 'ignored' }}"
+        then:
+          - service: "{{ notify_service }}"
+            data:
+              title: Fill-up detected
+              message: "{{ hammond.content.message }}"
+              data:
+                url: "{{ hammond_url ~ hammond.content.path if hammond_url else '' }}"
+                clickAction: "{{ hammond_url ~ hammond.content.path if hammond_url else '' }}"
+      - if:
+          - condition: template
+            value_template: "{{ hammond.status != 201 }}"
+        then:
+          - service: persistent_notification.create
+            data:
+              title: hammond detection failed
+              message: "HTTP {{ hammond.status }}: {{ hammond.content }}"
+  # always remember the last valid reading (also after a detection, so it isn't sent twice)
+  - service: input_number.set_value
+    target:
+      entity_id: !input last_level_helper
+    data:
+      value: "{{ states(level_sensor) | float(level) }}"
+  - service: input_number.set_value
+    target:
+      entity_id: !input last_odometer_helper
+    data:
+      value: "{{ states(odometer_sensor) | int(previous_odometer) }}"

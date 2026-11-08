@@ -37,7 +37,7 @@ before(() => {
       cy.request({
         method: 'POST', url: '/api/vehicles', headers,
         body: { nickname: 'Cypress', registration: 'CY 1234', make: 'Skoda', model: 'Octavia',
-                yearOfManufacture: 2020, engineSize: 1.6, fuelUnit: 0, fuelType: 1 },
+                yearOfManufacture: 2020, engineSize: 1598, fuelUnit: 0, fuelType: 1 }, // engine size in cc: 1.6 is invalid in the form and blocked the save
       }).then(({ body: v }) => {
         vehicleId = v.id
         ;[[20000, 40], [20640, 42.5]].forEach(([odo, qty]) =>
@@ -130,6 +130,75 @@ describe('hammond UI', () => {
     cy.get('canvas').then(($c) => expect(height($c), 'chart height after 3 s').to.be.within(299, 301))
     cy.get('@mileage.all').should('have.length.at.most', 1)
     noConsoleErrors()
+  })
+
+  it('tank size can be set on the vehicle', () => {
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}`).as('saveVehicle')
+    visit(`/vehicles/${vehicleId}/edit`)
+    cy.contains('.field', 'Tank size').find('input.input').clear().type('43')
+    cy.get('form [type=submit]').first().click()
+    cy.wait('@saveVehicle').its('response.statusCode').should('eq', 200)
+    cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).its('body.tankCapacity').should('eq', 43)
+  })
+
+  it('detected fill-up: API key in settings, detection via API, complete it in the UI', () => {
+    visit('/settings')
+    cy.get('.api-keys').within(() => {
+      cy.contains('.field', 'Name').find('input.input').clear().type('Cypress HA') // not the button next to it
+      cy.get('form [type=submit]').click()
+      cy.get('.created-key input').invoke('val').should('match', /^hmd_[0-9a-f]{48}$/).as('key')
+      cy.contains('td', 'Cypress HA')
+    })
+    cy.get('@key').then((key) => {
+      // what the Home Assistant blueprint sends: levels before/after + odometers
+      cy.request({
+        method: 'POST', url: `/api/v1/vehicles/${vehicleId}/detections`, headers: { Authorization: `Bearer ${key}` },
+        body: { odoReading: 21300, odoAtBefore: 21298, levelBefore: 20, levelAfter: 98, date: '2026-11-07T14:00:00Z', source: 'Home Assistant' },
+      }).then(({ body }) => {
+        expect(body.result).to.eq('pending')
+        expect(body.detection.fuelQuantity).to.eq(33.5) // 78 % of 43 l
+        expect(body.message).to.contain('~33.5')
+      })
+    })
+    visit('/')
+    cy.contains('.navbar a', 'Detected').parent().contains('.tag', '1').click()
+    cy.location('pathname').should('eq', '/detections')
+    cy.get('.detection').should('have.length', 1).within(() => {
+      cy.contains('~33.5')
+      cy.contains('20% → 98%')
+      cy.contains('Complete').click()
+    })
+    cy.location('search').should('contain', 'detection=')
+    cy.get('.detection-note').should('contain', 'Home Assistant').and('contain', '33.5')
+    cy.contains('.field', 'Odometer Reading').find('input').should('have.value', '21300')
+    cy.contains('.field', 'Quantity').find('input[type=number]').first().should('have.value', '33.5')
+    cy.contains('.field', 'Price per').find('input').clear().type('1.62')
+    cy.get('form [type=submit]').first().click()
+    cy.location('pathname').should('eq', '/detections')
+    cy.contains('Nothing detected right now')
+    cy.get('.navbar').should('not.contain', 'Detected')
+    cy.request({ url: `/api/vehicles/${vehicleId}/fillups`, headers: apiHeaders })
+      .its('body').should((fs) => expect(fs.map((f) => f.odoReading)).to.include(21300))
+    noConsoleErrors()
+  })
+
+  it('detected duplicate: shows both, "Keep mine" leaves my entry alone', () => {
+    cy.request({ method: 'POST', url: '/api/me/apikeys', headers: apiHeaders, body: { name: 'dup test' } }).then(({ body: k }) =>
+      cy.request({
+        method: 'POST', url: `/api/v1/vehicles/${vehicleId}/detections`, headers: { 'X-Api-Key': k.key },
+        body: { odoReading: 20650, fuelQuantity: 41, date: '2026-11-07T12:00:00Z' },
+      }).its('body.result').should('eq', 'duplicate')
+    )
+    visit('/detections')
+    cy.get('.detection').should('have.length', 1).within(() => {
+      cy.contains('.tag', 'possible duplicate')
+      cy.contains('Your entry')
+      cy.contains('20640')
+      cy.contains('Keep mine').click()
+    })
+    cy.contains('Nothing detected right now')
+    cy.request({ url: `/api/vehicles/${vehicleId}/fillups`, headers: apiHeaders })
+      .its('body').should((fs) => expect(fs.find((f) => f.odoReading === 20640).fuelQuantity).to.eq(42.5))
   })
 
   it('logs out, and a wrong password is refused', () => {

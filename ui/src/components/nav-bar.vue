@@ -1,6 +1,7 @@
 <script>
 import { authComputed } from '@state/helpers'
-import { mapGetters } from 'vuex'
+import { mapGetters, mapState } from 'vuex'
+import store from '@state/store'
 import NavBarRoutes from './nav-bar-routes.vue'
 
 export default {
@@ -11,6 +12,13 @@ export default {
         {
           name: 'home',
           title: 'Home',
+        },
+      ],
+      detectionNavRoutes: [
+        {
+          name: 'detections',
+          title: () => 'Detected',
+          badge: () => this.detections.length,
         },
       ],
       loggedInNavRoutes: [
@@ -50,9 +58,22 @@ export default {
       ],
     }
   },
+  // coming back to the app (e.g. from a notification) shows new detections
+  mounted() {
+    window.addEventListener('focus', this.refreshDetections)
+  },
+  beforeDestroy() {
+    window.removeEventListener('focus', this.refreshDetections)
+  },
+  methods: {
+    refreshDetections() {
+      if (this.loggedIn) store.dispatch('vehicles/fetchDetections').catch(() => {})
+    },
+  },
   computed: {
     ...authComputed,
     ...mapGetters('vehicles', ['unprocessedQuickEntries']),
+    ...mapState('vehicles', ['detections']),
     isAdmin() {
       return this.loggedIn && this.currentUser.role === 'ADMIN'
     },
@@ -70,6 +91,7 @@ export default {
       </template>
       <template v-slot:end>
         <NavBarRoutes :routes="persistentNavRoutes" />
+        <NavBarRoutes v-if="loggedIn && detections.length" :routes="detectionNavRoutes" />
         <NavBarRoutes v-if="loggedIn" :routes="loggedInNavRoutes" />
         <NavBarRoutes v-else :routes="loggedOutNavRoutes" />
         <b-navbar-dropdown v-if="loggedIn && isAdmin" label="Admin">
