@@ -151,7 +151,8 @@ s, r = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 11200, 
 check("v1: detection from fuel levels (78% of 50 l = 39 l)", s == 201 and r["result"] == "pending"
       and r["detection"]["fuelQuantity"] == 39 and r["detection"]["isTankFull"] and "~39.0" in r["message"], (s, r))
 did = r["detection"]["id"]
-s, r2 = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 10650, "fuelQuantity": 42}, token=key)
+s, r2 = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 10650, "fuelQuantity": 42,
+            "date": "2026-11-07T11:00:00Z"}, token=key)  # fixed date: the match window is ±48 h
 check("v1: detection near an existing fill-up asks (duplicate)", s == 201 and r2["result"] == "duplicate", (s, r2))
 s, r3 = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 11300, "levelBefore": 90, "levelAfter": 50}, token=key)
 check("v1: falling level refused (422)", s == 422, (s, r3))
