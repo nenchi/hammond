@@ -13,7 +13,7 @@
     "axios": "^1.13.2",
     "buefy": "^0.9.29",
     "chart.js": "^2.9.4",
-    "chartjs-plugin-zoom": "^0.7.7",
+    "chartjs-plugin-zoom": "^2.0.0",
     "core-js": "^3.47.0",
     "currency-formatter": "^1.5.7",
     "date-fns": "4.4.0",
