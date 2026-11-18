@@ -32,6 +32,10 @@ export default {
           title: () => 'Import',
         },
         {
+          name: 'price-watch',
+          title: () => 'Price watch',
+        },
+        {
           name: 'charging-places',
           title: () => 'Charging places',
         },

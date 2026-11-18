@@ -59,14 +59,24 @@ to complete it. If the last reading before the fill-up was taken many km earlier
 *check quantity*.
 
 **Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
-[Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE, no key;
+[Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE,
+France: prix-carburants, Portugal: DGEG, Italy: MIMIT, Spain: Ministerio (fetched with curl), no key;
 or any Tankerkönig-compatible URL; hammond looks up the country of the position via OpenStreetMap Nominatim and
 asks only that country's profiles, then custom ones, and says when a country has no profile), the fill-up form has a
 **Stations nearby** button (uses the phone's location) and, if the detection sent a position (blueprint input
 *Location*: your phone's `device_tracker`, or the car's), lists the stations near it. Picking one fills in station,
-price and grade (per vehicle: E5 / E10 / Diesel); the arrow next to the address opens navigation to the station
-(on Android any navigation app). Prices are the current ones: a suggestion, check the receipt.
+price and grade (per vehicle: E5 / E10 / Diesel / 98-100 / Premium diesel / LPG; the last three only where the
+country publishes them, not DE/AT); the arrow next to the address opens navigation to the station
+(on Android any navigation app). Instead of the location: **Map** (OpenStreetMap, tap a point; full screen on a
+phone), a place/address search, a radius of 2–25 km and the price source (Auto = the country of the point).
+Prices are the current ones: a suggestion, check the receipt.
 Prices: MTS-K via Tankerkönig (CC BY 4.0).
+
+**Price watch:** *Price watch* in the menu: favourite stations (★ Watch in the list or on the map), checked in the
+background (interval per price source: Germany/Austria hourly, Slovenia/Croatia/Italy daily, France/Portugal 6 h; 15 min
+to 7 days), every price change kept. A price limit per station sends one [Gotify](https://gotify.net) message when the
+price drops to it (again only after it went above). Graph with zoom/drag/period selection, your fill-ups at that station,
+and the average price per hour of the day (the cheapest hours).
 
 **3. Any other system**
 

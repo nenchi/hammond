@@ -64,6 +64,7 @@ func main() {
 	go assetEnv()
 	go intiCron()
 	go service.EvccTimer()
+	go service.PriceWatchTimer()
 
 	r.Run(":3000") // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 

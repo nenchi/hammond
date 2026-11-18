@@ -1,6 +1,7 @@
 """Fake Tankerkönig list.php for CI (python3 tests/fake_fuelprices.py [port]): fixed stations around
 any position; key "ci-key" required, like the real API needs one. Also a fake Home Assistant
-/api/states/sensor.ci_odometer (token "ci-ha-token") and a fake EVCC /api/sessions."""
+/api/states/sensor.ci_odometer (token "ci-ha-token"), a fake EVCC /api/sessions and a fake Gotify
+POST /message (key "ci-gotify"; GET /messages lists what it got)."""
 import json, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -12,11 +13,31 @@ STATIONS = [
      "place": "Offenbach", "dist": 1.1, "diesel": 1.599, "e5": 1.769, "e10": False, "isOpen": True},
 ]
 
+MESSAGES = []
+
 
 class H(BaseHTTPRequestHandler):
+    def reply(self, code, body):
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/message":
+            return self.reply(404, {})
+        if self.headers.get("X-Gotify-Key") != "ci-gotify":
+            return self.reply(401, {"error": "Unauthorized"})
+        MESSAGES.append(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)))))
+        self.reply(200, {"id": len(MESSAGES)})
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/messages":
+            return self.reply(200, MESSAGES)
         if u.path == "/api/sessions":  # EVCC: one finished session of "CI EV" (no odometer)
             data = json.dumps([{"id": 7, "created": "2026-11-10T23:00:00Z", "finished": "2026-11-11T01:00:00Z",
                                 "vehicle": "CI EV", "odometer": 0, "chargedEnergy": 12, "socEnd": 80, "pricePerKWh": 0.3}]).encode()

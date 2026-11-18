@@ -419,11 +419,11 @@ func fakeSIHR(t *testing.T) *httptest.Server {
 			gz := gzip.NewWriter(w)
 			gz.Write([]byte(`{"postajas":[
 			  {"id":1223,"naziv":"BP ZAGREB","adresa":"ILICA 1","mjesto":"ZAGREB","obveznik_id":5,"long":"45.8150","lat":"15.9819",
-			   "cjenici":[{"gorivo_id":10,"cijena":1.55},{"gorivo_id":11,"cijena":1.49},{"gorivo_id":12,"cijena":1.6},{"gorivo_id":13,"cijena":0.9}]},
+			   "cjenici":[{"gorivo_id":10,"cijena":1.55},{"gorivo_id":11,"cijena":1.49},{"gorivo_id":12,"cijena":1.6},{"gorivo_id":13,"cijena":0.9},{"gorivo_id":14,"cijena":1.7},{"gorivo_id":15,"cijena":1.65}]},
 			  {"id":2,"naziv":"Not swapped","adresa":"A","mjesto":"ZAGREB","obveznik_id":9,"lat":"45.8200","long":"15.9819","cjenici":[]},
 			  {"id":3,"naziv":"DMS","adresa":"B","mjesto":"ZAGREB","obveznik_id":9,"lat":"15° 31.2440' E","long":"45.8150","cjenici":[]},
 			  {"id":4,"naziv":"Split","adresa":"C","mjesto":"SPLIT","obveznik_id":9,"lat":"16.44","long":"43.51","cjenici":[]}],
-			 "gorivos":[{"id":10,"vrsta_goriva_id":1},{"id":11,"vrsta_goriva_id":2},{"id":12,"vrsta_goriva_id":8},{"id":13,"vrsta_goriva_id":9}],
+			 "gorivos":[{"id":10,"vrsta_goriva_id":1},{"id":11,"vrsta_goriva_id":2},{"id":12,"vrsta_goriva_id":8},{"id":13,"vrsta_goriva_id":9},{"id":14,"vrsta_goriva_id":7},{"id":15,"vrsta_goriva_id":7}],
 			 "obvezniks":[{"id":5,"naziv":"Tifon d.o.o."}]}`))
 			gz.Close()
 		case "/broken/search/gas-stations/by-address":
@@ -478,6 +478,18 @@ func TestSloveniaCroatia(t *testing.T) {
 	if err != nil || res.Stations[0].Grade != "e5" || res.Stations[0].Prices["e5"] != 1.49 {
 		t.Fatalf("cache must be per grade list: %+v %v", res, err)
 	}
+
+	// 98/100, premium diesel and LPG: SI "100", HR Eurosuper 100 / dearest Eurodizel with additives / UNP
+	v.FuelGrade = "plus,diesel_premium,lpg"
+	res, err = NearbyStations(u.ID, &v, 46.05, 14.5, 2, "si")
+	if err != nil || res.Stations[0].Prices["plus"] != 1.996 || len(res.Stations[0].Prices) != 1 {
+		t.Fatalf("Slovenia 100 → plus: %+v %v", res, err)
+	}
+	res, err = NearbyStations(u.ID, &v, 45.8150, 15.9819, 2, "hr")
+	if p := res.Stations[0].Prices; err != nil || p["lpg"] != 0.9 || p["diesel_premium"] != 1.7 || p["plus"] != 0 || len(p) != 2 {
+		t.Fatalf("Croatia LPG + premium diesel: %+v %v", res, err)
+	}
+	v.FuelGrade = "e5"
 
 	// nowhere near: the empty answer names every profile asked, not just the first
 	res, err = NearbyStations(u.ID, &v, 48.2, 16.37, 2, "")
@@ -566,7 +578,7 @@ func TestCountryPicksProfile(t *testing.T) {
 	}
 }
 
-// Austria, Slovenia, Croatia, France and Portugal need no key: they work without any profile, in their
+// Austria, Slovenia, Croatia, France, Portugal and Italy need no key: they work without any profile, in their
 // country; a profile of the same kind replaces the built-in one; Germany still needs its key
 func TestBuiltinSources(t *testing.T) {
 	setupDB(t)
@@ -591,8 +603,15 @@ func TestBuiltinSources(t *testing.T) {
 	if err != nil || res.Profile != "builtin-econtrol" || len(res.Stations) == 0 {
 		t.Fatalf("Austria without a profile: %+v %v", res, err)
 	}
-	if _, err = NearbyStations(u.ID, &v, 41.9, 12.5, 2, ""); err == nil || !strings.Contains(err.Error(), "Italy") {
-		t.Fatalf("Italy has no source: %v", err)
+	// Italy is built in too (a fake that's down here: no real download in tests)
+	down := httptest.NewServer(http.NotFoundHandler())
+	defer down.Close()
+	oldIT := priceKinds["italy"]
+	priceKinds["italy"] = down.URL
+	defer func() { priceKinds["italy"] = oldIT }()
+	italyList = countryList{}
+	if _, err = NearbyStations(u.ID, &v, 41.9, 12.5, 2, ""); err == nil || !strings.Contains(err.Error(), "Italy – MIMIT") {
+		t.Fatalf("Italy asks its built-in source: %v", err)
 	}
 	// the list shows them (for the switch), a same-kind profile replaces the built-in one
 	names := func() (out []string) {
@@ -601,11 +620,11 @@ func TestBuiltinSources(t *testing.T) {
 		}
 		return
 	}
-	if got := strings.Join(names(), ","); got != "builtin-econtrol,builtin-goriva,builtin-mzoe,builtin-france,builtin-portugal" {
+	if got := strings.Join(names(), ","); got != "builtin-econtrol,builtin-goriva,builtin-mzoe,builtin-france,builtin-portugal,builtin-italy,builtin-spain" {
 		t.Fatalf("built-ins: %s", got)
 	}
 	UpdateUserPriceProfiles(u.ID, []db.PriceProfile{{Name: "My SI", Kind: "goriva", URL: sihr.URL + "/api/v1"}})
-	if got := names(); len(got) != 5 || strings.Contains(strings.Join(got, ","), "builtin-goriva") {
+	if got := names(); len(got) != 7 || strings.Contains(strings.Join(got, ","), "builtin-goriva") {
 		t.Fatalf("own Slovenia profile replaces the built-in: %v", got)
 	}
 }

@@ -26,6 +26,11 @@ import {
   faShare,
   faUserFriends,
   faTimesCircle,
+  faStar,
+  faSync,
+  faMap,
+  faPlus,
+  faArrowDown,
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
@@ -62,7 +67,12 @@ library.add(
   faTrash,
   faShare,
   faUserFriends,
-  faTimesCircle
+  faTimesCircle,
+  faStar,
+  faSync,
+  faMap,
+  faPlus,
+  faArrowDown
 )
 Vue.use(Buefy, {
   defaultIconComponent: 'vue-fontawesome',

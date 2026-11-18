@@ -218,7 +218,7 @@ check("users add their own profile; key not echoed", s == 200 and len(own) == 1 
 s, av = call("GET", "/api/fuelPrices/available", token=ptok)
 check("available for a user: own first, then shared, then the built-in free sources",
       s == 200 and [(p["name"], p["own"]) for p in av if not p["builtin"]] == [("Mine", True), ("CI fake", False)]
-      and [p["kind"] for p in av if p["builtin"]] == ["econtrol", "goriva", "mzoe", "france", "portugal"], (s, av))
+      and [p["kind"] for p in av if p["builtin"]] == ["econtrol", "goriva", "mzoe", "france", "portugal", "italy", "spain"], (s, av))
 s, av = call("GET", "/api/fuelPrices/available", token=tok)
 check("available for the admin: all site profiles (+ built-ins of other kinds)", s == 200
       and [p["name"] for p in av if not p["builtin"]] == ["Austria", "CI fake"] and "econtrol" not in [p["kind"] for p in av if p["builtin"]], (s, av))
@@ -240,6 +240,55 @@ s, _ = call("GET", "/api/vehicles/00000000-0000-0000-0000-000000000000/gauge", t
 check("gauge of a foreign vehicle is 404", s == 404, s)
 s, r = call("GET", f"/api/settings/fuelPrices/test?profile={profiles[1]['id']}", token=tok)
 check("admin: test connection", s == 200 and r["ok"] and r["stations"] == 2, (s, r))
+
+# ---- price watch: favourite station, limit, Gotify (fake on the same port) ----
+s, r_st = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
+aral, free = r_st["stations"][0], r_st["stations"][1]
+watch = {"profileId": r_st["profile"], "stationId": aral["id"], "name": aral["brand"], "address": aral["address"],
+         "lat": aral["lat"], "lng": aral["lng"], "grade": "e10", "lastPrice": aral["price"]}
+s, w = call("POST", "/api/me/priceWatches", watch, token=tok)
+check("watch a station (today's price is the first history point)", s == 200 and w["kind"] == "custom" and w["lastPrice"] == 1.739, (s, w))
+s, _ = call("POST", "/api/me/priceWatches", watch, token=tok)
+check("same station and grade twice refused", s == 422, s)
+s, _ = call("POST", "/api/me/priceWatches", {**watch, "stationId": free["id"], "lat": 0, "lng": 0}, token=tok)
+check("station without a position refused", s == 422, s)
+s, _ = call("POST", "/api/me/priceWatches", {**watch, "profileId": "nope"}, token=tok)
+check("unknown price profile refused", s == 422, s)
+s, ws = call("GET", "/api/me/priceWatches", token=ptok)
+check("others don't see my watches", s == 200 and ws == [], (s, ws))
+s, _ = call("PUT", f"/api/me/priceWatches/{w['id']}", {"grade": "e10", "below": 9}, token=ptok)
+check("others can't change my watch", s == 422, s)
+s, st = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "http://127.0.0.1:3999/", "gotifyToken": "ci-gotify",
+             "intervals": {"custom": 30, "goriva": 2880}}, token=tok)
+check("Gotify + intervals saved; token not echoed", s == 200 and st["gotifyTokenSet"] and st["gotifyUrl"] == "http://127.0.0.1:3999"
+      and st["intervals"]["custom"] == 30 and st["intervals"]["goriva"] == 2880 and st["intervals"]["tankerkoenig"] == 60
+      and "ci-gotify" not in json.dumps(st), (s, st))
+s, _ = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "http://127.0.0.1:3999", "intervals": {"custom": 5}}, token=tok)
+check("interval under 15 minutes refused", s == 422, s)
+s, r = call("POST", "/api/me/priceWatchSettings/test", token=tok)
+check("Gotify test message", s == 200 and r["ok"], (s, r))
+s, r = call("POST", "/api/me/priceWatchSettings/test", token=ptok)
+check("another user's Gotify isn't shared", s == 200 and not r["ok"], (s, r))
+s, w = call("PUT", f"/api/me/priceWatches/{w['id']}", {"grade": "e10", "below": 1.80}, token=tok)
+check("set a price limit", s == 200 and w["below"] == 1.8 and w["alerted"] is False, (s, w))
+s, ws = call("POST", "/api/me/priceWatches/check", token=tok)
+check("check now: price at or below the limit", s == 200 and ws[0]["alerted"] and ws[0]["lastPrice"] == 1.739 and not ws[0]["lastError"], (s, ws))
+call("POST", "/api/me/priceWatches/check", token=tok)
+msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())
+alerts = [m for m in msgs if m["title"].startswith("⛽")]
+check("one Gotify alert, not one per check", len(alerts) == 1 and "1.739" in alerts[0]["message"] and "1.800" in alerts[0]["message"], msgs)
+s, h = call("GET", f"/api/me/priceWatches/{w['id']}/history?days=7", token=tok)
+check("price history: one point (unchanged price isn't stored again)", s == 200 and [p["price"] for p in h["prices"]] == [1.739] and h["fillups"] == [], (s, h))
+s, w = call("PUT", f"/api/me/priceWatches/{w['id']}", {"grade": "e5", "below": None}, token=tok)
+check("new grade starts a new history", s == 200 and w["lastPrice"] is None, (s, w))
+s, ws = call("POST", "/api/me/priceWatches/check", token=tok)
+check("check now: E5 price, no limit = no alert", s == 200 and ws[0]["lastPrice"] == 1.799 and not ws[0]["alerted"], (s, ws))
+s, _ = call("DELETE", f"/api/me/priceWatches/{w['id']}", token=ptok)
+check("others can't delete my watch", s == 404, s)
+s, _ = call("DELETE", f"/api/me/priceWatches/{w['id']}", token=tok)
+s2, ws = call("GET", "/api/me/priceWatches", token=tok)
+check("watch deleted", s == 200 and ws == [], (s, ws))
+call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "gotifyToken": "-", "intervals": {}}, token=tok)
 s, _ = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10,hbuzg"}, token=tok)
 check("unknown fuel grade refused", s == 422, s)

@@ -3,6 +3,7 @@ import Layout from '@layouts/main.vue'
 import axios from 'axios'
 import { mapState } from 'vuex'
 import store from '@state/store'
+import PositionPicker from '@components/positionPicker.vue'
 
 // Charging places for electric cars and how a charge there is priced: price per kWh = the sum of the
 // components (each: the first rule that matches month, day type and time, else its default) + a Home
@@ -12,7 +13,7 @@ import store from '@state/store'
 const DAYS = { all: 'Every day', work: 'Working days', free: 'Weekend + holidays' }
 
 export default {
-  components: { Layout },
+  components: { Layout, PositionPicker },
   page: { title: 'Charging places' },
   data() {
     return { places: [], loading: true, days: DAYS, saving: '' }
@@ -86,13 +87,6 @@ export default {
     addRule(c) {
       c.rules.push({ label: '', monthsText: '', days: 'all', from: '00:00', to: '00:00', price: 0 })
     },
-    hereAsPosition(p) {
-      navigator.geolocation &&
-        navigator.geolocation.getCurrentPosition((pos) => {
-          p.lat = +pos.coords.latitude.toFixed(6)
-          p.lng = +pos.coords.longitude.toFixed(6)
-        })
-    },
     save(p) {
       this.saving = p.id || 'new'
       const body = this.fromModel(p)
@@ -150,11 +144,10 @@ export default {
             ><b-input v-model.number="p.lossPercent" type="number" min="0" max="49" step=".5"></b-input
           ></b-field>
         </b-field>
-        <b-field grouped group-multiline>
-          <b-field label="Latitude"><b-input v-model="p.lat" type="number" step="any"></b-input></b-field>
-          <b-field label="Longitude"><b-input v-model="p.lng" type="number" step="any"></b-input></b-field>
-          <b-field label="Radius (m)"><b-input v-model.number="p.radiusM" type="number" min="10" step="10"></b-input></b-field>
-          <b-field :label="'\u00a0'"><b-button icon-left="map-marker-alt" @click="hereAsPosition(p)">Here</b-button></b-field>
+        <b-field label="Where (optional)" class="mb-2"></b-field>
+        <PositionPicker :lat="p.lat" :lng="p.lng" :radius-m="p.radiusM || 0" class="mb-3" @input="(pos) => Object.assign(p, pos)" />
+        <b-field label="Radius (m)" message="A detected charge (e.g. from Home Assistant) within this distance picks this place">
+          <b-input v-model.number="p.radiusM" type="number" min="10" step="10" style="max-width: 10rem"></b-input>
         </b-field>
         <b-field
           label="Home Assistant price sensor (optional)"

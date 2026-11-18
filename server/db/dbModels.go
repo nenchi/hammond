@@ -45,6 +45,11 @@ type User struct {
 	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
 	EvccPlaceID     string     `json:"evccPlaceId"`
 	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
+	// price watch alerts go to the user's Gotify (token write-only)
+	GotifyURL   string `json:"gotifyUrl"`
+	GotifyToken string `json:"-"`
+	// minutes between price watch checks per price source kind ("tankerkoenig": 60); missing = default
+	PriceWatchIntervals map[string]int `gorm:"serializer:json" json:"priceWatchIntervals"`
 }
 
 func (b *User) MarshalJSON() ([]byte, error) {
@@ -53,9 +58,11 @@ func (b *User) MarshalJSON() ([]byte, error) {
 		RoleDetail         EnumDetail `json:"roleDetail"`
 		DistanceUnitDetail EnumDetail `json:"distanceUnitDetail"`
 		HATokenSet         bool       `json:"haTokenSet"`
+		GotifyTokenSet     bool       `json:"gotifyTokenSet"`
 	}{
 		User:               *b,
 		HATokenSet:         b.HAToken != "",
+		GotifyTokenSet:     b.GotifyToken != "",
 		RoleDetail:         b.RoleDetail(),
 		DistanceUnitDetail: b.DistanceUnitDetail(),
 	})
@@ -222,6 +229,35 @@ type PriceProfile struct {
 	Own     bool `json:"own"`     // in lists for a user: their own profile (not stored)
 	Builtin bool `json:"builtin"` // a free source hammond adds by itself (not stored)
 }
+
+// PriceWatch: a favourite station whose price of one grade is checked in the background
+type PriceWatch struct {
+	Base
+	UserID    string     `gorm:"index" json:"userId"`
+	ProfileID string     `json:"profileId"` // price profile that found it (own, shared or "builtin-<kind>")
+	Kind      string     `json:"kind"`      // the profile's kind: picks the check interval
+	StationID string     `json:"stationId"`
+	Name      string     `json:"name"`
+	Address   string     `json:"address"`
+	Lat       float64    `json:"lat"`
+	Lng       float64    `json:"lng"`
+	Grade     string     `json:"grade"`     // e5, e10 or diesel
+	Below     *float64   `json:"below"`     // alert when the price is at or below; nil = only track
+	LastPrice *float64   `json:"lastPrice"` // last price seen
+	CheckedAt *time.Time `json:"checkedAt"`
+	LastError string     `json:"lastError"`
+	Failures  int        `json:"failures"` // checks in a row that failed
+	Alerted   bool       `json:"alerted"`  // under the limit and already notified: no new alert until it's above again
+}
+
+// StationPrice: price history of a watch, one row per change
+type StationPrice struct {
+	ID      uint      `gorm:"primaryKey" json:"-"`
+	WatchID string    `gorm:"index" json:"-"`
+	Price   float64   `json:"price"`
+	At      time.Time `json:"at"`
+}
+
 type Migration struct {
 	Base
 	Date time.Time

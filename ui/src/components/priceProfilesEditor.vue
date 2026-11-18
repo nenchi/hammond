@@ -24,6 +24,8 @@ export default {
           key: false,
         },
         portugal: { label: 'Portugal – DGEG', url: 'https://precoscombustiveis.dgeg.gov.pt/api/PrecoComb', key: false },
+        italy: { label: 'Italy – MIMIT', url: 'https://www.mimit.gov.it/images/exportCSV', key: false },
+        spain: { label: 'Spain – Ministerio', url: 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes', key: false },
         custom: { label: 'Custom (Tankerkönig-compatible)', url: '', key: true },
       },
       testResult: null,
@@ -41,7 +43,7 @@ export default {
       return (list || []).map((p) => ({ id: p.id, name: p.name, kind: p.kind, url: p.url || '', apiKey: '', keySet: p.keySet, shared: !p.private }))
     },
     addProfile(kind) {
-      const names = { tankerkoenig: 'Germany – Tankerkönig', econtrol: 'Austria – E-Control', goriva: 'Slovenia – goriva.si', mzoe: 'Croatia – MZOE', france: 'France – prix-carburants', portugal: 'Portugal – DGEG', custom: 'Custom' }
+      const names = { tankerkoenig: 'Germany – Tankerkönig', econtrol: 'Austria – E-Control', goriva: 'Slovenia – goriva.si', mzoe: 'Croatia – MZOE', france: 'France – prix-carburants', portugal: 'Portugal – DGEG', italy: 'Italy – MIMIT', spain: 'Spain – Ministerio', custom: 'Custom' }
       this.profiles.push({ id: '', name: names[kind], kind, url: '', apiKey: '', keySet: false, shared: true })
     },
     move(i, d) {

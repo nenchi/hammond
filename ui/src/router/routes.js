@@ -105,6 +105,14 @@ export default [
     }),
   },
   {
+    path: '/prices',
+    name: 'price-watch',
+    component: () => lazyLoadView(import('@/src/router/views/priceWatch.vue')),
+    meta: {
+      authRequired: true,
+    },
+  },
+  {
     path: '/charging',
     name: 'charging-places',
     component: () => lazyLoadView(import('@/src/router/views/chargingPlaces.vue')),

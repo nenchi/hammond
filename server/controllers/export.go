@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/akhilrex/hammond/common"
+	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
 	"github.com/akhilrex/hammond/service"
 	"github.com/gin-gonic/gin"
@@ -116,6 +117,113 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			return
 		}
 		c.JSON(http.StatusOK, service.UserPriceProfiles(userID))
+	})
+	// place search for "Stations nearby" without the device's location
+	router.GET("/places", func(c *gin.Context) {
+		list, err := service.SearchPlaces(c.Query("q"))
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, list)
+	})
+	// price watch: favourite stations, alerts to Gotify, check interval per price source
+	router.GET("/me/priceWatches", func(c *gin.Context) {
+		list, err := service.ListPriceWatches(c.MustGet("userId").(string))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, list)
+	})
+	router.POST("/me/priceWatches", func(c *gin.Context) {
+		var req db.PriceWatch
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		w, err := service.CreatePriceWatch(c.MustGet("userId").(string), req)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, w)
+	})
+	router.PUT("/me/priceWatches/:id", func(c *gin.Context) {
+		var req struct {
+			Grade string   `json:"grade"`
+			Below *float64 `json:"below"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		w, err := service.UpdatePriceWatch(c.MustGet("userId").(string), c.Param("id"), req.Grade, req.Below)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, w)
+	})
+	router.DELETE("/me/priceWatches/:id", func(c *gin.Context) {
+		if err := service.DeletePriceWatch(c.MustGet("userId").(string), c.Param("id")); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{})
+	})
+	router.GET("/me/priceWatches/:id/history", func(c *gin.Context) {
+		days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
+		if days < 1 || days > 3660 {
+			days = 30
+		}
+		list, err := service.PriceWatchHistory(c.MustGet("userId").(string), c.Param("id"), time.Now().AddDate(0, 0, -days))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, list)
+	})
+	router.POST("/me/priceWatches/check", func(c *gin.Context) {
+		list, err := service.CheckPriceWatchesNow(c.MustGet("userId").(string))
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, list)
+	})
+	router.GET("/me/priceWatchSettings", func(c *gin.Context) {
+		s, err := service.GetPriceWatchSettings(c.MustGet("userId").(string))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, s)
+	})
+	router.POST("/me/priceWatchSettings", func(c *gin.Context) {
+		var req struct {
+			GotifyURL   string         `json:"gotifyUrl"`
+			GotifyToken string         `json:"gotifyToken"`
+			Intervals   map[string]int `json:"intervals"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		userID := c.MustGet("userId").(string)
+		if err := service.UpdatePriceWatchSettings(userID, req.GotifyURL, req.GotifyToken, req.Intervals); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		s, _ := service.GetPriceWatchSettings(userID)
+		c.JSON(http.StatusOK, s)
+	})
+	router.POST("/me/priceWatchSettings/test", func(c *gin.Context) {
+		if err := service.TestGotify(c.MustGet("userId").(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 	// what the fill-up form asks, in order: own, then shared
 	router.GET("/fuelPrices/available", func(c *gin.Context) {

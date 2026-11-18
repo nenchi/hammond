@@ -509,6 +509,38 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  it('price watch: watch a station from Stations nearby, set a limit, show the graph', () => {
+    // a fixed position (the fake price service answers anywhere)
+    cy.visit('/prices', {
+      onBeforeLoad: (win) => {
+        cy.spy(win.console, 'error').as('consoleError')
+        cy.stub(win.navigator.geolocation, 'getCurrentPosition').callsFake((ok) => ok({ coords: { latitude: 50.1, longitude: 8.76 } }))
+      },
+    })
+    cy.get('.no-watches').should('exist')
+    // without the device's location: tap the map
+    cy.get('.add-stations .show-map').click()
+    cy.get('.add-stations .station-map').should('be.visible').click()
+    cy.get('.add-stations .station').should('have.length.at.least', 1)
+    cy.get('.add-stations .station-map .leaflet-interactive').should('exist') // price markers
+    cy.get('.add-stations .stations-nearby').click()
+    cy.get('.add-stations .station').first().find('.watch').click()
+    cy.get('.price-watch').should('have.length', 1).and('contain', 'ARAL')
+    cy.get('.price-watch .last-price').invoke('text').should('match', /\d\.\d{3}/)
+    cy.intercept('PUT', '/api/me/priceWatches/*').as('saveWatch')
+    cy.get('.price-watch .below input').type('1.70')
+    cy.get('.price-watch .save-watch').click()
+    cy.wait('@saveWatch').its('response.statusCode').should('eq', 200)
+    cy.intercept('GET', '/api/me/priceWatches/*/history*').as('history')
+    cy.get('.price-watch .show-graph').click()
+    cy.wait('@history')
+    cy.get('.price-watch canvas').should('be.visible')
+    cy.get('.price-watch-settings').should('contain', 'Gotify URL')
+    noConsoleErrors()
+    cy.request({ url: '/api/me/priceWatches', headers: apiHeaders }).then(({ body }) =>
+      body.forEach((w) => cy.request({ method: 'DELETE', url: `/api/me/priceWatches/${w.id}`, headers: apiHeaders })))
+  })
+
   it('logs out, and a wrong password is refused', () => {
     // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
     // and typing into the first login page raced the second (flaky in CI)

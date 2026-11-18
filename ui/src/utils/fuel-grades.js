@@ -21,7 +21,7 @@ const OPTIONS = {
 }
 
 // value written by the station picker for a price grade
-export const GRADE_LABELS = { e5: '95', e10: '95 E10', diesel: 'Diesel' }
+export const GRADE_LABELS = { e5: '95', e10: '95 E10', diesel: 'Diesel', plus: '98/100', diesel_premium: 'Premium Diesel', lpg: 'LPG' }
 
 // [value, text] options for a vehicle; an existing value not in the list (old free text, Fuelly import)
 // stays selectable so editing an old entry doesn't lose it

@@ -33,6 +33,8 @@ const (
 	MzoeURL           = "https://webservis.mzoe-gor.hr/data.gz"
 	PrixCarburantsURL = "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2"
 	DgegURL           = "https://precoscombustiveis.dgeg.gov.pt/api/PrecoComb"
+	MimitURL          = "https://www.mimit.gov.it/images/exportCSV"
+	MinetURL          = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes"
 )
 
 type Station struct {
@@ -60,10 +62,10 @@ type StationsResult struct {
 }
 
 // country of each kind ("custom" has none: asked everywhere, after the country's own profiles)
-var kindCountry = map[string]string{"tankerkoenig": "de", "econtrol": "at", "goriva": "si", "mzoe": "hr", "france": "fr", "portugal": "pt"}
+var kindCountry = map[string]string{"tankerkoenig": "de", "econtrol": "at", "goriva": "si", "mzoe": "hr", "france": "fr", "portugal": "pt", "italy": "it", "spain": "es"}
 
 var kindLabel = map[string]string{"tankerkoenig": "Germany – Tankerkönig", "econtrol": "Austria – E-Control", "goriva": "Slovenia – goriva.si",
-	"mzoe": "Croatia – MZOE", "france": "France – prix-carburants", "portugal": "Portugal – DGEG"}
+	"mzoe": "Croatia – MZOE", "france": "France – prix-carburants", "portugal": "Portugal – DGEG", "italy": "Italy – MIMIT", "spain": "Spain – Ministerio"}
 
 // GeocodeURL: OpenStreetMap Nominatim reverse geocoding, only for the country of a station search
 // ("" = off: every profile is asked in order, as before)
@@ -112,6 +114,53 @@ func countryAt(lat, lng float64) (code, name string) {
 	return c[0], c[1]
 }
 
+type Place struct {
+	Name string  `json:"name"`
+	Lat  float64 `json:"lat"`
+	Lng  float64 `json:"lng"`
+}
+
+// SearchPlaces: up to 5 places for a text ("Ljubljana", "Hauptstr. 1, Offenbach"), for "Stations
+// nearby" without the device's location (desktop browsers often have none). Nominatim search, next
+// to the reverse URL. ponytail: no cache, one request per search button press (Nominatim: max 1/s).
+func SearchPlaces(text string) ([]Place, error) {
+	text = strings.TrimSpace(text)
+	if text == "" || len([]rune(text)) > 200 {
+		return nil, errors.New("enter a place or address")
+	}
+	if GeocodeURL == "" {
+		return nil, errors.New("place search is off")
+	}
+	q := url.Values{"format": {"jsonv2"}, "q": {text}, "limit": {"5"}, "accept-language": {"en"}}
+	req, _ := http.NewRequest("GET", strings.TrimSuffix(GeocodeURL, "/reverse")+"/search?"+q.Encode(), nil)
+	req.Header.Set("User-Agent", "hammond (https://github.com/nenchi/hammond)") // Nominatim policy: identify the app
+	resp, err := priceClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("place search not reachable: %s", err)
+	}
+	defer resp.Body.Close()
+	var body []struct {
+		DisplayName string `json:"display_name"`
+		Lat         string `json:"lat"`
+		Lon         string `json:"lon"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("place search answered HTTP %d", resp.StatusCode)
+	}
+	out := []Place{}
+	for _, r := range body {
+		la, err1 := strconv.ParseFloat(r.Lat, 64)
+		ln, err2 := strconv.ParseFloat(r.Lon, 64)
+		if err1 == nil && err2 == nil {
+			out = append(out, Place{Name: r.DisplayName, Lat: la, Lng: ln})
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no place found for %q", text)
+	}
+	return out, nil
+}
+
 // accepted grades, preferred first: the vehicle's list, else from its fuel type
 func VehicleFuelGrades(v *db.Vehicle) []string {
 	if v.FuelGrade != "" {
@@ -124,8 +173,23 @@ func VehicleFuelGrades(v *db.Vehicle) []string {
 		return []string{"diesel"}
 	case db.ETHANOL:
 		return []string{"e10"}
+	case db.LPG:
+		return []string{"lpg"}
 	}
 	return nil
+}
+
+// Grades hammond knows: plus = 98/100 octane, diesel_premium = premium/additive diesel. Germany
+// (Tankerkönig) and Austria only publish e5/e10/diesel; the others come from SI, HR and FR.
+var Grades = []string{"e5", "e10", "diesel", "plus", "diesel_premium", "lpg"}
+
+func ValidGrade(g string) bool {
+	for _, x := range Grades {
+		if x == g {
+			return true
+		}
+	}
+	return false
 }
 
 // NormalizeFuelGrades checks "e10, E5" → "e10,e5" (known grades, no duplicates, order kept)
@@ -137,8 +201,8 @@ func NormalizeFuelGrades(s string) (string, error) {
 		if g == "" || seen[g] {
 			continue
 		}
-		if g != "e5" && g != "e10" && g != "diesel" {
-			return "", fmt.Errorf("unknown fuel grade %q (e5, e10, diesel)", g)
+		if !ValidGrade(g) {
+			return "", fmt.Errorf("unknown fuel grade %q (%s)", g, strings.Join(Grades, ", "))
 		}
 		seen[g] = true
 		out = append(out, g)
@@ -275,7 +339,7 @@ func AvailablePriceProfiles(userID string) []db.PriceProfile {
 
 // builtinKinds: sources without a key, always available (only asked in their country when the country
 // is known; Portugal's whole-country list is only loaded inside Portugal anyway)
-var builtinKinds = []string{"econtrol", "goriva", "mzoe", "france", "portugal"}
+var builtinKinds = []string{"econtrol", "goriva", "mzoe", "france", "portugal", "italy", "spain"}
 
 // BuiltinSources: off in tests (no real services)
 var BuiltinSources = true
@@ -288,7 +352,7 @@ func PublicAvailableProfiles(userID string) []db.PriceProfile {
 func UserPriceProfiles(userID string) []db.PriceProfile { return public(userProfiles(getUser(userID))) }
 
 var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "goriva": GorivaURL, "mzoe": MzoeURL,
-	"france": PrixCarburantsURL, "portugal": DgegURL, "custom": ""}
+	"france": PrixCarburantsURL, "portugal": DgegURL, "italy": MimitURL, "spain": MinetURL, "custom": ""}
 
 // normalizeProfiles checks a list; keys: "" keeps the old one of the same id, "-" removes it.
 // freshIDs (users' own lists): an id the list didn't have gets a new one, so a user's profile never
@@ -483,6 +547,12 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 		case "france":
 			c.res, err = fetchFrance(base, grades, lat, lng, rad)
 			c.lic = "Prices: prix-carburants.gouv.fr (Licence Ouverte)"
+		case "spain":
+			c.res, err = fetchSpain(base, grades, lat, lng, rad)
+			c.lic = "Prices: Ministerio para la Transición Ecológica (every 30 min)"
+		case "italy":
+			c.res, err = fetchItaly(base, grades, lat, lng, rad)
+			c.lic = "Prices: MIMIT Osservaprezzi carburanti (today at 8:00)"
 		case "portugal":
 			c.res, err = fetchPortugal(base, grades, lat, lng, rad)
 			c.lic = "Prices: DGEG (precoscombustiveis.dgeg.gov.pt)"
@@ -525,8 +595,9 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 		}
 		return res.Stations[i].Dist < res.Stations[j].Dist
 	})
-	if len(res.Stations) > 10 {
-		res.Stations = res.Stations[:10]
+	// ponytail: the 20 nearest; enough for a 25 km circle on the map, still a short list in the form
+	if len(res.Stations) > 20 {
+		res.Stations = res.Stations[:20]
 	}
 	return res, nil
 }
@@ -613,9 +684,14 @@ func eControlTypes(grades []string) []string {
 	return out
 }
 
+// eControlGrade: the grade a source's fuel kind is stored under, "" when the vehicle doesn't take it.
+// SUP (a plain 95) → the first of e5/e10, DIE → diesel, PLUS → plus (98/100), DPREM → diesel_premium,
+// LPG → lpg.
 func eControlGrade(fuelType string, grades []string) string {
 	for _, g := range grades {
-		if (fuelType == "DIE") == (g == "diesel") {
+		switch {
+		case fuelType == "SUP" && (g == "e5" || g == "e10"), fuelType == "DIE" && g == "diesel",
+			fuelType == "PLUS" && g == "plus", fuelType == "DPREM" && g == "diesel_premium", fuelType == "LPG" && g == "lpg":
 			return g
 		}
 	}
@@ -708,7 +784,7 @@ func fetchGoriva(base string, grades []string, lat, lng, rad float64) ([]rawStat
 	out := []rawStation{}
 	for _, st := range body.Results {
 		prices := map[string]float64{}
-		for t, key := range map[string]string{"SUP": "95", "DIE": "dizel"} {
+		for t, key := range map[string]string{"SUP": "95", "DIE": "dizel", "PLUS": "100", "DPREM": "dizel-premium", "LPG": "avtoplin-lpg"} {
 			if g := eControlGrade(t, grades); g != "" && st.Prices[key] != nil && *st.Prices[key] > 0 {
 				prices[g] = *st.Prices[key]
 			}
@@ -735,7 +811,9 @@ func distanceKm(lat1, lng1, lat2, lng2 float64) float64 {
 var mzoeClient = &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
 	TLSClientConfig: &tls.Config{CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256}}}}
 
-var mzoeKinds = map[int]string{1: "SUP", 2: "SUP", 7: "DIE", 8: "DIE"} // vrsta_goriva ids
+// vrsta_goriva ids: Eurosuper 95 / 100 and Eurodizel with or without additives, UNP (autoplin).
+// The cheapest wins, except premium diesel: the dearest diesel with additives (INA Class, Q Max…).
+var mzoeKinds = map[int][]string{1: {"SUP"}, 2: {"SUP"}, 5: {"PLUS"}, 6: {"PLUS"}, 7: {"DIE", "DPREM"}, 8: {"DIE"}, 9: {"LPG"}}
 
 func fetchMzoe(base string, grades []string, lat, lng, rad float64) ([]rawStation, error) {
 	resp, err := mzoeClient.Get(base)
@@ -777,7 +855,7 @@ func fetchMzoe(base string, grades []string, lat, lng, rad float64) ([]rawStatio
 	if err := json.NewDecoder(r).Decode(&body); err != nil || resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("price service answered HTTP %d without valid data", resp.StatusCode)
 	}
-	kind := map[int]string{}
+	kind := map[int][]string{}
 	for _, g := range body.Gorivos {
 		kind[g.ID] = mzoeKinds[g.Vrsta]
 	}
@@ -800,12 +878,14 @@ func fetchMzoe(base string, grades []string, lat, lng, rad float64) ([]rawStatio
 		}
 		prices := map[string]float64{}
 		for _, c := range st.Cjenici {
-			g := eControlGrade(kind[c.Gorivo], grades)
-			if kind[c.Gorivo] == "" || g == "" || c.Cijena <= 0 {
-				continue
-			}
-			if old, ok := prices[g]; !ok || c.Cijena < old {
-				prices[g] = c.Cijena
+			for _, k := range kind[c.Gorivo] {
+				g := eControlGrade(k, grades)
+				if g == "" || c.Cijena <= 0 {
+					continue
+				}
+				if old, ok := prices[g]; !ok || (k != "DPREM" && c.Cijena < old) || (k == "DPREM" && c.Cijena > old) {
+					prices[g] = c.Cijena
+				}
 			}
 		}
 		out = append(out, rawStation{ID: strconv.Itoa(st.ID), Name: strings.TrimSpace(st.Naziv), Brand: brand[st.Obv],
@@ -840,6 +920,10 @@ func TestFuelPriceProvider(userID, profileID string, lat, lng *float64) (*Statio
 		la, ln = 45.7640, 4.8357 // Lyon
 	case "portugal":
 		la, ln = 38.7223, -9.1393 // Lisbon
+	case "italy":
+		la, ln = 45.4642, 9.19 // Milan
+	case "spain":
+		la, ln = 40.4168, -3.7038 // Madrid
 	}
 	if lat != nil && lng != nil {
 		la, ln = *lat, *lng

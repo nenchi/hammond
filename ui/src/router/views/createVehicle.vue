@@ -32,6 +32,9 @@ export default {
         { value: 'e10', text: '95 E10' },
         { value: 'e5', text: '95 (E5)' },
         { value: 'diesel', text: 'Diesel' },
+        { value: 'plus', text: '98/100 (not in DE/AT)' },
+        { value: 'diesel_premium', text: 'Premium Diesel (not in DE/AT)' },
+        { value: 'lpg', text: 'LPG (not in DE/AT)' },
       ],
     }
   },

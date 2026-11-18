@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,6 +30,9 @@ func TestFetchFrance(t *testing.T) {
 	a, b := got[0], got[1]
 	if a.ID != "69004020" || a.Name != "55 BIS QUAI GILLET" || a.Address != "69004 Lyon" || a.Prices["e10"] != 2.099 || len(a.Prices) != 1 {
 		t.Fatalf("first: %+v (diesel not accepted, no SP95)", a)
+	}
+	if got, _ := fetchFrance(srv.URL+"/ds", []string{"plus"}, 45.764, 4.8357, 3); got[0].Prices["plus"] != 2.199 {
+		t.Fatalf("SP98 → plus: %+v", got[0])
 	}
 	if b.Prices["e5"] != 2.3 || b.Prices["e10"] != 0 || a.Dist <= 0 || a.Lat != 45.781 {
 		t.Fatalf("second: %+v", b)
@@ -85,5 +89,68 @@ func TestPortugalSkipsOtherCountries(t *testing.T) {
 	}
 	if !portugalBox.near(37.74, -25.67, 2) || !portugalBox.near(32.65, -16.91, 2) { // Azores, Madeira
 		t.Fatal("islands are in the box")
+	}
+}
+
+func TestFetchItaly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/it/anagrafica_impianti_attivi.csv":
+			w.Write([]byte("Estrazione del 2026-11-17\n" +
+				"idImpianto|Gestore|Bandiera|Tipo Impianto|Nome Impianto|Indirizzo|Comune|Provincia|Latitudine|Longitudine\n" +
+				"10|X SRL|Agip Eni|Stradale|ENI MILANO|VIA ROMA 1 \"A\"|MILANO|MI|45.4642|9.19\n" +
+				"11|Y|Q8|Stradale|FAR|VIA X|ROMA|RM|41.9|12.5\n" +
+				"12|Z|Bianca|Stradale|NO POS|VIA Y|MILANO|MI||\n"))
+		case "/it/prezzo_alle_8.csv":
+			w.Write([]byte("Estrazione del 2026-11-17\nidImpianto|descCarburante|prezzo|isSelf|dtComu\n" +
+				"10|Benzina|1.799|1|x\n10|Benzina|1.949|0|x\n10|Gasolio|1.699|1|x\n10|Blue Diesel|1.789|1|x\n" +
+				"10|Blue Super|1.899|1|x\n10|GPL|0.699|1|x\n10|Metano|1.4|1|x\n11|Benzina|1.7|1|x\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	got, err := fetchItaly(srv.URL+"/it", []string{"e10", "diesel", "plus", "diesel_premium", "lpg"}, 45.4642, 9.19, 2)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("only the Milan station within 2 km (no position = dropped): %v %+v", err, got)
+	}
+	p := got[0].Prices
+	if got[0].Brand != "Agip Eni" || got[0].Name != "ENI MILANO" || p["e10"] != 1.799 || p["diesel"] != 1.699 ||
+		p["diesel_premium"] != 1.789 || p["plus"] != 1.899 || p["lpg"] != 0.699 || len(p) != 5 {
+		t.Fatalf("self-service price wins, brand premiums mapped, methane ignored: %+v", got[0])
+	}
+	if got, _ := fetchItaly(srv.URL+"/it", []string{"e5"}, 50.1, 8.7, 5); len(got) != 0 {
+		t.Fatal("outside Italy nothing is downloaded")
+	}
+}
+
+func TestFetchSpain(t *testing.T) {
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("no curl here (the image has it)")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/es/EstacionesTerrestres/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"ResultadoConsulta":"OK","ListaEESSPrecio":[
+		 {"IDEESS":"4375","Rótulo":"REPSOL","Dirección":"CALLE MAYOR, 1","C.P.":"28013","Localidad":"MADRID","Latitud":"40,4168","Longitud (WGS84)":"-3,7038",
+		  "Tipo Venta":"P","Precio Gasolina 95 E5":"1,499","Precio Gasolina 95 E10":"","Precio Gasoleo A":"1,459","Precio Gasoleo Premium":"1,559",
+		  "Precio Gasolina 98 E5":"1,699","Precio Gasolina 98 E10":"1,659","Precio Gases licuados del petróleo":"0,899"},
+		 {"IDEESS":"9","Rótulo":"COOP","Latitud":"40,4170","Longitud (WGS84)":"-3,7040","Tipo Venta":"R","Precio Gasoleo A":"1,1"},
+		 {"IDEESS":"10","Rótulo":"FAR","Latitud":"41,3874","Longitud (WGS84)":"2,1686","Tipo Venta":"P","Precio Gasoleo A":"1,4"}]}`))
+	}))
+	defer srv.Close()
+	got, err := fetchSpain(srv.URL+"/es", []string{"e5", "e10", "diesel", "diesel_premium", "plus", "lpg"}, 40.4168, -3.7038, 2)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("one public station near Madrid (members-only skipped): %v %+v", err, got)
+	}
+	p := got[0].Prices
+	if got[0].Brand != "REPSOL" || got[0].Address != "CALLE MAYOR, 1, 28013 MADRID" || p["e5"] != 1.499 || p["diesel"] != 1.459 ||
+		p["diesel_premium"] != 1.559 || p["plus"] != 1.659 || p["lpg"] != 0.899 || len(p) != 5 {
+		t.Fatalf("grades by name, cheaper 98, no empty E10: %+v", got[0])
+	}
+	if got, _ := fetchSpain(srv.URL+"/es", []string{"e5"}, 50.1, 8.7, 5); len(got) != 0 {
+		t.Fatal("outside Spain nothing is downloaded")
 	}
 }

@@ -20,7 +20,7 @@ LABEL org.opencontainers.image.source="https://github.com/nenchi/hammond"
 ENV CONFIG=/config \
     DATA=/assets \
     GIN_MODE=release
-RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata \
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata curl \
  && mkdir -p /config /assets /api && chmod 777 /config /assets
 VOLUME ["/config", "/assets"]
 WORKDIR /api
