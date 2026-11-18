@@ -61,6 +61,9 @@ to complete it. If the last reading before the fill-up was taken many km earlier
 **Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
 [Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE,
 France: prix-carburants, Portugal: DGEG, Italy: MIMIT, Spain: Ministerio (fetched with curl), no key;
+other countries (SK, CZ, PL, HU, CH, NL, BE…): [Fuelo](https://developers.fuelo.net) with your own key: the free plan
+(100 requests a day, 5 a minute) lists stations with the country's average price, Pro adds per-station prices (Price
+watch works then); hammond checks the plan once a day, counts requests and stops at 90 a day and at the minute limit;
 or any Tankerkönig-compatible URL; hammond looks up the country of the position via OpenStreetMap Nominatim and
 asks only that country's profiles, then custom ones, and says when a country has no profile), the fill-up form has a
 **Stations nearby** button (uses the phone's location) and, if the detection sent a position (blueprint input

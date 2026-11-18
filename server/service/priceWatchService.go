@@ -22,7 +22,7 @@ import (
 
 // default minutes between checks per kind; users can change them (MinWatchMinutes–MaxWatchMinutes)
 var DefaultWatchMinutes = map[string]int{"tankerkoenig": 60, "econtrol": 60, "goriva": 1440, "mzoe": 1440,
-	"france": 360, "portugal": 360, "italy": 1440, "spain": 60, "custom": 60}
+	"france": 360, "portugal": 360, "italy": 1440, "spain": 60, "fuelo": 720, "custom": 60}
 
 const (
 	MinWatchMinutes = 15
@@ -276,6 +276,13 @@ func watchPrice(w *db.PriceWatch, profiles []db.PriceProfile) (float64, error) {
 	}
 	if p == nil {
 		return 0, errors.New("its price profile was removed")
+	}
+	if p.Kind == "fuelo" { // one request for the station, not a search around it
+		base := p.URL
+		if base == "" {
+			base = FueloURL
+		}
+		return fueloWatchPrice(strings.TrimRight(base, "/"), p.APIKey, w.StationID, w.Grade)
 	}
 	res, err := profileStations(*p, []string{w.Grade}, w.Lat, w.Lng, 1)
 	if err != nil {

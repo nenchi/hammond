@@ -42,6 +42,21 @@ export default {
     showSetupHint() {
       return this.loaded && !this.enabled && this.mode !== 'off'
     },
+    // the source's currency when it says one (Fuelo: CZK, PLN…), else the user's
+    currency() {
+      return (this.result && this.result.currency) || (this.me && this.me.currency) || ''
+    },
+    // no station prices (Fuelo's free plan): "Slovakia average: 95 1.620 EUR · Diesel 1.580 EUR"
+    averageText() {
+      const r = this.result
+      if (!r || !r.averages || !Object.keys(r.averages).length) return ''
+      let country = (r.averageCountry || '').toUpperCase()
+      try {
+        country = new Intl.DisplayNames(['en'], { type: 'region' }).of(country)
+      } catch (e) {}
+      const parts = r.grades.filter((g) => r.averages[g]).map((g) => `${this.label(g)} ${r.averages[g].toFixed(3)} ${this.currency}`)
+      return `${country} average today: ${parts.join(' · ')}`
+    },
     gradeLabel() {
       return this.result ? this.result.grades.map((g) => GRADES[g] || g).join(' / ') : ''
     },
@@ -230,7 +245,7 @@ export default {
     share(st) {
       const prices = this.result.grades
         .filter((g) => st.prices[g] !== undefined)
-        .map((g) => `${this.label(g)} ${st.prices[g].toFixed(3)} ${this.me ? this.me.currency : ''}`.trim())
+        .map((g) => `${this.label(g)} ${st.prices[g].toFixed(3)} ${this.currency}`.trim())
         .join(', ')
       const title = st.brand || st.name
       const text = [title, st.address, prices].filter(Boolean).join('\n')
@@ -335,7 +350,7 @@ export default {
                 :class="{ 'has-text-weight-bold has-text-success cheapest': st.prices[g] === cheapest }"
                 :data-grade="g"
                 @click.stop="pick(st, g)"
-                >{{ label(g) }} {{ st.prices[g].toFixed(3) }} {{ me ? me.currency : '' }}</a
+                >{{ label(g) }} {{ st.prices[g].toFixed(3) }} {{ currency }}</a
               >
             </template>
             <strong v-else>no {{ gradeLabel }}</strong>
@@ -348,6 +363,7 @@ export default {
           <b-button icon-left="star" class="watch" :disabled="!st.grade" @click="watch(st)">Watch</b-button>
         </div>
       </div>
+      <p v-if="averageText" class="notification is-light py-2 px-3 mt-2 mb-2 country-average">{{ averageText }}</p>
       <p class="help">{{ result.profileName }} · {{ result.attribution }} · today's price, check it on the receipt</p>
     </div>
   </div>

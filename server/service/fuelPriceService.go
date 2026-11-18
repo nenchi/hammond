@@ -35,6 +35,7 @@ const (
 	DgegURL           = "https://precoscombustiveis.dgeg.gov.pt/api/PrecoComb"
 	MimitURL          = "https://www.mimit.gov.it/images/exportCSV"
 	MinetURL          = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes"
+	FueloURL          = "https://api.fuelo.net"
 )
 
 type Station struct {
@@ -59,13 +60,17 @@ type StationsResult struct {
 	Stations    []Station `json:"stations"`
 	Errors      []string  `json:"errors,omitempty"` // profiles that failed (only when no stations were found)
 	Country     string    `json:"country"`          // where the position is ("" = unknown: every profile asked)
+	// a source without station prices (Fuelo's free plan): the country's average per grade instead
+	Averages       map[string]float64 `json:"averages,omitempty"`
+	AverageCountry string             `json:"averageCountry,omitempty"`
+	Currency       string             `json:"currency,omitempty"` // when the source's isn't the user's (CZK, PLN…)
 }
 
 // country of each kind ("custom" has none: asked everywhere, after the country's own profiles)
 var kindCountry = map[string]string{"tankerkoenig": "de", "econtrol": "at", "goriva": "si", "mzoe": "hr", "france": "fr", "portugal": "pt", "italy": "it", "spain": "es"}
 
 var kindLabel = map[string]string{"tankerkoenig": "Germany – Tankerkönig", "econtrol": "Austria – E-Control", "goriva": "Slovenia – goriva.si",
-	"mzoe": "Croatia – MZOE", "france": "France – prix-carburants", "portugal": "Portugal – DGEG", "italy": "Italy – MIMIT", "spain": "Spain – Ministerio"}
+	"mzoe": "Croatia – MZOE", "france": "France – prix-carburants", "portugal": "Portugal – DGEG", "italy": "Italy – MIMIT", "spain": "Spain – Ministerio", "fuelo": "Fuelo (own key)"}
 
 // GeocodeURL: OpenStreetMap Nominatim reverse geocoding, only for the country of a station search
 // ("" = off: every profile is asked in order, as before)
@@ -240,9 +245,12 @@ type rawStation struct {
 }
 
 type cachedStations struct {
-	at  time.Time
-	res []rawStation
-	lic string
+	at       time.Time
+	res      []rawStation
+	lic      string
+	averages map[string]float64
+	country  string
+	currency string
 }
 
 // ponytail: in-memory cache keyed by profile + rounded position, 5 min (Tankerkönig asks not to poll
@@ -352,7 +360,7 @@ func PublicAvailableProfiles(userID string) []db.PriceProfile {
 func UserPriceProfiles(userID string) []db.PriceProfile { return public(userProfiles(getUser(userID))) }
 
 var priceKinds = map[string]string{"tankerkoenig": TankerkoenigURL, "econtrol": EControlURL, "goriva": GorivaURL, "mzoe": MzoeURL,
-	"france": PrixCarburantsURL, "portugal": DgegURL, "italy": MimitURL, "spain": MinetURL, "custom": ""}
+	"france": PrixCarburantsURL, "portugal": DgegURL, "italy": MimitURL, "spain": MinetURL, "fuelo": FueloURL, "custom": ""}
 
 // normalizeProfiles checks a list; keys: "" keeps the old one of the same id, "-" removes it.
 // freshIDs (users' own lists): an id the list didn't have gets a new one, so a user's profile never
@@ -547,6 +555,15 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 		case "france":
 			c.res, err = fetchFrance(base, grades, lat, lng, rad)
 			c.lic = "Prices: prix-carburants.gouv.fr (Licence Ouverte)"
+		case "fuelo":
+			var f *fueloResult
+			if f, err = fetchFuelo(base, p.APIKey, grades, lat, lng, rad); err == nil {
+				c.res, c.averages, c.country, c.currency = f.stations, f.averages, f.country, f.currency
+				c.lic = "Prices: Fuelo.net"
+				if !f.pro {
+					c.lic = "Fuelo.net free plan: stations without prices, country average"
+				}
+			}
 		case "spain":
 			c.res, err = fetchSpain(base, grades, lat, lng, rad)
 			c.lic = "Prices: Ministerio para la Transición Ecológica (every 30 min)"
@@ -571,7 +588,8 @@ func profileStations(p db.PriceProfile, grades []string, lat, lng, rad float64) 
 		stationCacheMu.Unlock()
 	}
 
-	res := &StationsResult{Profile: p.ID, ProfileName: p.Name, Grades: grades, Attribution: c.lic, Stations: []Station{}}
+	res := &StationsResult{Profile: p.ID, ProfileName: p.Name, Grades: grades, Attribution: c.lic, Stations: []Station{},
+		Averages: c.averages, AverageCountry: c.country, Currency: c.currency}
 	for _, st := range c.res {
 		prices := map[string]float64{}
 		var price *float64
@@ -924,6 +942,8 @@ func TestFuelPriceProvider(userID, profileID string, lat, lng *float64) (*Statio
 		la, ln = 45.4642, 9.19 // Milan
 	case "spain":
 		la, ln = 40.4168, -3.7038 // Madrid
+	case "fuelo":
+		la, ln = 48.1486, 17.1077 // Bratislava (no official source there)
 	}
 	if lat != nil && lng != nil {
 		la, ln = *lat, *lng
