@@ -314,12 +314,18 @@ export default {
         <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
       </b-select>
     </div>
-    <form class="mt-2 place-search" @submit.prevent="searchPlace">
-      <b-field>
-        <b-input v-model="placeText" placeholder="…or a place / address, e.g. Ljubljana" expanded maxlength="200" :has-counter="false"></b-input>
-        <p class="control"><b-button native-type="submit" :loading="loading">Search</b-button></p>
-      </b-field>
-    </form>
+    <!-- not a <form>: the picker sits inside the fill-up form (a nested form's button was taken for Save) -->
+    <b-field class="mt-2 place-search">
+      <b-input
+        v-model="placeText"
+        placeholder="…or a place / address, e.g. Ljubljana"
+        expanded
+        maxlength="200"
+        :has-counter="false"
+        @keydown.native.enter.prevent="searchPlace"
+      ></b-input>
+      <p class="control"><b-button class="place-search-button" :loading="loading" @click="searchPlace">Search</b-button></p>
+    </b-field>
     <div v-if="showMap" ref="map" class="station-map mt-2" style="height: 320px; border-radius: 4px; z-index: 0"></div>
     <p v-if="showMap" class="help">Tap the map to list the stations around that point ({{ radius }} km).</p>
     <div v-if="places.length" class="buttons mt-1 place-results">

@@ -89,11 +89,19 @@ export default {
 
 <template>
   <div class="position-picker">
-    <form class="is-flex" style="gap: 0.5rem; flex-wrap: wrap" @submit.prevent="search">
-      <b-input v-model="text" placeholder="Search a place or address" style="flex: 1 1 12rem" maxlength="200" :has-counter="false"></b-input>
-      <b-button native-type="submit" :loading="searching">Search</b-button>
+    <!-- not a <form>: it sits inside the charging place form (Enter here must search, not save) -->
+    <div class="is-flex" style="gap: 0.5rem; flex-wrap: wrap">
+      <b-input
+        v-model="text"
+        placeholder="Search a place or address"
+        style="flex: 1 1 12rem"
+        maxlength="200"
+        :has-counter="false"
+        @keydown.native.enter.prevent="search"
+      ></b-input>
+      <b-button class="position-search-button" :loading="searching" @click="search">Search</b-button>
       <b-button icon-left="map-marker-alt" @click="here">Here</b-button>
-    </form>
+    </div>
     <div v-if="places.length" class="buttons mt-1 mb-0">
       <b-button v-for="(p, i) in places" :key="i" size="is-small" @click="pick(p)">{{ p.name }}</b-button>
     </div>
