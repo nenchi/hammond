@@ -72,7 +72,7 @@ func TestFueloFreeAndPro(t *testing.T) {
 	if _, err := fetchFuelo(srv.URL, "free", grades, 48.1486, 17.1077, 2); err != nil || calls != first+1 {
 		t.Fatalf("plan asked once a day, averages cached: only the nearby search again (%d → %d) %v", first, calls, err)
 	}
-	if _, err := fueloWatchPrice(srv.URL, "free", "1816", "e10"); err == nil || !strings.Contains(err.Error(), "Pro") {
+	if _, err := fueloWatchPrices(srv.URL, "free", "1816", []string{"e10"}); err == nil || !strings.Contains(err.Error(), "Pro") {
 		t.Fatalf("free keys can't watch: %v", err)
 	}
 
@@ -82,8 +82,8 @@ func TestFueloFreeAndPro(t *testing.T) {
 		len(f.stations[0].Prices) != 3 || f.averages != nil || f.currency != "EUR" {
 		t.Fatalf("pro plan: %+v %v", f, err)
 	}
-	if v, err := fueloWatchPrice(srv.URL, "pro", "1816", "diesel"); err != nil || v != 1.559 {
-		t.Fatalf("watch with pro: %v %v", v, err)
+	if p, err := fueloWatchPrices(srv.URL, "pro", "1816", []string{"diesel", "e10"}); err != nil || p["diesel"] != 1.559 || p["e10"] == 0 {
+		t.Fatalf("watch with pro: two grades, one request: %v %v", p, err)
 	}
 
 	// the per-minute limit (free: 5): the 6th request in a minute isn't sent

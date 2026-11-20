@@ -269,9 +269,14 @@ func PriceWatchHistory(userID, id string, since time.Time) (*WatchHistory, error
 	return h, nil
 }
 
-// watchPrice asks the watch's profile around the station and picks it out of the list (the sources
-// only search by position)
-func watchPrice(w *db.PriceWatch, profiles []db.PriceProfile) (float64, error) {
+// stationKey: watches of the same station (one per grade) are checked together, with one request
+func stationKey(w *db.PriceWatch) string { return w.UserID + "|" + w.ProfileID + "|" + w.StationID }
+
+// stationPrices: today's prices of one watched station for all its watched grades, one request (the
+// sources only search by position: asked around the station, it's picked out of the list).
+// ponytail: sources with one plain 95 (SUP) store it under the first of e5/e10 asked, so watching both
+// e5 and e10 there prices only the first; neither country publishes both, so it doesn't matter.
+func stationPrices(w *db.PriceWatch, grades []string, profiles []db.PriceProfile) (map[string]float64, error) {
 	var p *db.PriceProfile
 	for _, x := range profiles {
 		if x.ID == w.ProfileID {
@@ -280,31 +285,27 @@ func watchPrice(w *db.PriceWatch, profiles []db.PriceProfile) (float64, error) {
 		}
 	}
 	if p == nil {
-		return 0, errors.New("its price profile was removed")
+		return nil, errors.New("its price profile was removed")
 	}
 	if p.Kind == "fuelo" { // one request for the station, not a search around it
 		base := p.URL
 		if base == "" {
 			base = FueloURL
 		}
-		return fueloWatchPrice(strings.TrimRight(base, "/"), p.APIKey, w.StationID, w.Grade)
+		return fueloWatchPrices(strings.TrimRight(base, "/"), p.APIKey, w.StationID, grades)
 	}
-	res, err := profileStations(*p, []string{w.Grade}, w.Lat, w.Lng, 1)
+	res, err := profileStations(*p, grades, w.Lat, w.Lng, 1)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	for _, st := range res.Stations {
 		if st.ID == w.StationID {
-			if v, ok := st.Prices[w.Grade]; ok {
-				return v, nil
-			}
-			return 0, errors.New("no price for this grade right now")
+			return st.Prices, nil
 		}
 	}
-	return 0, errors.New("station not in the price list any more")
+	return nil, errors.New("station not in the price list any more")
 }
 
-// applyPrice: the state after a successful check, and the alert to send ("" = none)
 func applyPrice(w *db.PriceWatch, price float64, now time.Time) (changed bool, alert bool) {
 	changed = w.LastPrice == nil || math.Abs(*w.LastPrice-price) > 0.0005
 	w.LastPrice, w.CheckedAt, w.LastError, w.Failures = &price, &now, "", 0
@@ -325,10 +326,28 @@ func applyPrice(w *db.PriceWatch, price float64, now time.Time) (changed bool, a
 func checkWatches(u *db.User, watches []db.PriceWatch) {
 	profiles := AvailablePriceProfiles(u.ID)
 	var down []string
+	// one request per station for all its watched grades
+	grades := map[string][]string{}
+	for _, w := range watches {
+		grades[stationKey(&w)] = append(grades[stationKey(&w)], w.Grade)
+	}
+	type fetched struct {
+		prices map[string]float64
+		err    error
+	}
+	got := map[string]fetched{}
 	for i := range watches {
 		w := &watches[i]
 		now := time.Now()
-		price, err := watchPrice(w, profiles)
+		f, ok := got[stationKey(w)]
+		if !ok {
+			f.prices, f.err = stationPrices(w, grades[stationKey(w)], profiles)
+			got[stationKey(w)] = f
+		}
+		price, err := f.prices[w.Grade], f.err
+		if err == nil && f.prices[w.Grade] == 0 {
+			err = errors.New("no price for this grade right now")
+		}
 		if err != nil {
 			w.CheckedAt, w.LastError = &now, err.Error()
 			w.Failures++
@@ -391,6 +410,7 @@ func PriceWatchTimer() {
 		db.DB.Find(&all)
 		due := map[string][]db.PriceWatch{}
 		users := map[string]*db.User{}
+		dueStation := map[string]bool{} // one grade due = all grades of that station, so they share the request
 		for _, w := range all {
 			u, ok := users[w.UserID]
 			if !ok {
@@ -401,6 +421,11 @@ func PriceWatchTimer() {
 				continue
 			}
 			if w.CheckedAt == nil || time.Since(*w.CheckedAt) >= time.Duration(WatchMinutes(u, w.Kind))*time.Minute {
+				dueStation[stationKey(&w)] = true
+			}
+		}
+		for _, w := range all {
+			if dueStation[stationKey(&w)] {
 				due[w.UserID] = append(due[w.UserID], w)
 			}
 		}

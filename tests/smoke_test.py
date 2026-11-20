@@ -252,6 +252,10 @@ s, _ = call("POST", "/api/me/priceWatches", watch, token=tok)
 check("same station and grade twice refused", s == 422, s)
 s, w2 = call("POST", "/api/me/priceWatches", {**watch, "grade": "diesel", "lastPrice": aral["prices"].get("diesel", 1.629)}, token=tok)
 check("same station, another grade: its own watch", s == 200 and w2["grade"] == "diesel" and w2["id"] != w["id"], (s, w2))
+s, ws = call("POST", "/api/me/priceWatches/check", token=tok)
+by = {x["grade"]: x for x in ws}
+check("check now: both grades of the station priced (one request per station)", s == 200 and by["e10"]["lastPrice"] == 1.739
+      and by["diesel"]["lastPrice"] == 1.629 and not by["e10"]["lastError"] and not by["diesel"]["lastError"], (s, ws))
 s, _ = call("PUT", f"/api/me/priceWatches/{w2['id']}", {"grade": "e10", "below": None}, token=tok)
 check("changing a grade to one already watched there refused", s == 422, s)
 s, _ = call("DELETE", f"/api/me/priceWatches/{w2['id']}", token=tok)
