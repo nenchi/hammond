@@ -6,7 +6,7 @@ import { averageByHour } from '@utils/price-hours'
 // "Cheapest time of day": average price per hour over the shown period, the cheapest hours green
 export default {
   components: { Bar },
-  props: { history: { type: Object, required: true } },
+  props: { history: { type: Object, required: true }, label: { type: String, default: 'Average price by hour of day' } },
   computed: {
     avg() {
       return averageByHour(this.history.prices)
@@ -22,7 +22,7 @@ export default {
         labels: this.avg.map((_, h) => String(h).padStart(2, '0')),
         datasets: [
           {
-            label: 'Average price by hour of day',
+            label: this.label,
             // cheapest = within 0.5 cent of the lowest hour
             backgroundColor: this.avg.map((v) => (v !== null && v <= this.low + 0.005 ? '#39a275' : '#7a8a9a')),
             data: this.avg,

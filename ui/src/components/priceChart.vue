@@ -2,53 +2,63 @@
 import { Line } from 'vue-chartjs'
 import { chartIn, themeColors } from '@utils/charts'
 
-// Price history of one watched station on a time axis: a step line (the price holds until it changes),
-// the limit dashed, my fill-ups there as triangles. Wheel / pinch zooms, dragging pans; in "select"
-// mode dragging marks a period to zoom into.
+// one colour per grade line (its limit dashed in the same colour)
+const COLORS = ['#39a275', '#3273dc', '#e0533d', '#9b59b6', '#e0a030', '#17a2b8']
+
+// Price history of one watched station on a time axis: a step line per watched grade (the price holds until
+// it changes), each limit dashed, my fill-ups there as triangles. Wheel / pinch zooms, dragging pans; in
+// "select" mode dragging marks a period to zoom into. Tapping a grade in the legend hides it.
 export default {
   components: { LineChart: Line }, // not <Line>: Vue 2 takes that for the SVG <line> element
   props: {
-    history: { type: Object, required: true }, // { prices: [{at, price}], fillups: [{at, price}] }
-    below: { type: Number, default: null },
+    // [{ label, below, history: { prices: [{at, price}], fillups: [{at, price}] } }]
+    series: { type: Array, required: true },
     select: { type: Boolean, default: false },
   },
   computed: {
-    points() {
-      const pts = this.history.prices.map((p) => ({ x: new Date(p.at).getTime(), y: p.price }))
-      if (pts.length) pts.push({ x: Date.now(), y: pts[pts.length - 1].y }) // the last price holds until now
-      return pts
+    lines() {
+      return this.series.map((s) => {
+        const pts = s.history.prices.map((p) => ({ x: new Date(p.at).getTime(), y: p.price }))
+        if (pts.length) pts.push({ x: Date.now(), y: pts[pts.length - 1].y }) // the last price holds until now
+        return pts
+      })
     },
+    // the same station for every grade: its fill-ups once
     fills() {
-      return this.history.fillups.map((f) => ({ x: new Date(f.at).getTime(), y: f.price }))
+      return ((this.series[0] && this.series[0].history.fillups) || []).map((f) => ({ x: new Date(f.at).getTime(), y: f.price }))
     },
     range() {
-      const xs = this.points.concat(this.fills).map((p) => p.x)
+      const xs = [].concat(...this.lines, this.fills).map((p) => p.x)
       return { min: Math.min(...xs), max: Math.max(...xs) }
     },
     chartData() {
-      const datasets = [
-        { label: 'Price', stepped: true, fill: false, borderColor: '#39a275', borderWidth: 2, pointRadius: 0, pointHitRadius: 6, data: this.points },
-      ]
-      if (this.below && this.points.length)
-        datasets.push({
-          label: 'Your limit',
-          borderColor: '#e0a030',
-          borderDash: [6, 4],
-          borderWidth: 2,
-          pointRadius: 0,
-          data: [
-            { x: this.range.min, y: this.below },
-            { x: this.range.max, y: this.below },
-          ],
-        })
+      const datasets = []
+      this.series.forEach((s, i) => {
+        const color = COLORS[i % COLORS.length]
+        if (!this.lines[i].length) return
+        datasets.push({ label: s.label, stepped: true, fill: false, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, pointHitRadius: 6, data: this.lines[i] })
+        if (s.below)
+          datasets.push({
+            label: `${s.label} limit`,
+            borderColor: color,
+            backgroundColor: color,
+            borderDash: [6, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            data: [
+              { x: this.range.min, y: s.below },
+              { x: this.range.max, y: s.below },
+            ],
+          })
+      })
       if (this.fills.length)
         datasets.push({
           type: 'scatter',
           label: 'My fill-ups',
           pointStyle: 'triangle',
           pointRadius: 7,
-          backgroundColor: '#3273dc',
-          borderColor: '#3273dc',
+          backgroundColor: '#7a7a7a',
+          borderColor: '#7a7a7a',
           data: this.fills,
         })
       return { datasets }

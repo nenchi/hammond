@@ -207,6 +207,11 @@ func UpdatePriceWatch(userID, id, grade string, below *float64) (*db.PriceWatch,
 		return nil, errors.New("invalid grade or price limit")
 	}
 	if grade != w.Grade {
+		var n int64
+		db.DB.Model(&db.PriceWatch{}).Where("user_id = ? AND profile_id = ? AND station_id = ? AND grade = ?", userID, w.ProfileID, w.StationID, grade).Count(&n)
+		if n > 0 {
+			return nil, errors.New("this station and grade is already watched")
+		}
 		db.DB.Where("watch_id = ?", w.ID).Delete(&db.StationPrice{})
 		w.LastPrice, w.CheckedAt = nil, nil
 	}
