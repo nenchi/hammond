@@ -375,7 +375,8 @@ export default {
         <div v-if="st.lat || st.lng" class="buttons mt-1 mb-0 station-actions" @click.stop>
           <b-button tag="a" :href="navUrl(st)" target="_blank" rel="noopener" icon-left="directions" class="navigate">Navigate</b-button>
           <b-button icon-left="share-alt" class="share" @click="share(st)">Share</b-button>
-          <b-dropdown :disabled="!st.grade" class="watch-menu" position="is-top-left">
+          <!-- no mobile modal: it locks page scrolling (html.is-clipped-touch) and keeps it when the list re-renders -->
+          <b-dropdown :disabled="!st.grade" :mobile-modal="false" class="watch-menu" position="is-top-left">
             <template #trigger>
               <b-button icon-left="star" class="watch" :disabled="!st.grade">Watch</b-button>
             </template>

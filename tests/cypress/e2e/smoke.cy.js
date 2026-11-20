@@ -529,8 +529,6 @@ describe('hammond UI', () => {
     cy.get('.price-watch').should('have.length', 1).and('contain', 'ARAL')
     cy.get('.price-watch .last-price').invoke('text').should('match', /\d\.\d{3}/)
     // a second grade of the same station: same card, own row; the first one is ticked in the menu
-    cy.get('.add-stations .grades-of select').select('All grades')
-    cy.get('.add-stations .stations-nearby').click()
     cy.get('.add-stations .station').first().find('.watch').click()
     cy.get('.add-stations .station').first().find('.watch-grade.is-disabled:visible').should('have.length', 1).and('contain', '✓')
     cy.get('.add-stations .station').first().find('.watch-grade[data-grade="diesel"]:visible').click()
