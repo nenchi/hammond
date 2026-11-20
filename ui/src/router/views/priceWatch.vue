@@ -19,7 +19,6 @@ export default {
       watches: [],
       loading: true,
       checking: false,
-      vehicleId: '',
       days: 30,
       graphs: {}, // station key → { histories: { watch id: history }, select } while its graph is shown
       settings: null,
@@ -36,12 +35,9 @@ export default {
     fuelVehicles() {
       return (this.vehicles || []).filter((v) => v.fuelType !== 4)
     },
-    allGrades() {
-      return this.vehicleId === 'all'
-    },
-    // "All grades" still asks through a vehicle (any of the user's; its grades are ignored)
+    // stations are asked through a vehicle, but with every grade: watching isn't about one car
     vehicle() {
-      return this.fuelVehicles.find((v) => v.id === this.vehicleId) || this.fuelVehicles[0]
+      return this.fuelVehicles[0]
     },
     // one card per station, its watched grades under it (each grade is its own watch with its own limit)
     stations() {
@@ -316,18 +312,11 @@ export default {
 
     <div class="box add-stations">
       <h2 class="subtitle">Add stations</h2>
-      <p v-if="!fuelVehicles.length" class="has-text-grey">Add a petrol or diesel vehicle first: its fuel grades pick the prices.</p>
+      <p v-if="!fuelVehicles.length" class="has-text-grey">Add a petrol or diesel vehicle first: stations nearby are looked up through it.</p>
       <template v-else>
-        <b-field label="Grades of">
-          <b-select v-model="vehicleId" :placeholder="vehicle.nickname" class="grades-of">
-            <option v-for="v in fuelVehicles" :key="v.id" :value="v.id">{{ v.nickname }}</option>
-            <option value="all">All grades</option>
-          </b-select>
-        </b-field>
         <StationPicker
-          :key="vehicle.id + allGrades"
           :vehicle="vehicle"
-          :all-grades="allGrades"
+          all-grades
           :watched="watches"
           @watched="load().then(reloadGraphs)"
         />

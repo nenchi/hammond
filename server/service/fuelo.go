@@ -313,21 +313,15 @@ type fueloResult struct {
 	pro      bool
 }
 
-// fueloWatchPrice: a watched station's price, one request (Pro only; free keys can't watch)
-func fueloWatchPrice(base, key, stationID, grade string) (float64, error) {
+// fueloWatchPrices: a watched station's prices of its watched grades, one request (Pro only; free keys can't watch)
+func fueloWatchPrices(base, key, stationID string, grades []string) (map[string]float64, error) {
 	pro, err := fueloPro(base, key)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if !pro {
-		return 0, errors.New("Fuelo's free plan has no station prices (Pro has)")
+		return nil, errors.New("Fuelo's free plan has no station prices (Pro has)")
 	}
-	prices, _, err := fueloStationPrices(base, key, stationID, []string{grade})
-	if err != nil {
-		return 0, err
-	}
-	if v, ok := prices[grade]; ok {
-		return v, nil
-	}
-	return 0, errors.New("no price for this grade right now")
+	prices, _, err := fueloStationPrices(base, key, stationID, grades)
+	return prices, err
 }
