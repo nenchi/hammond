@@ -21,7 +21,7 @@ export default {
       checking: false,
       vehicleId: '',
       days: 30,
-      graphs: {}, // watch id → { history, select } while its graph is shown
+      graphs: {}, // station key → { histories: { watch id: history }, select } while its graph is shown
       settings: null,
       gotify: { url: '', token: '' },
       hours: {}, // kind → hours between checks (form)
@@ -36,8 +36,27 @@ export default {
     fuelVehicles() {
       return (this.vehicles || []).filter((v) => v.fuelType !== 4)
     },
+    allGrades() {
+      return this.vehicleId === 'all'
+    },
+    // "All grades" still asks through a vehicle (any of the user's; its grades are ignored)
     vehicle() {
       return this.fuelVehicles.find((v) => v.id === this.vehicleId) || this.fuelVehicles[0]
+    },
+    // one card per station, its watched grades under it (each grade is its own watch with its own limit)
+    stations() {
+      const byKey = {}
+      const out = []
+      for (const w of this.watches) {
+        const key = `${w.profileId}|${w.stationId}`
+        if (!byKey[key]) out.push((byKey[key] = { key, name: w.name, address: w.address, kind: w.kind, watches: [] }))
+        byKey[key].watches.push(w)
+      }
+      for (const st of out) {
+        const times = st.watches.map((w) => w.checkedAt).filter(Boolean).sort()
+        st.checkedAt = times[times.length - 1]
+      }
+      return out
     },
     // only the sources the user watches (all of them before the first watch)
     kinds() {
@@ -69,7 +88,7 @@ export default {
       return { ...w, belowText: w.below ? String(w.below) : '' }
     },
     load() {
-      axios
+      return axios
         .get('/api/me/priceWatches')
         .then(({ data }) => (this.watches = data.map(this.toModel)))
         .finally(() => (this.loading = false))
@@ -102,18 +121,22 @@ export default {
         .put(`/api/me/priceWatches/${w.id}`, { grade: w.grade, below })
         .then(({ data }) => {
           Object.assign(w, this.toModel(data))
-          if (this.graphs[w.id]) this.fetchHistory(w.id) // a new grade starts a new history
           this.toast('Saved')
         })
         .catch((ex) => this.toast(this.errorText(ex), false))
     },
-    remove(w) {
+    // one grade, or the whole station (all its grades)
+    remove(st, list) {
+      const what = list.length === 1 && st.watches.length > 1 ? `${st.name} · ${this.grades[list[0].grade] || list[0].grade}` : st.name
       this.$buefy.dialog.confirm({
         title: 'Stop watching',
-        message: `${w.name}: its price history is deleted too.`,
+        message: `${what}: its price history is deleted too.`,
         confirmText: 'Delete',
         type: 'is-danger',
-        onConfirm: () => axios.delete(`/api/me/priceWatches/${w.id}`).then(() => this.load()),
+        onConfirm: () =>
+          Promise.all(list.map((w) => axios.delete(`/api/me/priceWatches/${w.id}`)))
+            .catch((ex) => this.toast(this.errorText(ex), false))
+            .then(() => this.load().then(this.reloadGraphs)),
       })
     },
     saveSettings() {
@@ -141,19 +164,34 @@ export default {
     every(minutes) {
       return minutes >= 1440 && minutes % 1440 === 0 ? `${minutes / 1440} d` : minutes >= 60 ? `${+(minutes / 60).toFixed(2)} h` : `${minutes} min`
     },
-    toggle(w) {
-      if (this.graphs[w.id]) return this.$delete(this.graphs, w.id)
-      this.$set(this.graphs, w.id, { history: null, select: false })
-      this.fetchHistory(w.id)
+    toggle(st) {
+      if (this.graphs[st.key]) return this.$delete(this.graphs, st.key)
+      this.$set(this.graphs, st.key, { histories: null, select: false })
+      this.fetchHistory(st)
     },
-    fetchHistory(id) {
-      axios
-        .get(`/api/me/priceWatches/${id}/history`, { params: { days: this.days } })
-        .then(({ data }) => this.graphs[id] && (this.graphs[id].history = data))
+    // all grades of the station: one line each
+    fetchHistory(st) {
+      Promise.all(st.watches.map((w) => axios.get(`/api/me/priceWatches/${w.id}/history`, { params: { days: this.days } })))
+        .then((res) => {
+          const g = this.graphs[st.key]
+          if (g) g.histories = Object.fromEntries(res.map(({ data }, i) => [st.watches[i].id, data]))
+        })
         .catch((ex) => this.toast(this.errorText(ex), false))
     },
     reloadGraphs() {
-      for (const id in this.graphs) this.fetchHistory(id)
+      for (const key in this.graphs) {
+        const st = this.stations.find((s) => s.key === key)
+        if (st) this.fetchHistory(st)
+        else this.$delete(this.graphs, key) // the station was deleted
+      }
+    },
+    // the chart's lines: one per watched grade
+    series(st) {
+      const h = this.graphs[st.key].histories
+      return st.watches.map((w) => ({ label: this.grades[w.grade] || w.grade, history: h[w.id], below: w.below })).filter((x) => x.history)
+    },
+    hasPrices(st) {
+      return this.series(st).some((x) => x.history.prices.length)
     },
     resetZoom(id) {
       const c = this.$refs['chart-' + id]
@@ -190,65 +228,86 @@ export default {
         >None yet: search below and press <strong>Watch</strong> on a station.</p
       >
       <div
-        v-for="(w, i) in watches"
-        :key="w.id"
+        v-for="(st, i) in stations"
+        :key="st.key"
         class="price-watch py-3"
         :style="i ? 'border-top: 1px solid rgba(128, 128, 128, 0.2)' : ''"
       >
         <div class="is-flex is-justify-content-space-between is-align-items-start" style="gap: 0.5rem">
           <div>
-            <strong>{{ w.name }}</strong> <b-tag v-if="w.alerted" type="is-success" size="is-small">at or below limit</b-tag><br />
-            <small>{{ w.address }}</small><br />
+            <strong>{{ st.name }}</strong><br />
+            <small>{{ st.address }}</small><br />
             <small class="has-text-grey"
-              >{{ settings && settings.labels[w.kind] }} · every {{ settings ? every(settings.intervals[w.kind]) : '' }}
-              <template v-if="w.checkedAt"> · checked {{ fmt(w.checkedAt) }}</template></small
+              >{{ settings && settings.labels[st.kind] }} · every {{ settings ? every(settings.intervals[st.kind]) : '' }}
+              <template v-if="st.checkedAt"> · checked {{ fmt(st.checkedAt) }}</template></small
             >
-            <p v-if="w.lastError" class="help is-danger watch-error">{{ w.lastError }}</p>
           </div>
-          <div class="has-text-right" style="white-space: nowrap">
+          <div class="is-flex" style="gap: 0.5rem">
+            <b-button size="is-small" :class="{ 'is-active': graphs[st.key] }" class="show-graph" @click="toggle(st)">Graph</b-button>
+            <b-button size="is-small" type="is-danger" outlined icon-left="trash" class="delete-station" title="Stop watching this station" @click="remove(st, st.watches)"></b-button>
+          </div>
+        </div>
+        <!-- each grade is its own watch: own limit, own alert (empty limit = only tracked, no message) -->
+        <form
+          v-for="w in st.watches"
+          :key="w.id"
+          class="watch-grade-row is-flex mt-2"
+          :data-grade="w.grade"
+          style="gap: 0.5rem; flex-wrap: wrap; align-items: flex-end"
+          @submit.prevent="save(w)"
+        >
+          <div style="min-width: 7.5rem">
+            <span class="has-text-weight-semibold">{{ grades[w.grade] || w.grade }}</span><br />
             <span class="is-size-5 has-text-weight-bold last-price" :class="{ 'has-text-success': w.alerted }"
               >{{ w.lastPrice ? w.lastPrice.toFixed(3) : '–' }}</span
             >
             <small> {{ me ? me.currency : '' }}</small>
           </div>
-        </div>
-        <form class="is-flex mt-2" style="gap: 0.5rem; flex-wrap: wrap; align-items: flex-end" @submit.prevent="save(w)">
-          <b-field label="Grade" custom-class="is-small mb-1" class="mb-0">
-            <b-select v-model="w.grade" size="is-small">
-              <option v-for="(label, g) in grades" :key="g" :value="g">{{ label }}</option>
-            </b-select>
-          </b-field>
           <b-field label="Alert at or below" custom-class="is-small mb-1" class="mb-0">
-            <b-input v-model="w.belowText" size="is-small" placeholder="e.g. 1.65" inputmode="decimal" class="below" style="width: 7rem"></b-input>
+            <b-input v-model="w.belowText" size="is-small" placeholder="empty = no alert" inputmode="decimal" class="below" style="width: 8.5rem"></b-input>
           </b-field>
           <b-button size="is-small" native-type="submit" type="is-primary" class="save-watch">Save</b-button>
-          <b-button size="is-small" :class="{ 'is-active': graphs[w.id] }" class="show-graph" @click="toggle(w)">Graph</b-button>
-          <b-button size="is-small" type="is-danger" outlined icon-left="trash" class="delete-watch" @click="remove(w)"></b-button>
+          <span :title="w.below ? 'Gotify message at or below the limit' : 'Only tracked, no message'" class="alert-state">{{ w.below ? '🔔' : '🔕' }}</span>
+          <b-tag v-if="w.alerted" type="is-success" size="is-small">at or below limit</b-tag>
+          <b-button
+            v-if="st.watches.length > 1"
+            size="is-small"
+            type="is-danger"
+            outlined
+            icon-left="trash"
+            class="delete-watch"
+            :title="'Stop watching ' + (grades[w.grade] || w.grade)"
+            @click="remove(st, [w])"
+          ></b-button>
+          <p v-if="w.lastError" class="help is-danger watch-error" style="flex-basis: 100%">{{ w.lastError }}</p>
         </form>
-        <div v-if="graphs[w.id] && graphs[w.id].history" class="mt-3 price-graph">
-          <p v-if="!graphs[w.id].history.prices.length" class="has-text-grey">No prices in this period yet.</p>
+        <div v-if="graphs[st.key] && graphs[st.key].histories" class="mt-3 price-graph">
+          <p v-if="!hasPrices(st)" class="has-text-grey">No prices in this period yet.</p>
           <template v-else>
             <div class="is-flex is-align-items-center mb-1" style="gap: 0.5rem; flex-wrap: wrap">
               <b-button
                 size="is-small"
-                :type="graphs[w.id].select ? 'is-primary' : ''"
+                :type="graphs[st.key].select ? 'is-primary' : ''"
                 class="select-period"
-                @click="graphs[w.id].select = !graphs[w.id].select"
+                @click="graphs[st.key].select = !graphs[st.key].select"
                 >Select period</b-button
               >
-              <b-button size="is-small" class="reset-zoom" @click="resetZoom(w.id)">Reset zoom</b-button>
+              <b-button size="is-small" class="reset-zoom" @click="resetZoom(st.key)">Reset zoom</b-button>
               <small class="has-text-grey">{{
-                graphs[w.id].select ? 'Drag over a period to zoom into it' : 'Wheel or pinch to zoom, drag to move'
+                graphs[st.key].select ? 'Drag over a period to zoom into it' : 'Wheel or pinch to zoom, drag to move · tap a grade to hide it'
               }}</small>
             </div>
-            <PriceChart
-              :ref="'chart-' + w.id"
-              :history="graphs[w.id].history"
-              :below="w.below"
-              :select="graphs[w.id].select"
-              style="height: 240px"
-            />
-            <PriceHoursChart :history="graphs[w.id].history" class="mt-3 price-hours" style="height: 160px" />
+            <PriceChart :ref="'chart-' + st.key" :series="series(st)" :select="graphs[st.key].select" style="height: 240px" />
+            <template v-for="x in series(st)">
+              <PriceHoursChart
+                v-if="x.history.prices.length"
+                :key="x.label"
+                :history="x.history"
+                :label="series(st).length > 1 ? x.label + ': average price by hour of day' : undefined"
+                class="mt-3 price-hours"
+                style="height: 160px"
+              />
+            </template>
             <p class="help">Cheapest hours in green: the average price per hour of the day in the shown period.</p>
           </template>
         </div>
@@ -259,12 +318,19 @@ export default {
       <h2 class="subtitle">Add stations</h2>
       <p v-if="!fuelVehicles.length" class="has-text-grey">Add a petrol or diesel vehicle first: its fuel grades pick the prices.</p>
       <template v-else>
-        <b-field v-if="fuelVehicles.length > 1" label="Grades of">
-          <b-select v-model="vehicleId" :placeholder="vehicle.nickname">
+        <b-field label="Grades of">
+          <b-select v-model="vehicleId" :placeholder="vehicle.nickname" class="grades-of">
             <option v-for="v in fuelVehicles" :key="v.id" :value="v.id">{{ v.nickname }}</option>
+            <option value="all">All grades</option>
           </b-select>
         </b-field>
-        <StationPicker :key="vehicle.id" :vehicle="vehicle" @watched="load" />
+        <StationPicker
+          :key="vehicle.id + allGrades"
+          :vehicle="vehicle"
+          :all-grades="allGrades"
+          :watched="watches"
+          @watched="load().then(reloadGraphs)"
+        />
       </template>
     </div>
 

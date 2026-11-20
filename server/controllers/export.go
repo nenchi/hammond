@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/akhilrex/hammond/common"
@@ -62,6 +63,11 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{})
 			return
+		}
+		if c.Query("grades") == "all" { // Price watch: any grade, not only the ones this vehicle takes
+			v := *vehicle
+			v.FuelGrade = strings.Join(service.Grades, ",")
+			vehicle = &v
 		}
 		res, err := service.NearbyStations(userID, vehicle, lat, lng, rad, c.Query("profile"))
 		if err != nil {

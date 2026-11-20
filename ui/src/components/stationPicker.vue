@@ -17,6 +17,8 @@ export default {
     vehicle: { type: Object, required: true },
     // a detected fill-up with lat/lng: list the stations near it right away
     detection: { type: Object, default: null },
+    allGrades: { type: Boolean, default: false }, // every grade, not only the vehicle's (Price watch)
+    watched: { type: Array, default: () => [] }, // the user's price watches: their grades get a ✓
   },
   data() {
     return { loading: false, error: '', result: null, heading: '', pos: null, profiles: [], loaded: false, placeText: '', places: [], showMap: false, rad: null, source: '' }
@@ -155,7 +157,7 @@ export default {
           this.exitFullscreen()
           this.pick(st)
         })
-      if (st.grade) button('★ Watch', 'popup-watch', () => this.watch(st))
+      if (st.grade) button('★ Watch', 'popup-watch', () => this.watch(st, st.grade))
       return div
     },
     // OpenStreetMap: tap a point to list its stations; the stations found are shown as price markers.
@@ -210,7 +212,7 @@ export default {
       this.error = ''
       this.pos = { lat, lng, heading }
       axios
-        .get(`/api/vehicles/${this.vehicle.id}/stations`, { params: { lat, lng, rad: this.radius, profile } })
+        .get(`/api/vehicles/${this.vehicle.id}/stations`, { params: { lat, lng, rad: this.radius, profile, grades: this.allGrades ? 'all' : undefined } })
         .then(({ data }) => {
           this.result = data
           this.heading = heading
@@ -259,8 +261,15 @@ export default {
       if (navigator.clipboard) navigator.clipboard.writeText(all).then(done, () => window.prompt('Copy:', all))
       else window.prompt('Copy:', all)
     },
-    // Price watch: this station with its preferred grade (the grade and a price limit are set there)
-    watch(st) {
+    // grades this station has a price for
+    stationGrades(st) {
+      return this.result.grades.filter((g) => st.prices[g] !== undefined)
+    },
+    isWatched(st, g) {
+      return this.watched.some((w) => w.profileId === this.result.profile && w.stationId === st.id && w.grade === g)
+    },
+    // Price watch: one grade of this station (several grades = several watches; the limit is set there)
+    watch(st, grade) {
       axios
         .post('/api/me/priceWatches', {
           profileId: this.result.profile,
@@ -269,8 +278,8 @@ export default {
           address: st.address,
           lat: st.lat,
           lng: st.lng,
-          grade: st.grade,
-          lastPrice: st.price,
+          grade,
+          lastPrice: st.prices[grade],
         })
         .then(({ data }) => {
           this.$emit('watched', data)
@@ -350,7 +359,7 @@ export default {
           <span class="ml-2 has-text-right prices">
             <template v-if="Object.keys(st.prices).length">
               <a
-                v-for="g in result.grades.filter((x) => st.prices[x] !== undefined)"
+                v-for="g in stationGrades(st)"
                 :key="g"
                 class="price is-block"
                 :class="{ 'has-text-weight-bold has-text-success cheapest': st.prices[g] === cheapest }"
@@ -366,7 +375,20 @@ export default {
         <div v-if="st.lat || st.lng" class="buttons mt-1 mb-0 station-actions" @click.stop>
           <b-button tag="a" :href="navUrl(st)" target="_blank" rel="noopener" icon-left="directions" class="navigate">Navigate</b-button>
           <b-button icon-left="share-alt" class="share" @click="share(st)">Share</b-button>
-          <b-button icon-left="star" class="watch" :disabled="!st.grade" @click="watch(st)">Watch</b-button>
+          <b-dropdown :disabled="!st.grade" class="watch-menu" position="is-top-left">
+            <template #trigger>
+              <b-button icon-left="star" class="watch" :disabled="!st.grade">Watch</b-button>
+            </template>
+            <b-dropdown-item
+              v-for="g in stationGrades(st)"
+              :key="g"
+              class="watch-grade"
+              :data-grade="g"
+              :disabled="isWatched(st, g)"
+              @click="watch(st, g)"
+              >{{ isWatched(st, g) ? '✓ ' : '' }}{{ label(g) }} · {{ st.prices[g].toFixed(3) }} {{ currency }}</b-dropdown-item
+            >
+          </b-dropdown>
         </div>
       </div>
       <p v-if="averageText" class="notification is-light py-2 px-3 mt-2 mb-2 country-average">{{ averageText }}</p>
