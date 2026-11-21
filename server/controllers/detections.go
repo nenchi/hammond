@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/akhilrex/hammond/common"
+	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
 	"github.com/akhilrex/hammond/service"
 	"github.com/gin-gonic/gin"
@@ -130,6 +131,22 @@ func RegisterApiV1(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, out)
 	})
+	// read-only, for the chat bot (homebot) and scripts
+	router.GET("/me", func(c *gin.Context) {
+		u, err := service.GetUserById(c.MustGet("userId").(string))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"name": u.Name, "currency": u.Currency, "distanceUnit": u.DistanceUnit,
+			"distanceUnitShort": db.DistanceUnitDetails[u.DistanceUnit].Short})
+	})
+	router.GET("/vehicles/:id/stats", ownVehicle, getVehicleStats)
+	router.GET("/vehicles/:id/fillups", ownVehicle, getFillupsByVehicleId)
+	router.GET("/vehicles/:id/expenses", ownVehicle, getExpensesByVehicleId)
+	router.GET("/vehicles/:id/mileage", ownVehicle, getMileageForVehicle)
+	router.GET("/me/priceWatches", listPriceWatches)
+	router.GET("/me/priceWatches/:id/history", priceWatchHistory) // only the caller's own watches
 	router.POST("/vehicles/:id/detections", func(c *gin.Context) {
 		userID, vehicleID := c.MustGet("userId").(string), c.Param("id")
 		if !service.UserCanAccessVehicle(userID, vehicleID) {
@@ -152,4 +169,11 @@ func RegisterApiV1(router *gin.RouterGroup) {
 			"path": "/detections",
 		})
 	})
+}
+
+// ownVehicle: 404 for a vehicle the API key's user can't access (the UI handlers it guards don't check)
+func ownVehicle(c *gin.Context) {
+	if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "vehicle not found"})
+	}
 }
