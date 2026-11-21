@@ -47,6 +47,7 @@ func main() {
 	controllers.RegisterSetupController(router)
 
 	router.Use(controllers.AuthMiddleware(true))
+	router.Use(controllers.AccessMiddleware()) // ID routes: only the caller's own data
 	controllers.RegisterUserController(router)
 	controllers.RegisterMastersController(router)
 	controllers.RegisterAuthController(router)

@@ -209,6 +209,27 @@ check("non-admin can't create users (upstream could)", s == 401 and s2 != 200, (
 s, _ = call("POST", "/api/settings", {"currency": "USD", "distanceUnit": 0}, token=ptok)
 check("non-admin can't change site settings", s == 401, s)
 
+# ---- UI API ID routes: only your own data (upstream hammond checked none) ----
+s, fl = call("GET", f"/api/vehicles/{vid}/fillups", token=tok)
+fid = fl[0]["id"]
+for path in ("", "/stats", "/fillups", "/expenses", f"/fillups/{fid}", "/attachments", "/users"):
+    s, _ = call("GET", f"/api/vehicles/{vid}{path}", token=ptok)
+    check(f"other user: GET vehicle{path or ' itself'} is 404", s == 404, s)
+s, _ = call("DELETE", f"/api/vehicles/{vid}/fillups/{fid}", token=ptok)
+check("other user can't delete the fill-up (404, still there)", s == 404
+      and call("GET", f"/api/vehicles/{vid}/fillups/{fid}", token=tok)[0] == 200, s)
+s, v2 = call("POST", "/api/vehicles", {"nickname": "Second", "registration": "LJ SMOKE2", "make": "Fiat", "model": "Panda",
+                                      "fuelUnit": 0, "fuelType": 1}, token=tok)
+v2 = v2["id"]
+s, _ = call("GET", f"/api/vehicles/{v2}/fillups/{fid}", token=tok)
+check("fill-up of another vehicle via your own vehicle's URL is 404", s == 404, s)
+s, f2 = call("POST", f"/api/vehicles/{v2}/fillups", {"vehicleId": vid, "fuelUnit": 0, "fuelQuantity": 10, "perUnitPrice": 1.5,
+             "totalAmount": 15, "odoReading": 100, "isTankFull": True, "userId": me["id"], "date": "2026-11-01T12:00:00Z"}, token=tok)
+check("a new fill-up goes to the vehicle of the URL, not the body's vehicleId", s == 201 and f2["vehicleId"] == v2, (s, f2))
+call("DELETE", f"/api/vehicles/{v2}", token=tok)
+s, _ = call("GET", "/api/quickEntries", token=ptok)
+check("non-admin can't list everyone's quick entries", s == 401, s)
+
 # ---- station prices (fake Tankerkönig on 127.0.0.1:3999 in CI) ----
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)
 # no profiles in Germany: the free sources (AT/SI/HR/FR/PT) are built in, Germany needs its key. With

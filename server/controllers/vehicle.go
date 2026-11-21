@@ -165,6 +165,7 @@ func createFillup(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 			return
 		}
+		request.VehicleID = searchByIdQuery.Id // the vehicle of the URL (checked by AccessMiddleware), not the body's
 		fillup, err := service.CreateFillup(request)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("createFillup", err))
@@ -185,6 +186,7 @@ func createExpense(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 			return
 		}
+		request.VehicleID = searchByIdQuery.Id
 		expense, err := service.CreateExpense(request)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("createExpense", err))
@@ -201,6 +203,7 @@ func updateExpense(c *gin.Context) {
 	var updateExpenseModel models.UpdateExpenseRequest
 	if err := c.ShouldBindUri(&searchByIdQuery); err == nil {
 		if err := c.ShouldBind(&updateExpenseModel); err == nil {
+			updateExpenseModel.VehicleID = searchByIdQuery.Id // can't move it to someone else's vehicle
 			err := service.UpdateExpense(searchByIdQuery.SubId, updateExpenseModel)
 			if err != nil {
 				c.JSON(http.StatusUnprocessableEntity, common.NewError("getExpenseById", err))
@@ -219,6 +222,7 @@ func updateFillup(c *gin.Context) {
 	var updateFillupModel models.UpdateFillupRequest
 	if err := c.ShouldBindUri(&searchByIdQuery); err == nil {
 		if err := c.ShouldBind(&updateFillupModel); err == nil {
+			updateFillupModel.VehicleID = searchByIdQuery.Id
 			err := service.UpdateFillup(searchByIdQuery.SubId, updateFillupModel)
 			if err != nil {
 				c.JSON(http.StatusUnprocessableEntity, common.NewError("getFillupById", err))
