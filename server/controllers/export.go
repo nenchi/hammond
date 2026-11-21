@@ -134,14 +134,7 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 		c.JSON(http.StatusOK, list)
 	})
 	// price watch: favourite stations, alerts to Gotify, check interval per price source
-	router.GET("/me/priceWatches", func(c *gin.Context) {
-		list, err := service.ListPriceWatches(c.MustGet("userId").(string))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, list)
-	})
+	router.GET("/me/priceWatches", listPriceWatches)
 	router.POST("/me/priceWatches", func(c *gin.Context) {
 		var req db.PriceWatch
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -178,18 +171,7 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gin.H{})
 	})
-	router.GET("/me/priceWatches/:id/history", func(c *gin.Context) {
-		days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
-		if days < 1 || days > 3660 {
-			days = 30
-		}
-		list, err := service.PriceWatchHistory(c.MustGet("userId").(string), c.Param("id"), time.Now().AddDate(0, 0, -days))
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, list)
-	})
+	router.GET("/me/priceWatches/:id/history", priceWatchHistory)
 	router.POST("/me/priceWatches/check", func(c *gin.Context) {
 		list, err := service.CheckPriceWatchesNow(c.MustGet("userId").(string))
 		if err != nil {
@@ -282,4 +264,27 @@ func RegisterHomeAssistantController(router *gin.RouterGroup) {
 		user, _ := service.GetUserById(userID)
 		c.JSON(http.StatusOK, user)
 	})
+}
+
+// also on /api/v1 (API key): the chat bot reads watched stations and their prices
+func listPriceWatches(c *gin.Context) {
+	list, err := service.ListPriceWatches(c.MustGet("userId").(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, list)
+}
+
+func priceWatchHistory(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
+	if days < 1 || days > 3660 {
+		days = 30
+	}
+	list, err := service.PriceWatchHistory(c.MustGet("userId").(string), c.Param("id"), time.Now().AddDate(0, 0, -days))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, list)
 }

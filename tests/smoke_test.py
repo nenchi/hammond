@@ -164,6 +164,24 @@ s, f = call("POST", f"/api/vehicles/{vid}/fillups", {
     "isTankFull": True, "userId": me["id"], "date": "2026-11-07T12:00:00Z", "detectionId": did}, token=tok)
 s2, pend = call("GET", "/api/detections", token=tok)
 check("completing a detection creates the fill-up and clears it", s == 201 and s2 == 200 and pend == [], (s, f, pend))
+# read-only v1 for the chat bot (homebot)
+s, mv = call("GET", "/api/v1/me", token=key)
+check("v1: me (currency, units, no email)", s == 200 and "currency" in mv and "distanceUnitShort" in mv and "email" not in mv, (s, mv))
+s, st = call("GET", f"/api/v1/vehicles/{vid}/stats", token=key)
+check("v1: vehicle stats", s == 200 and isinstance(st, list) and st and st[0]["countFillups"] >= 1, (s, st))
+s, fl = call("GET", f"/api/v1/vehicles/{vid}/fillups", token=key)
+check("v1: fill-ups", s == 200 and any(x["odoReading"] == 11200 for x in fl), (s, fl))
+s, ml = call("GET", f"/api/v1/vehicles/{vid}/mileage?since=2000-01-01T00:00:00Z", token=key)
+check("v1: mileage", s == 200 and isinstance(ml, list), (s, ml))
+s, ex = call("GET", f"/api/v1/vehicles/{vid}/expenses", token=key)
+check("v1: expenses", s == 200 and isinstance(ex, list), (s, ex))
+for path in ("stats", "fillups", "expenses", "mileage"):
+    s, _ = call("GET", f"/api/v1/vehicles/00000000-0000-0000-0000-000000000000/{path}", token=key)
+    check(f"v1: {path} of a foreign vehicle is 404", s == 404, s)
+s, pw = call("GET", "/api/v1/me/priceWatches", token=key)
+check("v1: price watches", s == 200 and isinstance(pw, list), (s, pw))
+s, _ = call("GET", "/api/v1/me/priceWatches/00000000-0000-0000-0000-000000000000/history", token=key)
+check("v1: history of a foreign watch is 404", s == 404, s)
 kid = keys[0]["id"]
 s, _ = call("DELETE", f"/api/me/apikeys/{kid}", token=tok)
 s2, _ = call("GET", "/api/v1/vehicles", token=key)
@@ -190,6 +208,27 @@ s2, _ = call("POST", "/api/login", {"email": "sneaky@example.com", "password": "
 check("non-admin can't create users (upstream could)", s == 401 and s2 != 200, (s, s2))
 s, _ = call("POST", "/api/settings", {"currency": "USD", "distanceUnit": 0}, token=ptok)
 check("non-admin can't change site settings", s == 401, s)
+
+# ---- UI API ID routes: only your own data (upstream hammond checked none) ----
+s, fl = call("GET", f"/api/vehicles/{vid}/fillups", token=tok)
+fid = fl[0]["id"]
+for path in ("", "/stats", "/fillups", "/expenses", f"/fillups/{fid}", "/attachments", "/users"):
+    s, _ = call("GET", f"/api/vehicles/{vid}{path}", token=ptok)
+    check(f"other user: GET vehicle{path or ' itself'} is 404", s == 404, s)
+s, _ = call("DELETE", f"/api/vehicles/{vid}/fillups/{fid}", token=ptok)
+check("other user can't delete the fill-up (404, still there)", s == 404
+      and call("GET", f"/api/vehicles/{vid}/fillups/{fid}", token=tok)[0] == 200, s)
+s, v2 = call("POST", "/api/vehicles", {"nickname": "Second", "registration": "LJ SMOKE2", "make": "Fiat", "model": "Panda",
+                                      "fuelUnit": 0, "fuelType": 1}, token=tok)
+v2 = v2["id"]
+s, _ = call("GET", f"/api/vehicles/{v2}/fillups/{fid}", token=tok)
+check("fill-up of another vehicle via your own vehicle's URL is 404", s == 404, s)
+s, f2 = call("POST", f"/api/vehicles/{v2}/fillups", {"vehicleId": vid, "fuelUnit": 0, "fuelQuantity": 10, "perUnitPrice": 1.5,
+             "totalAmount": 15, "odoReading": 100, "isTankFull": True, "userId": me["id"], "date": "2026-11-01T12:00:00Z"}, token=tok)
+check("a new fill-up goes to the vehicle of the URL, not the body's vehicleId", s == 201 and f2["vehicleId"] == v2, (s, f2))
+call("DELETE", f"/api/vehicles/{v2}", token=tok)
+s, _ = call("GET", "/api/quickEntries", token=ptok)
+check("non-admin can't list everyone's quick entries", s == 401, s)
 
 # ---- station prices (fake Tankerkönig on 127.0.0.1:3999 in CI) ----
 s, r = call("GET", f"/api/vehicles/{vid}/stations?lat=50.1&lng=8.76", token=tok)

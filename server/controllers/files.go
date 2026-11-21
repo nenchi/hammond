@@ -15,7 +15,7 @@ import (
 func RegisterFilesController(router *gin.RouterGroup) {
 	router.POST("/upload", uploadFile)
 	router.POST("/quickEntries", createQuickEntry)
-	router.GET("/quickEntries", getAllQuickEntries)
+	router.GET("/quickEntries", ShouldBeAdmin(), getAllQuickEntries) // everyone's entries; the UI uses /me/quickEntries
 	router.GET("/me/quickEntries", getMyQuickEntries)
 	router.GET("/quickEntries/:id", getQuickEntryById)
 	router.POST("/quickEntries/:id/process", setQuickEntryAsProcessed)
