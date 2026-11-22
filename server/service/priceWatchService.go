@@ -9,8 +9,10 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/akhilrex/hammond/db"
 )
@@ -103,11 +105,17 @@ func UpdatePriceWatchSettings(userID, gotifyURL, token string, intervals map[str
 }
 
 // SendGotify: one message to the user's Gotify (token in a header, not in the URL: no logs with it)
-func SendGotify(u *db.User, title, message string) error {
+// SendGotify: click = a link opened when the notification is tapped (Gotify's standard extras; homebot
+// shows it as Navigate/Map links), "" = none.
+func SendGotify(u *db.User, title, message, click string) error {
 	if u.GotifyURL == "" || u.GotifyToken == "" {
 		return errors.New("Gotify is not set up")
 	}
-	body, _ := json.Marshal(map[string]interface{}{"title": title, "message": message, "priority": 5})
+	m := map[string]interface{}{"title": title, "message": message, "priority": 5}
+	if click != "" {
+		m["extras"] = map[string]interface{}{"client::notification": map[string]interface{}{"click": map[string]string{"url": click}}}
+	}
+	body, _ := json.Marshal(m)
 	req, _ := http.NewRequest("POST", u.GotifyURL+"/message", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Gotify-Key", u.GotifyToken)
@@ -127,7 +135,7 @@ func TestGotify(userID string) error {
 	if u == nil {
 		return errors.New("user not found")
 	}
-	return SendGotify(u, "hammond", "Test: price alerts will arrive here.")
+	return SendGotify(u, "hammond", "Test: price alerts will arrive here.", "")
 }
 
 func ListPriceWatches(userID string) ([]db.PriceWatch, error) {
@@ -363,15 +371,19 @@ func checkWatches(u *db.User, watches []db.PriceWatch) {
 		}
 		db.DB.Select("last_price", "checked_at", "last_error", "failures", "alerted").Save(w)
 		if alert {
-			msg := fmt.Sprintf("%s %.3f %s (your limit %.3f)\n%s", gradeName(w.Grade), price, u.Currency, *w.Below, w.Address)
-			if err := SendGotify(u, "⛽ "+w.Name, msg); err != nil && u.GotifyURL != "" {
+			// short lines: a phone's chat bubble wraps at ~30 characters
+			msg := fmt.Sprintf("%.3f %s  (limit %.3f)", price, u.Currency, *w.Below)
+			if a := ShortAddress(w.Address); a != "" {
+				msg += "\n" + a
+			}
+			if err := SendGotify(u, "⛽ "+w.Name+" · "+gradeName(w.Grade), msg, MapsDirections(w.Lat, w.Lng)); err != nil && u.GotifyURL != "" {
 				log.Printf("price watch (%s): %s", u.Email, err)
 			}
 		}
 	}
 	if len(down) > 0 {
 		msg := fmt.Sprintf("Failed %d checks in a row (it keeps trying):\n%s", failAlertAfter, strings.Join(down, "\n"))
-		if err := SendGotify(u, "hammond: station prices not reachable", msg); err != nil && u.GotifyURL != "" {
+		if err := SendGotify(u, "hammond: station prices not reachable", msg, ""); err != nil && u.GotifyURL != "" {
 			log.Printf("price watch (%s): %s", u.Email, err)
 		}
 	}
@@ -382,6 +394,37 @@ func kindLabelOr(kind string) string {
 		return l
 	}
 	return kind
+}
+
+// MapsDirections: Google Maps directions to the station (on Android it opens the Maps app).
+func MapsDirections(lat, lng float64) string {
+	if lat == 0 && lng == 0 {
+		return ""
+	}
+	return fmt.Sprintf("https://www.google.com/maps/dir/?api=1&destination=%.6f,%.6f", lat, lng)
+}
+
+var postCode = regexp.MustCompile(`,\s*(?:[A-Z]{1,2}-)?\d{4,5}\s+`)
+
+// ShortAddress: "ODENWALDRING 84, 63069 OFFENBACH" → "Odenwaldring 84, Offenbach" (all-caps sources such as
+// Tankerkönig get normal capitals, the postcode goes: it makes the line too long for a phone).
+func ShortAddress(a string) string {
+	a = postCode.ReplaceAllString(strings.TrimSpace(a), ", ")
+	if strings.ToUpper(a) != a {
+		return a // already mixed case
+	}
+	words := strings.Fields(strings.ToLower(a))
+	for i, w := range words {
+		r := []rune(w)
+		for j, c := range r {
+			if unicode.IsLetter(c) {
+				r[j] = unicode.ToUpper(c)
+				break
+			}
+		}
+		words[i] = string(r)
+	}
+	return strings.Join(words, " ")
 }
 
 func gradeName(g string) string {

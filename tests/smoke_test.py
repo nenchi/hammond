@@ -330,6 +330,9 @@ call("POST", "/api/me/priceWatches/check", token=tok)
 msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())[sent_before:]
 alerts = [m for m in msgs if m["title"].startswith("⛽")]
 check("one Gotify alert, not one per check", len(alerts) == 1 and "1.739" in alerts[0]["message"] and "1.800" in alerts[0]["message"], msgs)
+click = (((alerts[0].get("extras") or {}).get("client::notification") or {}).get("click") or {}).get("url", "") if alerts else ""
+check("alert: short title with grade, map link on tap", alerts and alerts[0]["title"].endswith("· Super E10")
+      and click.startswith("https://www.google.com/maps/dir/?api=1&destination=50.103100,8.760100"), alerts)
 s, h = call("GET", f"/api/me/priceWatches/{w['id']}/history?days=7", token=tok)
 check("price history: one point (unchanged price isn't stored again)", s == 200 and [p["price"] for p in h["prices"]] == [1.739] and h["fillups"] == [], (s, h))
 s, w = call("PUT", f"/api/me/priceWatches/{w['id']}", {"grade": "e5", "below": None}, token=tok)
