@@ -99,6 +99,23 @@ Fields: `odoReading` (required), `fuelQuantity` *or* `levelBefore` + `levelAfter
 (`pending`, `duplicate`, `ignored`, `applied`), a ready-to-use notification `message` and the `path` to open.
 
 
+## Trip log (Home Assistant)
+
+Vehicle → **Trips**: every drive (engine on → off) is read from your Home Assistant history every 10 minutes
+(**Sync now** for at once; the first sync reads the last 10 days). Drives with a short stop between them
+(15 minutes by default, e.g. a fuel stop) are one trip; join or split them by hand.
+
+- **Setup** on the Trips page: the ignition entity (required), and optionally the fuel level and the trip computer's
+  distance and consumption since start. With a Mercedes (mbapi2020) **Suggest from odometer entity** fills them in.
+  Trip computers that keep counting across short stops are handled (each drive = end − start value).
+- **Fuel cost, first in, first out:** a trip burns the oldest fuel in the tank at the price it was bought for, then
+  the next fill-up's price. A full-tank fill-up resets the tank content.
+- Per trip: business/private, purpose, notes, and costs (toll, vignette, parking… saved as expenses of the trip).
+- **CSV** export and **Print / PDF** (the browser's "Save as PDF") for a period.
+- Admin → Site Settings: **lock** trip times and kilometres so only admins can change them; users still add purpose,
+  notes and costs.
+- API: `GET /api/v1/vehicles/{id}/trips?from=2026-11-01&to=2026-11-22` (and `trips.csv`) with an API key.
+
 <!-- PROJECT LOGO -->
 <br />
 <p align="center">

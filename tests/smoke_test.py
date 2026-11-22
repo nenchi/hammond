@@ -372,6 +372,47 @@ check("odometer entity must be an entity id", s == 422, s)
 call("PUT", f"/api/vehicles/{vid}", {**veh, "odometerEntity": "sensor.ci_odometer"}, token=tok)
 s, r = call("GET", f"/api/vehicles/{vid}/odometer", token=tok)
 check("odometer from HA", s == 200 and r["configured"] and r["value"] == 23456 and r["unit"] == "km", (s, r))
+
+# ---- trips: drives from HA history (fake: 2 drives 4 h ago, 5 min stop, 40 + 35 km, tank 50 l: 5 + 4 l) ----
+s, r = call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "sensor.ci_ignition", "fuelLevel": "sensor.ci_fuel"}, token=tok)
+check("trip entities saved", s == 200 and r["ignition"] == "sensor.ci_ignition", (s, r))
+s, r = call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "../api/config"}, token=tok)
+check("trip entity must be an entity id", s == 422, (s, r))
+call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "sensor.ci_ignition", "fuelLevel": "sensor.ci_fuel"}, token=tok)
+s, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
+check("trips: sync reads 2 drives from HA", s == 200 and r["added"] == 2, (s, r))
+s, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
+check("trips: a second sync adds nothing", s == 200 and r["added"] == 0, (s, r))
+s, trips = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
+t = trips[0] if s == 200 and trips else {}
+check("trips: the 5 min stop joins both drives into one trip", s == 200 and len(trips) == 1 and len(t["legs"]) == 2
+      and t["distance"] == 75 and t["startOdo"] == 1000 and t["endOdo"] == 1075 and abs(t["fuelUsed"] - 9) < 1e-6
+      and t["driveMinutes"] == 55, (s, trips))
+s, _ = call("GET", f"/api/vehicles/{vid}/trips", token=ptok)
+check("trips: another user's vehicle is 404", s == 404, s)
+s, _ = call("PUT", f"/api/trips/{t.get('id')}", {"business": True, "purpose": "Customer A, Frankfurt", "notes": "contract"}, token=tok)
+s2, _ = call("POST", f"/api/trips/{t.get('id')}/costs", {"amount": 12.5, "type": "Toll", "comment": "A3"}, token=tok)
+s3, _ = call("PUT", f"/api/trips/{t.get('id')}", {"purpose": "x"}, token=ptok)
+s, trips = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
+t = trips[0]
+check("trips: purpose, business, a toll as trip cost; others can't edit", s2 == 201 and s3 == 404 and t["business"]
+      and t["purpose"] == "Customer A, Frankfurt" and t["extraCost"] == 12.5 and t["costs"][0]["expenseType"] == "Toll", (s2, s3, t))
+s, r = call("POST", f"/api/legs/{t['legs'][1]['id']}/split", token=tok)
+s2, trips = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
+check("trips: split at the second drive = 2 trips", s == 200 and len(trips) == 2, (s, r, trips))
+s, r = call("POST", f"/api/trips/{trips[0]['id']}/join", token=tok)
+s2, trips = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
+check("trips: join again = 1 trip, purpose and cost kept", s == 200 and len(trips) == 1 and trips[0]["purpose"] == "Customer A, Frankfurt"
+      and trips[0]["extraCost"] == 12.5, (s, r, trips))
+s, csv_text = call("GET", f"/api/vehicles/{vid}/trips.csv", token=tok, raw=True)
+check("trips: CSV export", s == 200 and "Customer A" in str(csv_text) and "Toll 12.50 A3" in str(csv_text), (s, csv_text))
+s, r = call("POST", "/api/settings/trips", {"locked": True}, token=tok)
+s2, st = call("GET", "/api/settings", token=tok)
+s3, _ = call("POST", "/api/settings/trips", {"locked": False}, token=ptok)
+check("trips: admin locks times/km (users can't)", s == 200 and st.get("tripsLocked") is True and s3 == 401, (s, st, s3))
+call("POST", "/api/settings/trips", {"locked": False}, token=tok)
+call("PUT", f"/api/vehicles/{vid}/tripEntities", {}, token=tok)
+
 call("PUT", f"/api/vehicles/{vid}", veh, token=tok)
 call("POST", "/api/me/homeAssistant", {"url": "", "token": "-"}, token=tok)
 

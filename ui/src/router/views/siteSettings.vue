@@ -2,6 +2,7 @@
 import Layout from '@layouts/main.vue'
 import { mapState } from 'vuex'
 import store from '@state/store'
+import axios from 'axios'
 import PriceProfilesEditor from '@components/priceProfilesEditor.vue'
 
 export default {
@@ -26,6 +27,7 @@ export default {
         distanceUnit: this.settings.distanceUnit,
       },
       tryingToSave: false,
+      tripsLocked: !!this.settings.tripsLocked,
     }
   },
   computed: {
@@ -33,6 +35,15 @@ export default {
   },
 
   methods: {
+    saveTripsLocked() {
+      axios
+        .post('/api/settings/trips', { locked: this.tripsLocked })
+        .then(() => {
+          this.$buefy.toast.open({ message: 'Saved', type: 'is-success', duration: 3000 })
+          store.dispatch('utils/getSettings')
+        })
+        .catch((ex) => this.$buefy.toast.open({ message: ex.message, type: 'is-danger', duration: 5000 }))
+    },
     settingsSaved() {
       store.dispatch('utils/getSettings')
     },
@@ -97,6 +108,15 @@ export default {
       </b-field>
     </form>
     <br />
+    <div class="box">
+      <h2 class="subtitle">Trips</h2>
+      <b-field>
+        <b-switch v-model="tripsLocked" @input="saveTripsLocked"
+          >Lock trip times and kilometres: only admins can change, add or delete trips. Users can still add purpose, notes and
+          costs.</b-switch
+        >
+      </b-field>
+    </div>
     <PriceProfilesEditor :initial="settings.fuelPriceProfiles" save-url="/api/settings/fuelPrices" shareable @saved="settingsSaved"
       >Site profiles: shared ones can be used by every user (who can also add their own in Settings), the others only by
       admins.</PriceProfilesEditor
