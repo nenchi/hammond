@@ -336,6 +336,7 @@ export default {
       <div class="column is-one-third buttons has-text-centered">
         <b-button type="is-primary" tag="router-link" :to="`/vehicles/${vehicle.id}/fillup`">Add Fillup</b-button>
         <b-button type="is-primary" tag="router-link" :to="`/vehicles/${vehicle.id}/expense`">Add Expense</b-button>
+        <b-button tag="router-link" :to="`/vehicles/${vehicle.id}/trips`" icon-left="route">Trips</b-button>
         <b-button
           v-if="vehicle.isOwner"
           tag="router-link"

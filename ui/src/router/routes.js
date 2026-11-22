@@ -224,6 +224,14 @@ export default [
     props: (route) => ({ vehicle: route.meta.tmp.vehicle }),
   },
   {
+    path: '/vehicles/:vehicleId/trips',
+    name: 'vehicle-trips',
+    component: () => lazyLoadView(import('@views/trips.vue')),
+    meta: {
+      authRequired: true,
+    },
+  },
+  {
     path: '/vehicles/:vehicleId/edit',
     name: 'vehicle-edit',
     component: () => lazyLoadView(import('@views/createVehicle.vue')),

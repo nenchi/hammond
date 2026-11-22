@@ -492,7 +492,8 @@ func SetTripEntities(vehicleID string, e db.TripEntities) error {
 			return fmt.Errorf("%q is not an entity id", id)
 		}
 	}
-	return db.DB.Model(&db.Vehicle{}).Where("id = ?", vehicleID).Update("trip_entities", e).Error
+	// through the struct: Update("trip_entities", e) would skip the JSON serializer
+	return db.DB.Model(&db.Vehicle{Base: db.Base{ID: vehicleID}}).Select("TripEntities").Updates(&db.Vehicle{TripEntities: e}).Error
 }
 
 // TripVehicle: the vehicle of a trip ("" when there's no such trip)

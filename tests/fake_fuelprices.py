@@ -3,6 +3,7 @@ any position; key "ci-key" required, like the real API needs one. Also a fake Ho
 /api/states/sensor.ci_odometer (token "ci-ha-token"), a fake EVCC /api/sessions and a fake Gotify
 POST /message (key "ci-gotify"; GET /messages lists what it got)."""
 import json, sys
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -56,6 +57,18 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if u.path.startswith("/api/history/period/"):  # HA history: two drives 4 h ago with a 5 min stop
+            if self.headers.get("Authorization") != "Bearer ci-ha-token":
+                return self.reply(401, {})
+            now = datetime.now(timezone.utc)
+            at = lambda m: (now - timedelta(minutes=m)).isoformat()
+            series = {"sensor.ci_ignition": [(300, "0"), (240, "4"), (210, "0"), (205, "4"), (180, "0")],
+                      "sensor.ci_odometer": [(300, "1000"), (209, "1040"), (179, "1075")],
+                      "sensor.ci_fuel": [(300, "60"), (209, "50"), (179, "42")]}
+            ids = q.get("filter_entity_id", [""])[0].split(",")
+            return self.reply(200, [[{"entity_id": e, "state": st, "last_changed": at(m)} if i == 0 else
+                                     {"state": st, "last_changed": at(m)} for i, (m, st) in enumerate(series[e])]
+                                    for e in ids if e in series])
         if u.path.startswith("/api/states/"):
             ok = self.headers.get("Authorization") == "Bearer ci-ha-token"
             known = u.path == "/api/states/sensor.ci_odometer"

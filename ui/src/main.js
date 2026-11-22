@@ -31,6 +31,10 @@ import {
   faMap,
   faPlus,
   faArrowDown,
+  faRoute,
+  faFileCsv,
+  faPrint,
+  faCog,
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
@@ -72,7 +76,11 @@ library.add(
   faSync,
   faMap,
   faPlus,
-  faArrowDown
+  faArrowDown,
+  faRoute,
+  faFileCsv,
+  faPrint,
+  faCog
 )
 Vue.use(Buefy, {
   defaultIconComponent: 'vue-fontawesome',

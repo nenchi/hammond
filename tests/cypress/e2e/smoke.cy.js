@@ -550,6 +550,28 @@ describe('hammond UI', () => {
       body.forEach((w) => cy.request({ method: 'DELETE', url: `/api/me/priceWatches/${w.id}`, headers: apiHeaders })))
   })
 
+  it('trips: a trip entered by hand shows per day; purpose and a toll can be added; fits a phone', () => {
+    const start = new Date(Date.now() - 3 * 3600e3)
+    cy.request({ method: 'POST', url: `/api/vehicles/${vehicleId}/trips`, headers: apiHeaders,
+      body: { start: start.toISOString(), end: new Date(start.getTime() + 45 * 60e3).toISOString(),
+              startOdo: 5000, endOdo: 5042, purpose: '', business: true } })
+    cy.viewport(390, 844)
+    visit(`/vehicles/${vehicleId}/trips`)
+    cy.get('.trips-page .trip', { timeout: 10000 }).should('have.length', 1).and('contain', '42.0').and('contain', '45 min')
+    cy.intercept('PUT', '/api/trips/*').as('saveTrip')
+    cy.get('.trips-page .trip input[placeholder^="Purpose"]').type('Customer A')
+    cy.get('.trips-page .trip').contains('button', 'Save').click()
+    cy.wait('@saveTrip').its('response.statusCode').should('eq', 200)
+    cy.intercept('POST', '/api/trips/*/costs').as('addCost')
+    cy.get('.trips-page .trip').contains('button', 'Add cost').click()
+    cy.get('.trips-page .trip input[type=number]').type('9.90')
+    cy.get('.trips-page .trip').contains('button', /^\s*Add\s*$/).click()
+    cy.wait('@addCost').its('response.statusCode').should('eq', 201)
+    cy.get('.trips-page .trip').should('contain', 'Toll').and('contain', '9.90')
+    cy.document().then((doc) => expect(doc.documentElement.scrollWidth).to.be.at.most(390))
+    noConsoleErrors()
+  })
+
   it('logs out, and a wrong password is refused', () => {
     // log out through the menu like a user: opening /logout directly redirects twice (/logout → / → /login),
     // and typing into the first login page raced the second (flaky in CI)
