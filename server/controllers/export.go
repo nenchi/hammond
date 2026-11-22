@@ -190,30 +190,19 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 	})
 	router.POST("/me/priceWatchSettings", func(c *gin.Context) {
 		var req struct {
-			GotifyURL   string         `json:"gotifyUrl"`
-			GotifyToken string         `json:"gotifyToken"`
-			Intervals   map[string]int `json:"intervals"`
-			NtfyURL     *string        `json:"ntfyUrl"`
-			NtfyToken   *string        `json:"ntfyToken"`
+			Intervals map[string]int `json:"intervals"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 			return
 		}
 		userID := c.MustGet("userId").(string)
-		if err := service.UpdatePriceWatchSettings(userID, req.GotifyURL, req.GotifyToken, req.Intervals, req.NtfyURL, req.NtfyToken); err != nil {
+		if err := service.UpdatePriceWatchSettings(userID, req.Intervals); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}
 		s, _ := service.GetPriceWatchSettings(userID)
 		c.JSON(http.StatusOK, s)
-	})
-	router.POST("/me/priceWatchSettings/test", func(c *gin.Context) {
-		if err := service.TestGotify(c.MustGet("userId").(string)); err != nil {
-			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 	// what the fill-up form asks, in order: own, then shared
 	router.GET("/fuelPrices/available", func(c *gin.Context) {

@@ -50,12 +50,10 @@ type User struct {
 	MqttUser     string `json:"mqttUser"`
 	MqttPassword string `json:"-"`
 	MqttPrefix   string `json:"mqttPrefix"` // HA discovery prefix, "" = homeassistant
-	// price watch alerts go to the user's Gotify (token write-only)
+	// before v2.1: price alerts to Gotify; moved once into a NotifyChannel (MoveGotifyToChannels), then empty
 	GotifyURL   string `json:"gotifyUrl"`
 	GotifyToken string `json:"-"`
-	// and/or to ntfy: the topic URL (https://ntfy.sh/my-topic) and an optional access token (write-only)
-	NtfyURL   string `json:"ntfyUrl"`
-	NtfyToken string `json:"-"`
+
 	// drives with a stop up to this many minutes between them are one trip (a fuel stop doesn't split it)
 	TripMergeMinutes int `gorm:"default:15" json:"tripMergeMinutes"`
 	// minutes between price watch checks per price source kind ("tankerkoenig": 60); missing = default
@@ -433,4 +431,21 @@ type Trip struct {
 	Business  bool   `json:"business"`
 	Purpose   string `json:"purpose"`
 	Notes     string `json:"notes"`
+}
+
+// NotifyChannel: where a user's alerts go (Settings → Notifications); several per user, each on/off
+type NotifyChannel struct {
+	Base
+	UserID  string `gorm:"index" json:"-"`
+	Kind    string `json:"kind"` // gotify, ntfy, matrix, telegram
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	// gotify: server URL; ntfy: topic URL (https://ntfy.sh/my-topic); matrix: homeserver URL
+	URL string `json:"url"`
+	// gotify: app token; ntfy: access token (optional); matrix: access token; telegram: bot token. Write-only.
+	Secret string `json:"-"`
+	Room   string `json:"room"`  // matrix: room ID (!abc:server) or alias (#fuel:server)
+	ChatID int64  `json:"-"`     // telegram: the chat linked with /start <code>
+	// telegram: also answer the fuel commands (prices, graph, trips…) in the linked chat
+	Commands bool `json:"commands"`
 }

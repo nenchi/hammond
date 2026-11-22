@@ -6,7 +6,7 @@ POST /message (key "ci-gotify"; GET /messages lists what it got), and a fake MQT
 import json, sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 STATIONS = [
     {"id": "aral", "name": "ARAL Tankstelle", "brand": "ARAL", "street": "Frankfurter Str.", "houseNumber": "12",
@@ -105,9 +105,20 @@ class H(BaseHTTPRequestHandler):
         MESSAGES.append(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)))))
         self.reply(200, {"id": len(MESSAGES)})
 
+    def do_PUT(self):  # Matrix: send a message (access token "ci-matrix")
+        p = urlparse(self.path).path
+        if not p.startswith("/_matrix/client/v3/rooms/") or self.headers.get("Authorization") != "Bearer ci-matrix":
+            return self.reply(401, {"errcode": "M_UNKNOWN_TOKEN"})
+        m = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        MESSAGES.append({**m, "via": "matrix", "room": unquote(p.split("/")[5])})
+        self.reply(200, {"event_id": "$x"})
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path.startswith("/_matrix/client/v3/directory/room/"):  # Matrix: room alias → ID
+            alias = unquote(u.path.rsplit("/", 1)[1])
+            return self.reply(200, {"room_id": "!" + alias[1:]}) if alias == "#fuel:ci" else self.reply(404, {})
         if u.path == "/messages":
             return self.reply(200, MESSAGES)
         if u.path == "/mqtt":  # what the fake MQTT broker (port + 1) received

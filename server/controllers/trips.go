@@ -187,6 +187,52 @@ func RegisterTripController(router *gin.RouterGroup) {
 			c.JSON(http.StatusOK, r)
 		}
 	})
+	// notification channels (Settings → Notifications): Gotify, ntfy, Matrix, Telegram
+	router.GET("/me/notifications", func(c *gin.Context) {
+		list, err := service.ListChannels(c.MustGet("userId").(string))
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, list)
+		}
+	})
+	router.POST("/me/notifications", func(c *gin.Context) {
+		var in service.ChannelInput
+		if err := c.ShouldBindJSON(&in); fail(c, err) {
+			return
+		}
+		ch, err := service.CreateChannel(c.MustGet("userId").(string), in)
+		if !fail(c, err) {
+			c.JSON(http.StatusCreated, ch)
+		}
+	})
+	router.PUT("/me/notifications/:cid", func(c *gin.Context) {
+		var in service.ChannelInput
+		if err := c.ShouldBindJSON(&in); fail(c, err) {
+			return
+		}
+		ch, err := service.UpdateChannel(c.MustGet("userId").(string), c.Param("cid"), in)
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, ch)
+		}
+	})
+	router.DELETE("/me/notifications/:cid", func(c *gin.Context) {
+		if err := service.DeleteChannel(c.MustGet("userId").(string), c.Param("cid")); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{})
+	})
+	router.POST("/me/notifications/:cid/test", func(c *gin.Context) {
+		if err := service.TestChannel(c.MustGet("userId").(string), c.Param("cid")); err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+	router.POST("/me/notifications/:cid/unlink", func(c *gin.Context) {
+		if !fail(c, service.UnlinkChannel(c.MustGet("userId").(string), c.Param("cid"))) {
+			c.JSON(http.StatusOK, gin.H{})
+		}
+	})
 	router.POST("/settings/trips", ShouldBeAdmin(), func(c *gin.Context) {
 		var req struct {
 			Locked bool `json:"locked"`

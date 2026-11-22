@@ -1,14 +1,11 @@
 package service
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math"
-	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -19,7 +16,7 @@ import (
 
 // Price watch: favourite stations (one grade each) checked in the background, every N minutes per price
 // source kind (prices change hourly in Germany, every two weeks for Slovenia's regulated grades). Each
-// price change is stored; at or below the user's limit one Gotify message is sent, and the next only
+// price change is stored; at or below the user's limit one alert is sent (notification channels), the next only
 // after the price went above the limit again.
 
 // default minutes between checks per kind; users can change them (MinWatchMinutes–MaxWatchMinutes)
@@ -44,13 +41,11 @@ func WatchMinutes(u *db.User, kind string) int {
 }
 
 type PriceWatchSettings struct {
-	GotifyURL      string            `json:"gotifyUrl"`
-	GotifyTokenSet bool              `json:"gotifyTokenSet"`
-	NtfyURL        string            `json:"ntfyUrl"`
-	NtfyTokenSet   bool              `json:"ntfyTokenSet"`
-	Intervals      map[string]int    `json:"intervals"` // every kind, with defaults filled in
-	Defaults       map[string]int    `json:"defaults"`
-	Labels         map[string]string `json:"labels"`
+	Intervals map[string]int    `json:"intervals"` // every kind, with defaults filled in
+	Defaults  map[string]int    `json:"defaults"`
+	Labels    map[string]string `json:"labels"`
+	// alerts go to the notification channels (Settings → Notifications): how many are on
+	Channels int `json:"channels"`
 }
 
 func GetPriceWatchSettings(userID string) (*PriceWatchSettings, error) {
@@ -66,20 +61,13 @@ func GetPriceWatchSettings(userID string) (*PriceWatchSettings, error) {
 			labels[k] = l
 		}
 	}
-	return &PriceWatchSettings{GotifyURL: u.GotifyURL, GotifyTokenSet: u.GotifyToken != "", NtfyURL: u.NtfyURL, NtfyTokenSet: u.NtfyToken != "", Intervals: iv,
-		Defaults: DefaultWatchMinutes, Labels: labels}, nil
+	var n int64
+	db.DB.Model(&db.NotifyChannel{}).Where("user_id = ? AND enabled = ?", userID, true).Count(&n)
+	return &PriceWatchSettings{Intervals: iv, Defaults: DefaultWatchMinutes, Labels: labels, Channels: int(n)}, nil
 }
 
-// UpdatePriceWatchSettings: token "" keeps the stored one, "-" removes it; intervals outside the limits
-// are refused, missing kinds keep their default
-// ntfyURL/ntfyToken: nil keeps the stored value (older clients don't send them); token "-" removes it
-func UpdatePriceWatchSettings(userID, gotifyURL, token string, intervals map[string]int, ntfyURL, ntfyToken *string) error {
-	gotifyURL = strings.TrimRight(strings.TrimSpace(gotifyURL), "/")
-	if gotifyURL != "" {
-		if u, err := url.Parse(gotifyURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(gotifyURL) > 300 {
-			return errors.New("invalid Gotify URL")
-		}
-	}
+// UpdatePriceWatchSettings: intervals outside the limits are refused, missing kinds keep their default
+func UpdatePriceWatchSettings(userID string, intervals map[string]int) error {
 	iv := map[string]int{}
 	for k, m := range intervals {
 		if _, ok := DefaultWatchMinutes[k]; !ok {
@@ -93,132 +81,7 @@ func UpdatePriceWatchSettings(userID, gotifyURL, token string, intervals map[str
 		}
 	}
 	b, _ := json.Marshal(iv)
-	upd := map[string]interface{}{"gotify_url": gotifyURL, "price_watch_intervals": string(b)}
-	if ntfyURL != nil {
-		n := strings.TrimRight(strings.TrimSpace(*ntfyURL), "/")
-		if n != "" {
-			if u, err := url.Parse(n); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(n) > 300 ||
-				strings.Trim(u.Path, "/") == "" {
-				return errors.New("ntfy: the topic URL, e.g. https://ntfy.sh/my-hammond-alerts")
-			}
-		}
-		upd["ntfy_url"] = n
-	}
-	if ntfyToken != nil {
-		switch t := strings.TrimSpace(*ntfyToken); t {
-		case "":
-		case "-":
-			upd["ntfy_token"] = ""
-		default:
-			if len(t) > 200 {
-				return errors.New("ntfy token too long")
-			}
-			upd["ntfy_token"] = t
-		}
-	}
-	switch token = strings.TrimSpace(token); token {
-	case "":
-	case "-":
-		upd["gotify_token"] = ""
-	default:
-		if len(token) > 200 {
-			return errors.New("Gotify token too long")
-		}
-		upd["gotify_token"] = token
-	}
-	return db.DB.Model(&db.User{}).Where("id = ?", userID).Updates(upd).Error
-}
-
-// SendGotify: one message to the user's Gotify (token in a header, not in the URL: no logs with it)
-// SendGotify: click = a link opened when the notification is tapped (Gotify's standard extras; homebot
-// shows it as Navigate/Map links), "" = none.
-func SendGotify(u *db.User, title, message, click string) error {
-	if u.GotifyURL == "" || u.GotifyToken == "" {
-		return errors.New("Gotify is not set up")
-	}
-	m := map[string]interface{}{"title": title, "message": message, "priority": 5}
-	if click != "" {
-		m["extras"] = map[string]interface{}{"client::notification": map[string]interface{}{"click": map[string]string{"url": click}}}
-	}
-	body, _ := json.Marshal(m)
-	req, _ := http.NewRequest("POST", u.GotifyURL+"/message", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Gotify-Key", u.GotifyToken)
-	resp, err := priceClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("Gotify not reachable: %s", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Gotify answered HTTP %d (wrong token?)", resp.StatusCode)
-	}
-	return nil
-}
-
-// SendNtfy: one message to the user's ntfy topic. JSON to the server root (not headers: titles with
-// "⛽" or "č" aren't valid in HTTP headers)
-func SendNtfy(u *db.User, title, message, click string) error {
-	if u.NtfyURL == "" {
-		return errors.New("ntfy is not set up")
-	}
-	p, err := url.Parse(u.NtfyURL)
-	if err != nil {
-		return err
-	}
-	path := strings.Trim(p.Path, "/")
-	i := strings.LastIndex(path, "/")
-	topic, root := path[i+1:], p.Scheme+"://"+p.Host+"/"+path[:i+1] // a server under a sub-path keeps it
-	m := map[string]interface{}{"topic": topic, "title": title, "message": message, "tags": []string{"fuelpump"}}
-	if click != "" {
-		m["click"] = click
-	}
-	body, _ := json.Marshal(m)
-	req, _ := http.NewRequest("POST", root, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	if u.NtfyToken != "" {
-		req.Header.Set("Authorization", "Bearer "+u.NtfyToken)
-	}
-	resp, err := priceClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("ntfy not reachable: %s", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ntfy answered HTTP %d (topic or token?)", resp.StatusCode)
-	}
-	return nil
-}
-
-func alertsOn(u *db.User) bool { return (u.GotifyURL != "" && u.GotifyToken != "") || u.NtfyURL != "" }
-
-// SendAlert: to every channel the user set up (Gotify, ntfy); an error names the ones that failed
-func SendAlert(u *db.User, title, message, click string) error {
-	if !alertsOn(u) {
-		return errors.New("no alert channel set up (Gotify or ntfy)")
-	}
-	var errs []string
-	if u.GotifyURL != "" && u.GotifyToken != "" {
-		if err := SendGotify(u, title, message, click); err != nil {
-			errs = append(errs, err.Error())
-		}
-	}
-	if u.NtfyURL != "" {
-		if err := SendNtfy(u, title, message, click); err != nil {
-			errs = append(errs, err.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return errors.New(strings.Join(errs, "; "))
-	}
-	return nil
-}
-
-func TestGotify(userID string) error {
-	u := getUser(userID)
-	if u == nil {
-		return errors.New("user not found")
-	}
-	return SendAlert(u, "hammond", "Test: price alerts will arrive here.", "")
+	return db.DB.Model(&db.User{}).Where("id = ?", userID).Update("price_watch_intervals", string(b)).Error
 }
 
 func ListPriceWatches(userID string) ([]db.PriceWatch, error) {
