@@ -48,6 +48,8 @@ type User struct {
 	// price watch alerts go to the user's Gotify (token write-only)
 	GotifyURL   string `json:"gotifyUrl"`
 	GotifyToken string `json:"-"`
+	// drives with a stop up to this many minutes between them are one trip (a fuel stop doesn't split it)
+	TripMergeMinutes int `gorm:"default:15" json:"tripMergeMinutes"`
 	// minutes between price watch checks per price source kind ("tankerkoenig": 60); missing = default
 	PriceWatchIntervals map[string]int `gorm:"serializer:json" json:"priceWatchIntervals"`
 }
@@ -107,6 +109,8 @@ type Vehicle struct {
 	FuelGrade string `json:"fuelGrade"`
 	// Home Assistant entity with the car's odometer (sensor.xyz_odometer): pre-fills new fill-ups
 	OdometerEntity string `json:"odometerEntity"`
+	// Home Assistant entities for the trip log (Trips); empty Ignition = no trips from HA
+	TripEntities TripEntities `gorm:"serializer:json" json:"tripEntities"`
 	// vehicle name in EVCC (its title): EVCC sessions of that vehicle are imported for this one
 	EvccVehicle string `json:"evccVehicle"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
@@ -195,6 +199,8 @@ type Expense struct {
 	Currency     string       `json:"currency"`
 	DistanceUnit DistanceUnit `json:"distanceUnit"`
 	Source       string       `json:"source"`
+	// a cost of a trip (toll, parking, vignette…): shown with the trip and in the trip export
+	TripID string `gorm:"index" json:"tripId"`
 }
 
 type Setting struct {
@@ -212,6 +218,8 @@ type Setting struct {
 	// Home Assistant of v1.6 (site-wide): moved once to the first admin (MoveSiteConnectionsToAdmin)
 	HAURL   string `json:"-"`
 	HAToken string `json:"-"`
+	// trip log: only admins may change a trip's times and kilometres (users: purpose, notes, costs)
+	TripsLocked bool `json:"tripsLocked"`
 }
 
 // PriceProfile: one station price source, tried in list order (the first with stations nearby wins).
@@ -379,4 +387,38 @@ type TariffRule struct {
 	From   string  `json:"from"`
 	To     string  `json:"to"`
 	Price  float64 `json:"price"`
+}
+
+// TripEntities: the car's sensors in Home Assistant. Ignition (required) is driving when "on", "4" or "5"
+// (Mercedes: 4 = on, 5 = engine running); the others are optional and make the log more exact.
+type TripEntities struct {
+	Ignition    string `json:"ignition"`
+	FuelLevel   string `json:"fuelLevel"`   // % of the tank: fuel used when the car has no trip computer
+	Distance    string `json:"distance"`    // trip computer: km since start (0.1 km instead of the whole-km odometer)
+	Consumption string `json:"consumption"` // trip computer: l/100 km since start
+}
+
+// TripLeg: one drive, ignition on → off (from Home Assistant history, or entered by hand)
+type TripLeg struct {
+	Base
+	VehicleID string    `gorm:"index" json:"vehicleId"`
+	TripID    string    `gorm:"index" json:"tripId"`
+	Start     time.Time `gorm:"column:started_at;index" json:"start"` // not "start"/"end": reserved words in SQL
+	End       time.Time `gorm:"column:ended_at" json:"end"`
+	StartOdo  float64   `json:"startOdo"`
+	EndOdo    float64   `json:"endOdo"`
+	Distance  float64   `json:"distance"`  // trip computer when known, else EndOdo − StartOdo
+	FuelStart *float64  `json:"fuelStart"` // tank %
+	FuelEnd   *float64  `json:"fuelEnd"`
+	FuelUsed  *float64  `json:"fuelUsed"` // litres (or kWh); nil = unknown
+	Source    string    `json:"source"`   // "ha" or "manual"
+}
+
+// Trip: drives with short stops between them; purpose and notes for a business log
+type Trip struct {
+	Base
+	VehicleID string `gorm:"index" json:"vehicleId"`
+	Business  bool   `json:"business"`
+	Purpose   string `json:"purpose"`
+	Notes     string `json:"notes"`
 }

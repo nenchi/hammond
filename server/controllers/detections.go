@@ -145,6 +145,8 @@ func RegisterApiV1(router *gin.RouterGroup) {
 	router.GET("/vehicles/:id/fillups", ownVehicle, getFillupsByVehicleId)
 	router.GET("/vehicles/:id/expenses", ownVehicle, getExpensesByVehicleId)
 	router.GET("/vehicles/:id/mileage", ownVehicle, getMileageForVehicle)
+	router.GET("/vehicles/:id/trips", ownVehicle, listTrips) // ?from=2026-11-01&to=2026-11-22
+	router.GET("/vehicles/:id/trips.csv", ownVehicle, tripsCSV)
 	router.GET("/me/priceWatches", listPriceWatches)
 	router.GET("/me/priceWatches/:id/history", priceWatchHistory) // only the caller's own watches
 	router.POST("/vehicles/:id/detections", func(c *gin.Context) {
