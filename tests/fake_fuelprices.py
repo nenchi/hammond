@@ -1,7 +1,8 @@
 """Fake Tankerkönig list.php for CI (python3 tests/fake_fuelprices.py [port]): fixed stations around
 any position; key "ci-key" required, like the real API needs one. Also a fake Home Assistant
 /api/states/sensor.ci_odometer (token "ci-ha-token"), a fake EVCC /api/sessions and a fake Gotify
-POST /message (key "ci-gotify"; GET /messages lists what it got)."""
+POST /message (key "ci-gotify"; GET /messages lists what it got), and a fake MQTT broker on port + 1
+(user "ci-mqtt"; GET /mqtt lists the last payload per topic)."""
 import json, sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -15,6 +16,70 @@ STATIONS = [
 ]
 
 MESSAGES = []
+MQTT = {}  # topic -> last payload (retained like a broker), GET /mqtt lists them
+
+
+def mqtt_broker(port):
+    """Minimal MQTT 3.1.1 broker for CI: CONNECT/CONNACK, PUBLISH (QoS 0/1 + PUBACK), PINGREQ; keeps the last
+    payload per topic. Enough for hammond's publisher, nothing else."""
+    import socket, threading
+
+    def read(c, n):
+        b = b""
+        while len(b) < n:
+            chunk = c.recv(n - len(b))
+            if not chunk:
+                raise EOFError
+            b += chunk
+        return b
+
+    def client(c):
+        try:
+            while True:
+                head = read(c, 1)[0]
+                length, mult = 0, 1
+                while True:
+                    d = read(c, 1)[0]
+                    length += (d & 127) * mult
+                    mult *= 128
+                    if d < 128:
+                        break
+                body = read(c, length) if length else b""
+                kind = head >> 4
+                if kind == 1:  # CONNECT
+                    user = b""
+                    # protocol name ("MQTT", or "MQIsdp" when a client retries with 3.1), level, flags, keepalive
+                    nl = int.from_bytes(body[:2], "big")
+                    flags, p = body[2 + nl + 1], 2 + nl + 4
+                    if flags & 0x80:  # username: after client id (+ will topic/message)
+                        i = p + 2 + int.from_bytes(body[p:p + 2], "big")
+                        if flags & 0x04:
+                            for _ in range(2):
+                                i += 2 + int.from_bytes(body[i:i + 2], "big")
+                        user = body[i + 2:i + 2 + int.from_bytes(body[i:i + 2], "big")]
+                    c.sendall(bytes([0x20, 2, 0, 0 if user in (b"", b"ci-mqtt") else 5]))
+                elif kind == 3:  # PUBLISH
+                    tl = int.from_bytes(body[:2], "big")
+                    topic, rest = body[2:2 + tl].decode(), body[2 + tl:]
+                    if (head >> 1) & 3:
+                        pid, rest = rest[:2], rest[2:]
+                        c.sendall(bytes([0x40, 2]) + pid)
+                    MQTT[topic] = rest.decode()
+                elif kind == 12:  # PINGREQ
+                    c.sendall(bytes([0xD0, 0]))
+                elif kind == 14:  # DISCONNECT
+                    break
+        except (EOFError, OSError):
+            pass
+        c.close()
+
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", port))
+    srv.listen()
+    while True:
+        conn, _ = srv.accept()
+        threading.Thread(target=client, args=(conn,), daemon=True).start()
 
 
 class H(BaseHTTPRequestHandler):
@@ -27,6 +92,12 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
+        if urlparse(self.path).path == "/ntfy/":  # ntfy JSON publish (server under /ntfy, token "ci-ntfy")
+            if self.headers.get("Authorization") != "Bearer ci-ntfy":
+                return self.reply(403, {})
+            m = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            MESSAGES.append({**m, "via": "ntfy"})
+            return self.reply(200, {"id": "x"})
         if urlparse(self.path).path != "/message":
             return self.reply(404, {})
         if self.headers.get("X-Gotify-Key") != "ci-gotify":
@@ -39,6 +110,8 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path == "/messages":
             return self.reply(200, MESSAGES)
+        if u.path == "/mqtt":  # what the fake MQTT broker (port + 1) received
+            return self.reply(200, MQTT)
         if u.path == "/api/sessions":  # EVCC: one finished session of "CI EV" (no odometer)
             data = json.dumps([{"id": 7, "created": "2026-11-10T23:00:00Z", "finished": "2026-11-11T01:00:00Z",
                                 "vehicle": "CI EV", "odometer": 0, "chargedEnergy": 12, "socEnd": 80, "pricePerKWh": 0.3}]).encode()
@@ -96,4 +169,7 @@ class H(BaseHTTPRequestHandler):
         pass
 
 
-HTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 3999), H).serve_forever()
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3999
+import threading
+threading.Thread(target=mqtt_broker, args=(PORT + 1,), daemon=True).start()
+HTTPServer(("127.0.0.1", PORT), H).serve_forever()

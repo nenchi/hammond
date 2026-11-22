@@ -3,6 +3,7 @@ module github.com/akhilrex/hammond
 go 1.27
 
 require (
+	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gin-contrib/location/v2 v2.0.5
 	github.com/gin-contrib/static v1.1.10
 	github.com/gin-gonic/gin v1.12.0
@@ -32,6 +33,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/goccy/go-json v0.12.0 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -50,6 +52,7 @@ require (
 	github.com/ugorji/go/codec v1.3.2 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.10.0 // indirect
 	golang.org/x/arch v0.32.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect

@@ -145,6 +145,12 @@ func RegisterApiV1(router *gin.RouterGroup) {
 	router.GET("/vehicles/:id/fillups", ownVehicle, getFillupsByVehicleId)
 	router.GET("/vehicles/:id/expenses", ownVehicle, getExpensesByVehicleId)
 	router.GET("/vehicles/:id/mileage", ownVehicle, getMileageForVehicle)
+	router.GET("/summary", func(c *gin.Context) { // dashboards: per vehicle and watched station (also sent over MQTT)
+		s, err := service.GetSummary(c.MustGet("userId").(string))
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, s)
+		}
+	})
 	router.GET("/vehicles/:id/trips", ownVehicle, listTrips) // ?from=2026-11-01&to=2026-11-22
 	router.GET("/vehicles/:id/trips.csv", ownVehicle, tripsCSV)
 	router.GET("/me/priceWatches", listPriceWatches)

@@ -182,6 +182,9 @@ s, pw = call("GET", "/api/v1/me/priceWatches", token=key)
 check("v1: price watches", s == 200 and isinstance(pw, list), (s, pw))
 s, _ = call("GET", "/api/v1/me/priceWatches/00000000-0000-0000-0000-000000000000/history", token=key)
 check("v1: history of a foreign watch is 404", s == 404, s)
+s, sm = call("GET", "/api/v1/summary", token=key)
+check("v1: summary per vehicle and watch", s == 200 and [v["id"] for v in sm["vehicles"]] == [vid] and "monthFuel" in sm["vehicles"][0]
+      and "tripsToday" in sm["vehicles"][0] and isinstance(sm["watches"], list), (s, sm))
 kid = keys[0]["id"]
 s, _ = call("DELETE", f"/api/me/apikeys/{kid}", token=tok)
 s2, _ = call("GET", "/api/v1/vehicles", token=key)
@@ -344,7 +347,18 @@ check("others can't delete my watch", s == 404, s)
 s, _ = call("DELETE", f"/api/me/priceWatches/{w['id']}", token=tok)
 s2, ws = call("GET", "/api/me/priceWatches", token=tok)
 check("watch deleted", s == 200 and ws == [], (s, ws))
-call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "gotifyToken": "-", "intervals": {}}, token=tok)
+# ntfy instead of Gotify (JSON publish: titles with ⛽ aren't valid in headers)
+s, _ = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "gotifyToken": "-", "ntfyUrl": "http://127.0.0.1:3999", "intervals": {}}, token=tok)
+check("ntfy: the topic URL needs a topic", s == 422, s)
+s, st = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "gotifyToken": "-", "ntfyUrl": "http://127.0.0.1:3999/ntfy/hammond-ci",
+                                                   "ntfyToken": "ci-ntfy", "intervals": {}}, token=tok)
+s2, r = call("POST", "/api/me/priceWatchSettings/test", token=tok)
+msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())
+check("ntfy: test message to the topic, token kept secret", s == 200 and st["ntfyTokenSet"] and "ci-ntfy" not in json.dumps(st) and r["ok"]
+      and msgs[-1].get("via") == "ntfy" and msgs[-1]["topic"] == "hammond-ci" and msgs[-1]["title"] == "hammond", (s, st, r, msgs[-1:]))
+s, st = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "intervals": {}}, token=tok)
+check("ntfy: an older client without ntfy fields keeps it", s == 200 and st["ntfyUrl"].endswith("/ntfy/hammond-ci") and st["ntfyTokenSet"], st)
+call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "gotifyToken": "-", "ntfyUrl": "", "ntfyToken": "-", "intervals": {}}, token=tok)
 s, _ = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10,hbuzg"}, token=tok)
 check("unknown fuel grade refused", s == 422, s)
@@ -416,6 +430,28 @@ s3, _ = call("POST", "/api/settings/trips", {"locked": False}, token=ptok)
 check("trips: admin locks times/km (users can't)", s == 200 and st.get("tripsLocked") is True and s3 == 401, (s, st, s3))
 call("POST", "/api/settings/trips", {"locked": False}, token=tok)
 call("PUT", f"/api/vehicles/{vid}/tripEntities", {}, token=tok)
+
+# ---- MQTT → Home Assistant discovery (fake broker on 127.0.0.1:4000, user "ci-mqtt") ----
+fake_mqtt = lambda: json.loads(urllib.request.urlopen("http://127.0.0.1:3999/mqtt", timeout=5).read())
+s, _ = call("POST", "/api/me/mqtt", {"url": "http://127.0.0.1:4000"}, token=tok)
+check("mqtt: only broker URLs", s == 422, s)
+s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "wrong", "password": "ci-pw"}, token=tok)
+s2, r = call("POST", "/api/me/mqtt/publish", token=tok)
+check("mqtt: a refused login is a clear error", s == 200 and s2 == 422 and "MQTT broker" in str(r), (s, s2, r))
+s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "ci-mqtt", "password": ""}, token=tok)
+check("mqtt: settings saved, password kept and never shown", s == 200 and u["mqttUser"] == "ci-mqtt" and u["mqttPasswordSet"] is True
+      and "ci-pw" not in json.dumps(u), (s, u))
+s, r = call("POST", "/api/me/mqtt/publish", token=tok)
+m = fake_mqtt()
+base = "hammond/" + me["id"][:8]
+cfg = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/odometer/config", "{}"))
+state = json.loads(m.get(f"{base}/vehicle/{vid}", "{}"))
+check("mqtt: HA discovery + state for the vehicle", s == 200 and r["vehicles"] == 1 and cfg.get("unique_id") == f"hammond_{vid}_odometer"
+      and cfg.get("device", {}).get("name") == "hammond Smoke" and cfg.get("state_topic") == f"{base}/vehicle/{vid}"
+      and cfg.get("unit_of_measurement") == "km" and m.get(f"{base}/status") == "online" and state.get("odometer", 0) > 0
+      and "month_total" in state and f"homeassistant/sensor/hammond_{vid}/month_total/config" in m, (s, r, cfg, state, sorted(m)[:5]))
+s, _ = call("POST", "/api/me/mqtt", {"url": ""}, token=tok)
+check("mqtt: turned off = HA shows it offline", s == 200 and fake_mqtt().get(f"{base}/status") == "offline", fake_mqtt().get(f"{base}/status"))
 
 call("PUT", f"/api/vehicles/{vid}", veh, token=tok)
 call("POST", "/api/me/homeAssistant", {"url": "", "token": "-"}, token=tok)

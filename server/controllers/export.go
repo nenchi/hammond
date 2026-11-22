@@ -193,13 +193,15 @@ func RegisterFuelPriceController(router *gin.RouterGroup) {
 			GotifyURL   string         `json:"gotifyUrl"`
 			GotifyToken string         `json:"gotifyToken"`
 			Intervals   map[string]int `json:"intervals"`
+			NtfyURL     *string        `json:"ntfyUrl"`
+			NtfyToken   *string        `json:"ntfyToken"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 			return
 		}
 		userID := c.MustGet("userId").(string)
-		if err := service.UpdatePriceWatchSettings(userID, req.GotifyURL, req.GotifyToken, req.Intervals); err != nil {
+		if err := service.UpdatePriceWatchSettings(userID, req.GotifyURL, req.GotifyToken, req.Intervals, req.NtfyURL, req.NtfyToken); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 			return
 		}

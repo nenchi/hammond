@@ -116,6 +116,25 @@ Vehicle → **Trips**: every drive (engine on → off) is read from your Home As
   notes and costs.
 - API: `GET /api/v1/vehicles/{id}/trips?from=2026-11-01&to=2026-11-22` (and `trips.csv`) with an API key.
 
+## Home Assistant dashboard (MQTT)
+
+Settings → **MQTT**: your broker (`mqtt://192.168.1.10:1883`, user, password). hammond announces its sensors with
+Home Assistant's MQTT discovery, so HA creates the devices by itself, no YAML:
+
+- **hammond <vehicle>**: odometer, last fill-up (date, litres, price, cost), fuel / other / total costs this month,
+  fill-ups this month, consumption (90 days), trips today and this month (distance, business distance, driving time, cost)
+- **hammond <station> <grade>** per watched station: price, price limit, below limit (binary sensor), last check
+
+Values are sent after every change (fill-up, expense, trip, price) and every 5 minutes; turning MQTT off shows the
+devices as unavailable. Build your own cards from the sensors (history graphs, statistics, automations such as
+"E10 below 1.70 → notify"). The same numbers as JSON: `GET /api/v1/summary` with an API key.
+
+## Price alerts: Gotify and ntfy
+
+Price watch → **Alerts**: a [Gotify](https://gotify.net) app token and/or an [ntfy](https://ntfy.sh) topic URL
+(`https://ntfy.sh/my-hammond-alerts`, optional access token for protected topics). An alert goes to every channel set
+up; tapping it opens Google Maps navigation to the station.
+
 <!-- PROJECT LOGO -->
 <br />
 <p align="center">
@@ -202,11 +221,12 @@ Added in this fork:
 - **Station prices** near you or near a detection: Germany, Austria, Slovenia, Croatia, France, Portugal, Italy, Spain
   (free sources need no key), own price profiles per user
 - **Price watch:** favourite stations and grades, price history, cheapest hours, limits with a
-  [Gotify](https://gotify.net) alert that opens Google Maps navigation
+  [Gotify](https://gotify.net) or [ntfy](https://ntfy.sh) alert that opens Google Maps navigation
+- **Home Assistant dashboard over MQTT:** devices per vehicle and watched station created by MQTT discovery
 - **EV charging:** charging places with tariffs (fixed, time-based, Home Assistant price sensors), EVCC sessions as
   fill-ups
 - **API keys** for `/api/v1`: detections (write) and read-only data for scripts and chat bots (vehicles, fill-ups,
-  expenses, mileage, price watches, trips)
+  expenses, mileage, price watches, trips, summary)
 
 ## Installation
 

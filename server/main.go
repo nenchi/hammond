@@ -68,6 +68,7 @@ func main() {
 	go service.EvccTimer()
 	go service.PriceWatchTimer()
 	go service.TripTimer()
+	go service.MqttTimer()
 
 	r.Run(":3000") // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 

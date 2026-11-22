@@ -45,9 +45,17 @@ type User struct {
 	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
 	EvccPlaceID     string     `json:"evccPlaceId"`
 	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
+	// own MQTT broker: dashboard values to Home Assistant (discovery); the password is write-only
+	MqttURL      string `json:"mqttUrl"`
+	MqttUser     string `json:"mqttUser"`
+	MqttPassword string `json:"-"`
+	MqttPrefix   string `json:"mqttPrefix"` // HA discovery prefix, "" = homeassistant
 	// price watch alerts go to the user's Gotify (token write-only)
 	GotifyURL   string `json:"gotifyUrl"`
 	GotifyToken string `json:"-"`
+	// and/or to ntfy: the topic URL (https://ntfy.sh/my-topic) and an optional access token (write-only)
+	NtfyURL   string `json:"ntfyUrl"`
+	NtfyToken string `json:"-"`
 	// drives with a stop up to this many minutes between them are one trip (a fuel stop doesn't split it)
 	TripMergeMinutes int `gorm:"default:15" json:"tripMergeMinutes"`
 	// minutes between price watch checks per price source kind ("tankerkoenig": 60); missing = default
@@ -61,10 +69,12 @@ func (b *User) MarshalJSON() ([]byte, error) {
 		DistanceUnitDetail EnumDetail `json:"distanceUnitDetail"`
 		HATokenSet         bool       `json:"haTokenSet"`
 		GotifyTokenSet     bool       `json:"gotifyTokenSet"`
+		MqttPasswordSet    bool       `json:"mqttPasswordSet"`
 	}{
 		User:               *b,
 		HATokenSet:         b.HAToken != "",
 		GotifyTokenSet:     b.GotifyToken != "",
+		MqttPasswordSet:    b.MqttPassword != "",
 		RoleDetail:         b.RoleDetail(),
 		DistanceUnitDetail: b.DistanceUnitDetail(),
 	})

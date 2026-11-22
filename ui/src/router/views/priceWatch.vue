@@ -23,6 +23,7 @@ export default {
       graphs: {}, // station key → { histories: { watch id: history }, select } while its graph is shown
       settings: null,
       gotify: { url: '', token: '' },
+      ntfy: { url: '', token: '' },
       hours: {}, // kind → hours between checks (form)
       gotifyTest: null,
       grades: GRADE_LABELS,
@@ -95,6 +96,7 @@ export default {
     applySettings(data) {
       this.settings = data
       this.gotify = { url: data.gotifyUrl || '', token: '' }
+      this.ntfy = { url: data.ntfyUrl || '', token: '' }
       const h = {}
       for (const k in data.intervals) h[k] = +(data.intervals[k] / 60).toFixed(2)
       this.hours = h
@@ -139,7 +141,13 @@ export default {
       const intervals = {}
       for (const k in this.hours) intervals[k] = Math.round(this.hours[k] * 60)
       axios
-        .post('/api/me/priceWatchSettings', { gotifyUrl: this.gotify.url, gotifyToken: this.gotify.token, intervals })
+        .post('/api/me/priceWatchSettings', {
+          gotifyUrl: this.gotify.url,
+          gotifyToken: this.gotify.token,
+          ntfyUrl: this.ntfy.url,
+          ntfyToken: this.ntfy.token,
+          intervals,
+        })
         .then(({ data }) => {
           this.applySettings(data)
           this.toast('Saved')
@@ -201,7 +209,7 @@ export default {
   <Layout>
     <h1 class="title">Price watch</h1>
     <p class="mb-4"
-      >Favourite stations: the price is checked in the background, every change is kept for the graph, and you get a Gotify
+      >Favourite stations: the price is checked in the background, every change is kept for the graph, and you get a Gotify or ntfy
       message when it drops to your limit (once, again after it went above).</p
     >
 
@@ -263,7 +271,7 @@ export default {
             <b-input v-model="w.belowText" size="is-small" placeholder="empty = no alert" inputmode="decimal" class="below" style="width: 8.5rem"></b-input>
           </b-field>
           <b-button size="is-small" native-type="submit" type="is-primary" class="save-watch">Save</b-button>
-          <span :title="w.below ? 'Gotify message at or below the limit' : 'Only tracked, no message'" class="alert-state">{{ w.below ? '🔔' : '🔕' }}</span>
+          <span :title="w.below ? 'Alert (Gotify / ntfy) at or below the limit' : 'Only tracked, no message'" class="alert-state">{{ w.below ? '🔔' : '🔕' }}</span>
           <b-tag v-if="w.alerted" type="is-success" size="is-small">at or below limit</b-tag>
           <b-button
             v-if="st.watches.length > 1"
@@ -324,7 +332,7 @@ export default {
     </div>
 
     <form v-if="settings" class="box price-watch-settings" @submit.prevent="saveSettings">
-      <h2 class="subtitle">Alerts &amp; check intervals</h2>
+      <h2 class="subtitle">Alerts (Gotify, ntfy) &amp; check intervals</h2>
       <b-field label="Gotify URL" message="e.g. https://gotify.example.com">
         <b-input v-model="gotify.url" type="url" class="gotify-url"></b-input>
       </b-field>
@@ -334,13 +342,19 @@ export default {
       >
         <b-input v-model="gotify.token" type="password" password-reveal class="gotify-token" autocomplete="off"></b-input>
       </b-field>
+      <b-field label="ntfy topic URL" message="and/or ntfy: e.g. https://ntfy.sh/my-hammond-alerts (a hard-to-guess topic on ntfy.sh)">
+        <b-input v-model="ntfy.url" type="url" class="ntfy-url"></b-input>
+      </b-field>
+      <b-field label="ntfy access token" :message="settings.ntfyTokenSet ? 'A token is saved; leave empty to keep it, - removes it' : 'Only for protected topics (tk_…)'">
+        <b-input v-model="ntfy.token" type="password" password-reveal class="ntfy-token" autocomplete="off"></b-input>
+      </b-field>
       <div class="buttons">
         <b-button native-type="submit" type="is-primary" class="save-settings">Save</b-button>
-        <b-button :disabled="!settings.gotifyTokenSet" class="test-gotify" @click="testGotify">Send test message</b-button>
+        <b-button :disabled="!settings.gotifyTokenSet && !settings.ntfyUrl" class="test-gotify" @click="testGotify">Send test message</b-button>
         <b-button v-if="settings.gotifyTokenSet" type="is-danger" outlined @click="removeToken">Remove token</b-button>
       </div>
       <p v-if="gotifyTest" class="help gotify-test" :class="gotifyTest.ok ? 'is-success' : 'is-danger'">{{
-        gotifyTest.ok ? 'Sent: check Gotify.' : gotifyTest.error
+        gotifyTest.ok ? 'Sent: check Gotify / ntfy.' : gotifyTest.error
       }}</p>
       <hr />
       <p class="mb-3"

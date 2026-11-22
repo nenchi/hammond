@@ -164,6 +164,29 @@ func RegisterTripController(router *gin.RouterGroup) {
 			c.JSON(http.StatusOK, gin.H{})
 		}
 	})
+	// MQTT → Home Assistant (Settings → Connections)
+	router.POST("/me/mqtt", func(c *gin.Context) {
+		var req struct {
+			URL      string `json:"url"`
+			User     string `json:"user"`
+			Password string `json:"password"`
+			Prefix   string `json:"prefix"`
+		}
+		userID := c.MustGet("userId").(string)
+		if err := c.ShouldBindJSON(&req); fail(c, err) || fail(c, service.UpdateMqttSettings(userID, req.URL, req.User, req.Password, req.Prefix)) {
+			return
+		}
+		u, err := service.GetUserById(userID)
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, u)
+		}
+	})
+	router.POST("/me/mqtt/publish", func(c *gin.Context) {
+		r, err := service.PublishMqtt(c.MustGet("userId").(string))
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, r)
+		}
+	})
 	router.POST("/settings/trips", ShouldBeAdmin(), func(c *gin.Context) {
 		var req struct {
 			Locked bool `json:"locked"`
