@@ -6,12 +6,13 @@ import axios from 'axios'
 import { parseAndFormatDateTime } from '@utils/format-date'
 import PriceProfilesEditor from '@components/priceProfilesEditor.vue'
 import ConnectionsSettings from '@components/connectionsSettings.vue'
+import NotificationSettings from '@components/notificationSettings.vue'
 
 export default {
   page: {
     title: 'Settings',
   },
-  components: { Layout, PriceProfilesEditor, ConnectionsSettings },
+  components: { Layout, PriceProfilesEditor, ConnectionsSettings, NotificationSettings },
   props: {
     user: {
       type: Object,
@@ -312,6 +313,7 @@ export default {
         <PriceProfilesEditor :initial="myProfiles" save-url="/api/me/fuelPrices" title="My fuel price profiles" class="my-price-profiles"
           >Yours are asked first, then the ones the admin shares.</PriceProfilesEditor
         >
+        <NotificationSettings />
         <ConnectionsSettings :me="me" />
         <div class="box api-keys">
           <h1 class="subtitle">API keys</h1>

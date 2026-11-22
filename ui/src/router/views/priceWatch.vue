@@ -22,9 +22,7 @@ export default {
       days: 30,
       graphs: {}, // station key → { histories: { watch id: history }, select } while its graph is shown
       settings: null,
-      gotify: { url: '', token: '' },
       hours: {}, // kind → hours between checks (form)
-      gotifyTest: null,
       grades: GRADE_LABELS,
     }
   },
@@ -94,7 +92,6 @@ export default {
     },
     applySettings(data) {
       this.settings = data
-      this.gotify = { url: data.gotifyUrl || '', token: '' }
       const h = {}
       for (const k in data.intervals) h[k] = +(data.intervals[k] / 60).toFixed(2)
       this.hours = h
@@ -139,23 +136,12 @@ export default {
       const intervals = {}
       for (const k in this.hours) intervals[k] = Math.round(this.hours[k] * 60)
       axios
-        .post('/api/me/priceWatchSettings', { gotifyUrl: this.gotify.url, gotifyToken: this.gotify.token, intervals })
+        .post('/api/me/priceWatchSettings', { intervals })
         .then(({ data }) => {
           this.applySettings(data)
           this.toast('Saved')
         })
         .catch((ex) => this.toast(this.errorText(ex), false))
-    },
-    removeToken() {
-      this.gotify.token = '-'
-      this.saveSettings()
-    },
-    testGotify() {
-      this.gotifyTest = null
-      axios
-        .post('/api/me/priceWatchSettings/test')
-        .then(({ data }) => (this.gotifyTest = data))
-        .catch((ex) => (this.gotifyTest = { ok: false, error: this.errorText(ex) }))
     },
     every(minutes) {
       return minutes >= 1440 && minutes % 1440 === 0 ? `${minutes / 1440} d` : minutes >= 60 ? `${+(minutes / 60).toFixed(2)} h` : `${minutes} min`
@@ -201,8 +187,8 @@ export default {
   <Layout>
     <h1 class="title">Price watch</h1>
     <p class="mb-4"
-      >Favourite stations: the price is checked in the background, every change is kept for the graph, and you get a Gotify
-      message when it drops to your limit (once, again after it went above).</p
+      >Favourite stations: the price is checked in the background, every change is kept for the graph, and you get an
+      alert when it drops to your limit (once, again after it went above).</p
     >
 
     <div class="box">
@@ -263,7 +249,7 @@ export default {
             <b-input v-model="w.belowText" size="is-small" placeholder="empty = no alert" inputmode="decimal" class="below" style="width: 8.5rem"></b-input>
           </b-field>
           <b-button size="is-small" native-type="submit" type="is-primary" class="save-watch">Save</b-button>
-          <span :title="w.below ? 'Gotify message at or below the limit' : 'Only tracked, no message'" class="alert-state">{{ w.below ? '🔔' : '🔕' }}</span>
+          <span :title="w.below ? 'Alert at or below the limit (Settings → Notifications)' : 'Only tracked, no message'" class="alert-state">{{ w.below ? '🔔' : '🔕' }}</span>
           <b-tag v-if="w.alerted" type="is-success" size="is-small">at or below limit</b-tag>
           <b-button
             v-if="st.watches.length > 1"
@@ -325,23 +311,11 @@ export default {
 
     <form v-if="settings" class="box price-watch-settings" @submit.prevent="saveSettings">
       <h2 class="subtitle">Alerts &amp; check intervals</h2>
-      <b-field label="Gotify URL" message="e.g. https://gotify.example.com">
-        <b-input v-model="gotify.url" type="url" class="gotify-url"></b-input>
-      </b-field>
-      <b-field
-        label="Gotify app token"
-        :message="settings.gotifyTokenSet ? 'A token is saved; leave empty to keep it' : 'Gotify → Apps → create an app → its token'"
+      <p class="alert-channels"
+        >Alerts go to your notification channels (Gotify, ntfy, Matrix, Telegram):
+        <strong>{{ settings.channels ? settings.channels + ' on' : 'none set up yet' }}</strong> ·
+        <router-link to="/settings">Settings → Notifications</router-link></p
       >
-        <b-input v-model="gotify.token" type="password" password-reveal class="gotify-token" autocomplete="off"></b-input>
-      </b-field>
-      <div class="buttons">
-        <b-button native-type="submit" type="is-primary" class="save-settings">Save</b-button>
-        <b-button :disabled="!settings.gotifyTokenSet" class="test-gotify" @click="testGotify">Send test message</b-button>
-        <b-button v-if="settings.gotifyTokenSet" type="is-danger" outlined @click="removeToken">Remove token</b-button>
-      </div>
-      <p v-if="gotifyTest" class="help gotify-test" :class="gotifyTest.ok ? 'is-success' : 'is-danger'">{{
-        gotifyTest.ok ? 'Sent: check Gotify.' : gotifyTest.error
-      }}</p>
       <hr />
       <p class="mb-3"
         >Hours between checks, per price source (0.25 h to 7 days = 168 h). Germany and Austria change prices many times a day;

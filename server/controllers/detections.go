@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/akhilrex/hammond/chat"
 	"github.com/akhilrex/hammond/common"
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
@@ -101,6 +102,11 @@ func RegisterDetectionController(router *gin.RouterGroup) {
 // API keys work only here, never on the UI API.
 func ApiKeyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if id := chat.UserFromContext(c.Request.Context()); id != "" { // in-process call of the chat commands
+			c.Set("userId", id)
+			c.Next()
+			return
+		}
 		key := c.GetHeader("X-Api-Key")
 		if key == "" {
 			key, _ = stripBearerPrefixFromTokenString(strings.TrimSpace(c.GetHeader("Authorization")))
@@ -145,6 +151,21 @@ func RegisterApiV1(router *gin.RouterGroup) {
 	router.GET("/vehicles/:id/fillups", ownVehicle, getFillupsByVehicleId)
 	router.GET("/vehicles/:id/expenses", ownVehicle, getExpensesByVehicleId)
 	router.GET("/vehicles/:id/mileage", ownVehicle, getMileageForVehicle)
+	// a chat command as text (+ picture/file, base64): homebot on Matrix, scripts
+	router.POST("/command", func(c *gin.Context) {
+		var req struct {
+			Text string `json:"text" binding:"required,max=500"`
+		}
+		if err := c.ShouldBindJSON(&req); !fail(c, err) {
+			c.JSON(http.StatusOK, chat.Command(c.MustGet("userId").(string), req.Text))
+		}
+	})
+	router.GET("/summary", func(c *gin.Context) { // dashboards: per vehicle and watched station (also sent over MQTT)
+		s, err := service.GetSummary(c.MustGet("userId").(string))
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, s)
+		}
+	})
 	router.GET("/vehicles/:id/trips", ownVehicle, listTrips) // ?from=2026-11-01&to=2026-11-22
 	router.GET("/vehicles/:id/trips.csv", ownVehicle, tripsCSV)
 	router.GET("/me/priceWatches", listPriceWatches)

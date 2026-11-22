@@ -182,6 +182,9 @@ s, pw = call("GET", "/api/v1/me/priceWatches", token=key)
 check("v1: price watches", s == 200 and isinstance(pw, list), (s, pw))
 s, _ = call("GET", "/api/v1/me/priceWatches/00000000-0000-0000-0000-000000000000/history", token=key)
 check("v1: history of a foreign watch is 404", s == 404, s)
+s, sm = call("GET", "/api/v1/summary", token=key)
+check("v1: summary per vehicle and watch", s == 200 and [v["id"] for v in sm["vehicles"]] == [vid] and "monthFuel" in sm["vehicles"][0]
+      and "tripsToday" in sm["vehicles"][0] and isinstance(sm["watches"], list), (s, sm))
 kid = keys[0]["id"]
 s, _ = call("DELETE", f"/api/me/apikeys/{kid}", token=tok)
 s2, _ = call("GET", "/api/v1/vehicles", token=key)
@@ -310,17 +313,23 @@ s, ws = call("GET", "/api/me/priceWatches", token=ptok)
 check("others don't see my watches", s == 200 and ws == [], (s, ws))
 s, _ = call("PUT", f"/api/me/priceWatches/{w['id']}", {"grade": "e10", "below": 9}, token=ptok)
 check("others can't change my watch", s == 422, s)
-s, st = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "http://127.0.0.1:3999/", "gotifyToken": "ci-gotify",
-             "intervals": {"custom": 30, "goriva": 2880}}, token=tok)
-check("Gotify + intervals saved; token not echoed", s == 200 and st["gotifyTokenSet"] and st["gotifyUrl"] == "http://127.0.0.1:3999"
-      and st["intervals"]["custom"] == 30 and st["intervals"]["goriva"] == 2880 and st["intervals"]["tankerkoenig"] == 60
-      and "ci-gotify" not in json.dumps(st), (s, st))
-s, _ = call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "http://127.0.0.1:3999", "intervals": {"custom": 5}}, token=tok)
+s, st = call("POST", "/api/me/priceWatchSettings", {"intervals": {"custom": 30, "goriva": 2880}}, token=tok)
+check("intervals saved", s == 200 and st["intervals"]["custom"] == 30 and st["intervals"]["goriva"] == 2880
+      and st["intervals"]["tankerkoenig"] == 60 and st["channels"] == 0, (s, st))
+s, _ = call("POST", "/api/me/priceWatchSettings", {"intervals": {"custom": 5}}, token=tok)
 check("interval under 15 minutes refused", s == 422, s)
-s, r = call("POST", "/api/me/priceWatchSettings/test", token=tok)
-check("Gotify test message", s == 200 and r["ok"], (s, r))
-s, r = call("POST", "/api/me/priceWatchSettings/test", token=ptok)
-check("another user's Gotify isn't shared", s == 200 and not r["ok"], (s, r))
+# notification channels: Gotify (alerts below), then ntfy and Matrix
+s, _ = call("POST", "/api/me/notifications", {"kind": "gotify", "url": "http://127.0.0.1:3999/", "enabled": True}, token=tok)
+check("channel: Gotify needs its token", s == 422, s)
+s, gch = call("POST", "/api/me/notifications", {"kind": "gotify", "name": "Phone", "url": "http://127.0.0.1:3999/", "secret": "ci-gotify",
+                                                "enabled": True}, token=tok)
+check("channel: Gotify added; token not echoed", s == 201 and gch["secretSet"] and gch["url"] == "http://127.0.0.1:3999"
+      and gch["name"] == "Phone" and "ci-gotify" not in json.dumps(gch), (s, gch))
+s, r = call("POST", f"/api/me/notifications/{gch['id']}/test", token=tok)
+check("channel: Gotify test message", s == 200 and r["ok"], (s, r))
+s, r = call("POST", f"/api/me/notifications/{gch['id']}/test", token=ptok)
+s2, others = call("GET", "/api/me/notifications", token=ptok)
+check("channel: another user can't see or use mine", s == 200 and not r["ok"] and others == [], (s, r, others))
 sent_before = len(json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read()))
 s, w = call("PUT", f"/api/me/priceWatches/{w['id']}", {"grade": "e10", "below": 1.80}, token=tok)
 check("set a price limit", s == 200 and w["below"] == 1.8 and w["alerted"] is False, (s, w))
@@ -344,7 +353,33 @@ check("others can't delete my watch", s == 404, s)
 s, _ = call("DELETE", f"/api/me/priceWatches/{w['id']}", token=tok)
 s2, ws = call("GET", "/api/me/priceWatches", token=tok)
 check("watch deleted", s == 200 and ws == [], (s, ws))
-call("POST", "/api/me/priceWatchSettings", {"gotifyUrl": "", "gotifyToken": "-", "intervals": {}}, token=tok)
+# ntfy (JSON publish: titles with ⛽ aren't valid in headers) and Matrix channels
+s, _ = call("POST", "/api/me/notifications", {"kind": "ntfy", "url": "http://127.0.0.1:3999", "enabled": True}, token=tok)
+check("ntfy: the topic URL needs a topic", s == 422, s)
+s, nch = call("POST", "/api/me/notifications", {"kind": "ntfy", "url": "http://127.0.0.1:3999/ntfy/hammond-ci", "secret": "ci-ntfy",
+                                                "enabled": True}, token=tok)
+s2, r = call("POST", f"/api/me/notifications/{nch['id']}/test", token=tok)
+msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())
+check("ntfy: test message to the topic, token kept secret", s == 201 and nch["secretSet"] and "ci-ntfy" not in json.dumps(nch) and r["ok"]
+      and msgs[-1].get("via") == "ntfy" and msgs[-1]["topic"] == "hammond-ci" and msgs[-1]["title"] == "hammond", (s, nch, r, msgs[-1:]))
+s, mch = call("POST", "/api/me/notifications", {"kind": "matrix", "url": "http://127.0.0.1:3999", "room": "#fuel:ci", "secret": "ci-matrix",
+                                                "enabled": True}, token=tok)
+s2, r = call("POST", f"/api/me/notifications/{mch['id']}/test", token=tok)
+msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())
+check("matrix: alias resolved, message posted to the room", s == 201 and r["ok"] and msgs[-1].get("via") == "matrix"
+      and msgs[-1]["room"] == "!fuel:ci" and msgs[-1]["formatted_body"].startswith("<b>hammond</b>"), (s, mch, r, msgs[-1:]))
+# edit: off + new name keeps the token; delete
+s, e = call("PUT", f"/api/me/notifications/{mch['id']}", {**mch, "enabled": False, "name": "Fuel room", "secret": ""}, token=tok)
+s2, lst = call("GET", "/api/me/notifications", token=tok)
+check("channel: turned off and renamed, token kept", s == 200 and not e["enabled"] and e["name"] == "Fuel room" and e["secretSet"]
+      and [c["kind"] for c in lst] == ["gotify", "ntfy", "matrix"], (s, e, lst))
+s, st = call("GET", "/api/me/priceWatchSettings", token=tok)
+check("price watch shows how many channels are on", s == 200 and st["channels"] == 2, st)
+for c in lst:
+    call("DELETE", f"/api/me/notifications/{c['id']}", token=tok)
+s, lst = call("GET", "/api/me/notifications", token=tok)
+check("channels deleted", s == 200 and lst == [], lst)
+call("POST", "/api/me/priceWatchSettings", {"intervals": {}}, token=tok)
 s, _ = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda", "model": "Octavia",
      "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50, "fuelGrade": "e10,hbuzg"}, token=tok)
 check("unknown fuel grade refused", s == 422, s)
@@ -416,6 +451,28 @@ s3, _ = call("POST", "/api/settings/trips", {"locked": False}, token=ptok)
 check("trips: admin locks times/km (users can't)", s == 200 and st.get("tripsLocked") is True and s3 == 401, (s, st, s3))
 call("POST", "/api/settings/trips", {"locked": False}, token=tok)
 call("PUT", f"/api/vehicles/{vid}/tripEntities", {}, token=tok)
+
+# ---- MQTT → Home Assistant discovery (fake broker on 127.0.0.1:4000, user "ci-mqtt") ----
+fake_mqtt = lambda: json.loads(urllib.request.urlopen("http://127.0.0.1:3999/mqtt", timeout=5).read())
+s, _ = call("POST", "/api/me/mqtt", {"url": "http://127.0.0.1:4000"}, token=tok)
+check("mqtt: only broker URLs", s == 422, s)
+s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "wrong", "password": "ci-pw"}, token=tok)
+s2, r = call("POST", "/api/me/mqtt/publish", token=tok)
+check("mqtt: a refused login is a clear error", s == 200 and s2 == 422 and "MQTT broker" in str(r), (s, s2, r))
+s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "ci-mqtt", "password": ""}, token=tok)
+check("mqtt: settings saved, password kept and never shown", s == 200 and u["mqttUser"] == "ci-mqtt" and u["mqttPasswordSet"] is True
+      and "ci-pw" not in json.dumps(u), (s, u))
+s, r = call("POST", "/api/me/mqtt/publish", token=tok)
+m = fake_mqtt()
+base = "hammond/" + me["id"][:8]
+cfg = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/odometer/config", "{}"))
+state = json.loads(m.get(f"{base}/vehicle/{vid}", "{}"))
+check("mqtt: HA discovery + state for the vehicle", s == 200 and r["vehicles"] == 1 and cfg.get("unique_id") == f"hammond_{vid}_odometer"
+      and cfg.get("device", {}).get("name") == "hammond Smoke" and cfg.get("state_topic") == f"{base}/vehicle/{vid}"
+      and cfg.get("unit_of_measurement") == "km" and m.get(f"{base}/status") == "online" and state.get("odometer", 0) > 0
+      and "month_total" in state and f"homeassistant/sensor/hammond_{vid}/month_total/config" in m, (s, r, cfg, state, sorted(m)[:5]))
+s, _ = call("POST", "/api/me/mqtt", {"url": ""}, token=tok)
+check("mqtt: turned off = HA shows it offline", s == 200 and fake_mqtt().get(f"{base}/status") == "offline", fake_mqtt().get(f"{base}/status"))
 
 call("PUT", f"/api/vehicles/{vid}", veh, token=tok)
 call("POST", "/api/me/homeAssistant", {"url": "", "token": "-"}, token=tok)

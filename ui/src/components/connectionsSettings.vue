@@ -2,7 +2,7 @@
 import axios from 'axios'
 import store from '@state/store'
 
-// The user's own connections: Home Assistant (URL + write-only token) and EVCC.
+// The user's own connections: Home Assistant (URL + write-only token), MQTT (dashboard values to HA) and EVCC.
 export default {
   props: {
     me: { type: Object, required: true },
@@ -20,6 +20,11 @@ export default {
         since: this.me.evccSince ? this.me.evccSince.slice(0, 10) : '',
       },
       savedEvccUrl: this.me.evccUrl || '',
+      mqttModel: { url: this.me.mqttUrl || '', user: this.me.mqttUser || '', password: '', prefix: this.me.mqttPrefix || '' },
+      mqttPasswordSet: !!this.me.mqttPasswordSet,
+      savedMqttUrl: this.me.mqttUrl || '',
+      mqttResult: null,
+      publishing: false,
       chargingPlaces: [],
       evccResult: null,
       syncing: false,
@@ -55,6 +60,28 @@ export default {
           this.toast('Home Assistant settings saved')
         })
         .catch((ex) => this.toast(this.errorText(ex), false))
+    },
+    saveMqtt() {
+      axios
+        .post('/api/me/mqtt', this.mqttModel)
+        .then(({ data }) => {
+          this.mqttPasswordSet = data.mqttPasswordSet
+          this.savedMqttUrl = data.mqttUrl || ''
+          this.mqttModel.password = ''
+          store.dispatch('users/me').catch(() => {})
+          this.toast(data.mqttUrl ? 'MQTT settings saved' : 'MQTT turned off')
+          if (data.mqttUrl) this.publishMqtt()
+        })
+        .catch((ex) => this.toast(this.errorText(ex), false))
+    },
+    publishMqtt() {
+      this.publishing = true
+      this.mqttResult = null
+      axios
+        .post('/api/me/mqtt/publish')
+        .then(({ data }) => (this.mqttResult = { ok: true, ...data }))
+        .catch((ex) => (this.mqttResult = { ok: false, error: this.errorText(ex) }))
+        .finally(() => (this.publishing = false))
     },
     saveEvcc() {
       const m = this.evccModel
@@ -111,6 +138,36 @@ export default {
           ></template
         >
         <template v-else>✗ {{ haTest.error }}</template>
+      </b-notification>
+    </form>
+    <form class="box mqtt" @submit.prevent="saveMqtt">
+      <h1 class="subtitle">MQTT (Home Assistant dashboard)</h1>
+      <p class="mb-3"
+        >hammond sends your numbers to Home Assistant through your MQTT broker. Home Assistant creates the devices by itself (MQTT
+        discovery): one per vehicle (costs this month, last fill-up, consumption, odometer, trips) and one per watched station
+        (price, limit, below limit). Updated after every change and every 5 minutes. Empty URL = off.</p
+      >
+      <b-field label="Broker URL"><b-input v-model.trim="mqttModel.url" placeholder="mqtt://192.168.1.10:1883"></b-input></b-field>
+      <b-field grouped group-multiline>
+        <b-field label="Username" expanded><b-input v-model.trim="mqttModel.user" autocomplete="off"></b-input></b-field>
+        <b-field label="Password" expanded :message="mqttPasswordSet ? 'saved, hidden – leave empty to keep, - removes it' : ''">
+          <b-input v-model="mqttModel.password" type="password" password-reveal autocomplete="new-password"></b-input>
+        </b-field>
+        <b-field label="Discovery prefix" message="Empty = homeassistant">
+          <b-input v-model.trim="mqttModel.prefix" placeholder="homeassistant"></b-input>
+        </b-field>
+      </b-field>
+      <div class="buttons">
+        <b-button native-type="submit" type="is-primary">Save MQTT</b-button>
+        <b-button class="publish-mqtt" :loading="publishing" :disabled="!savedMqttUrl" @click="publishMqtt">Send now</b-button>
+      </div>
+      <b-notification v-if="mqttResult" :type="mqttResult.ok ? 'is-success' : 'is-danger'" :closable="false" class="mqtt-result">
+        <template v-if="mqttResult.ok"
+          >✓ Sent: {{ mqttResult.vehicles }} vehicle(s), {{ mqttResult.watches }} watched station(s)<span v-if="mqttResult.removed">,
+            {{ mqttResult.removed }} old one(s) removed</span
+          >. In Home Assistant: Settings → Devices → MQTT, devices starting with "hammond".</template
+        >
+        <template v-else>✗ {{ mqttResult.error }}</template>
       </b-notification>
     </form>
     <form class="box evcc" @submit.prevent="saveEvcc">

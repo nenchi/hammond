@@ -1,14 +1,11 @@
 package service
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math"
-	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -19,7 +16,7 @@ import (
 
 // Price watch: favourite stations (one grade each) checked in the background, every N minutes per price
 // source kind (prices change hourly in Germany, every two weeks for Slovenia's regulated grades). Each
-// price change is stored; at or below the user's limit one Gotify message is sent, and the next only
+// price change is stored; at or below the user's limit one alert is sent (notification channels), the next only
 // after the price went above the limit again.
 
 // default minutes between checks per kind; users can change them (MinWatchMinutes–MaxWatchMinutes)
@@ -44,11 +41,11 @@ func WatchMinutes(u *db.User, kind string) int {
 }
 
 type PriceWatchSettings struct {
-	GotifyURL      string            `json:"gotifyUrl"`
-	GotifyTokenSet bool              `json:"gotifyTokenSet"`
-	Intervals      map[string]int    `json:"intervals"` // every kind, with defaults filled in
-	Defaults       map[string]int    `json:"defaults"`
-	Labels         map[string]string `json:"labels"`
+	Intervals map[string]int    `json:"intervals"` // every kind, with defaults filled in
+	Defaults  map[string]int    `json:"defaults"`
+	Labels    map[string]string `json:"labels"`
+	// alerts go to the notification channels (Settings → Notifications): how many are on
+	Channels int `json:"channels"`
 }
 
 func GetPriceWatchSettings(userID string) (*PriceWatchSettings, error) {
@@ -64,19 +61,13 @@ func GetPriceWatchSettings(userID string) (*PriceWatchSettings, error) {
 			labels[k] = l
 		}
 	}
-	return &PriceWatchSettings{GotifyURL: u.GotifyURL, GotifyTokenSet: u.GotifyToken != "", Intervals: iv,
-		Defaults: DefaultWatchMinutes, Labels: labels}, nil
+	var n int64
+	db.DB.Model(&db.NotifyChannel{}).Where("user_id = ? AND enabled = ?", userID, true).Count(&n)
+	return &PriceWatchSettings{Intervals: iv, Defaults: DefaultWatchMinutes, Labels: labels, Channels: int(n)}, nil
 }
 
-// UpdatePriceWatchSettings: token "" keeps the stored one, "-" removes it; intervals outside the limits
-// are refused, missing kinds keep their default
-func UpdatePriceWatchSettings(userID, gotifyURL, token string, intervals map[string]int) error {
-	gotifyURL = strings.TrimRight(strings.TrimSpace(gotifyURL), "/")
-	if gotifyURL != "" {
-		if u, err := url.Parse(gotifyURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(gotifyURL) > 300 {
-			return errors.New("invalid Gotify URL")
-		}
-	}
+// UpdatePriceWatchSettings: intervals outside the limits are refused, missing kinds keep their default
+func UpdatePriceWatchSettings(userID string, intervals map[string]int) error {
 	iv := map[string]int{}
 	for k, m := range intervals {
 		if _, ok := DefaultWatchMinutes[k]; !ok {
@@ -90,52 +81,7 @@ func UpdatePriceWatchSettings(userID, gotifyURL, token string, intervals map[str
 		}
 	}
 	b, _ := json.Marshal(iv)
-	upd := map[string]interface{}{"gotify_url": gotifyURL, "price_watch_intervals": string(b)}
-	switch token = strings.TrimSpace(token); token {
-	case "":
-	case "-":
-		upd["gotify_token"] = ""
-	default:
-		if len(token) > 200 {
-			return errors.New("Gotify token too long")
-		}
-		upd["gotify_token"] = token
-	}
-	return db.DB.Model(&db.User{}).Where("id = ?", userID).Updates(upd).Error
-}
-
-// SendGotify: one message to the user's Gotify (token in a header, not in the URL: no logs with it)
-// SendGotify: click = a link opened when the notification is tapped (Gotify's standard extras; homebot
-// shows it as Navigate/Map links), "" = none.
-func SendGotify(u *db.User, title, message, click string) error {
-	if u.GotifyURL == "" || u.GotifyToken == "" {
-		return errors.New("Gotify is not set up")
-	}
-	m := map[string]interface{}{"title": title, "message": message, "priority": 5}
-	if click != "" {
-		m["extras"] = map[string]interface{}{"client::notification": map[string]interface{}{"click": map[string]string{"url": click}}}
-	}
-	body, _ := json.Marshal(m)
-	req, _ := http.NewRequest("POST", u.GotifyURL+"/message", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Gotify-Key", u.GotifyToken)
-	resp, err := priceClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("Gotify not reachable: %s", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Gotify answered HTTP %d (wrong token?)", resp.StatusCode)
-	}
-	return nil
-}
-
-func TestGotify(userID string) error {
-	u := getUser(userID)
-	if u == nil {
-		return errors.New("user not found")
-	}
-	return SendGotify(u, "hammond", "Test: price alerts will arrive here.", "")
+	return db.DB.Model(&db.User{}).Where("id = ?", userID).Update("price_watch_intervals", string(b)).Error
 }
 
 func ListPriceWatches(userID string) ([]db.PriceWatch, error) {
@@ -376,14 +322,14 @@ func checkWatches(u *db.User, watches []db.PriceWatch) {
 			if a := ShortAddress(w.Address); a != "" {
 				msg += "\n" + a
 			}
-			if err := SendGotify(u, "⛽ "+w.Name+" · "+gradeName(w.Grade), msg, MapsDirections(w.Lat, w.Lng)); err != nil && u.GotifyURL != "" {
+			if err := SendAlert(u, "⛽ "+w.Name+" · "+gradeName(w.Grade), msg, MapsDirections(w.Lat, w.Lng)); err != nil && alertsOn(u) {
 				log.Printf("price watch (%s): %s", u.Email, err)
 			}
 		}
 	}
 	if len(down) > 0 {
 		msg := fmt.Sprintf("Failed %d checks in a row (it keeps trying):\n%s", failAlertAfter, strings.Join(down, "\n"))
-		if err := SendGotify(u, "hammond: station prices not reachable", msg, ""); err != nil && u.GotifyURL != "" {
+		if err := SendAlert(u, "hammond: station prices not reachable", msg, ""); err != nil && alertsOn(u) {
 			log.Printf("price watch (%s): %s", u.Email, err)
 		}
 	}

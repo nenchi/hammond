@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/akhilrex/hammond/chat"
 	"github.com/akhilrex/hammond/controllers"
 	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/service"
@@ -23,6 +24,7 @@ func main() {
 	} else {
 		db.Migrate()
 		service.MoveSiteConnectionsToAdmin() // v1.6 site-wide Home Assistant → the admin's own
+		service.MoveGotifyToChannels()       // before v2.1 Gotify was a setting: now the first notification channel
 	}
 	r := gin.Default()
 
@@ -68,6 +70,9 @@ func main() {
 	go service.EvccTimer()
 	go service.PriceWatchTimer()
 	go service.TripTimer()
+	go service.MqttTimer()
+	go service.TelegramTimer()
+	chat.Handler = r // the chat commands call /api/v1 in-process
 
 	r.Run(":3000") // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 

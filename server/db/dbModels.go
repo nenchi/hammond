@@ -45,9 +45,15 @@ type User struct {
 	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
 	EvccPlaceID     string     `json:"evccPlaceId"`
 	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
-	// price watch alerts go to the user's Gotify (token write-only)
+	// own MQTT broker: dashboard values to Home Assistant (discovery); the password is write-only
+	MqttURL      string `json:"mqttUrl"`
+	MqttUser     string `json:"mqttUser"`
+	MqttPassword string `json:"-"`
+	MqttPrefix   string `json:"mqttPrefix"` // HA discovery prefix, "" = homeassistant
+	// before v2.1: price alerts to Gotify; moved once into a NotifyChannel (MoveGotifyToChannels), then empty
 	GotifyURL   string `json:"gotifyUrl"`
 	GotifyToken string `json:"-"`
+
 	// drives with a stop up to this many minutes between them are one trip (a fuel stop doesn't split it)
 	TripMergeMinutes int `gorm:"default:15" json:"tripMergeMinutes"`
 	// minutes between price watch checks per price source kind ("tankerkoenig": 60); missing = default
@@ -61,10 +67,12 @@ func (b *User) MarshalJSON() ([]byte, error) {
 		DistanceUnitDetail EnumDetail `json:"distanceUnitDetail"`
 		HATokenSet         bool       `json:"haTokenSet"`
 		GotifyTokenSet     bool       `json:"gotifyTokenSet"`
+		MqttPasswordSet    bool       `json:"mqttPasswordSet"`
 	}{
 		User:               *b,
 		HATokenSet:         b.HAToken != "",
 		GotifyTokenSet:     b.GotifyToken != "",
+		MqttPasswordSet:    b.MqttPassword != "",
 		RoleDetail:         b.RoleDetail(),
 		DistanceUnitDetail: b.DistanceUnitDetail(),
 	})
@@ -423,4 +431,21 @@ type Trip struct {
 	Business  bool   `json:"business"`
 	Purpose   string `json:"purpose"`
 	Notes     string `json:"notes"`
+}
+
+// NotifyChannel: where a user's alerts go (Settings → Notifications); several per user, each on/off
+type NotifyChannel struct {
+	Base
+	UserID  string `gorm:"index" json:"-"`
+	Kind    string `json:"kind"` // gotify, ntfy, matrix, telegram
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	// gotify: server URL; ntfy: topic URL (https://ntfy.sh/my-topic); matrix: homeserver URL
+	URL string `json:"url"`
+	// gotify: app token; ntfy: access token (optional); matrix: access token; telegram: bot token. Write-only.
+	Secret string `json:"-"`
+	Room   string `json:"room"`  // matrix: room ID (!abc:server) or alias (#fuel:server)
+	ChatID int64  `json:"-"`     // telegram: the chat linked with /start <code>
+	// telegram: also answer the fuel commands (prices, graph, trips…) in the linked chat
+	Commands bool `json:"commands"`
 }
