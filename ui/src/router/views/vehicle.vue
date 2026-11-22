@@ -394,6 +394,14 @@ export default {
         </b-table-column>
         <b-table-column v-slot="props" field="fuelQuantity" label="Qty." :td-attrs="hiddenMobile" numeric>
           {{ `${props.row.fuelQuantity} ${props.row.fuelUnitDetail.short}` }}
+          <b-icon
+            v-if="vehicle.tankCapacity && props.row.fuelQuantity > vehicle.tankCapacity * 1.15"
+            class="over-tank"
+            icon="exclamation-circle"
+            type="is-warning"
+            size="is-small"
+            :title="`More than the tank holds (${vehicle.tankCapacity}): typo, or two fill-ups in one entry?`"
+          />
         </b-table-column>
         <b-table-column
           v-slot="props"

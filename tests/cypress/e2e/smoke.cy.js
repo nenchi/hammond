@@ -211,6 +211,15 @@ describe('hammond UI', () => {
     cy.request({ url: `/api/vehicles/${vehicleId}`, headers: apiHeaders }).its('body.tankCapacity').should('eq', 43)
   })
 
+  it('warns when a fill-up is more than the tank holds', () => {
+    visit(`/vehicles/${vehicleId}/fillup`)
+    cy.get('.qty-field input').type('54')
+    cy.contains('54 is more than the tank holds (43)')
+    cy.get('.qty-field input').clear().type('42')
+    cy.contains('more than the tank holds').should('not.exist')
+    noConsoleErrors()
+  })
+
   it('detected fill-up: API key in settings, detection via API, complete it in the UI', () => {
     visit('/settings')
     cy.get('.api-keys').within(() => {

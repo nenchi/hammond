@@ -111,6 +111,8 @@ type Vehicle struct {
 	OdometerEntity string `json:"odometerEntity"`
 	// Home Assistant entities for the trip log (Trips); empty Ignition = no trips from HA
 	TripEntities TripEntities `gorm:"serializer:json" json:"tripEntities"`
+	// HA history is read from here on: drives starting before it are done (a deleted trip stays deleted)
+	TripsSyncedTo *time.Time `json:"-"`
 	// vehicle name in EVCC (its title): EVCC sessions of that vehicle are imported for this one
 	EvccVehicle string `json:"evccVehicle"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset

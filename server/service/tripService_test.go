@@ -23,9 +23,9 @@ func TestLegsFromHistory(t *testing.T) {
 		"sensor.dist": {p(0, "3"), p(31, "0"), p(61, "40.4"), p(101, "75.6")},
 		"sensor.cons": {p(61, "7.5"), p(101, "x"), p(102, "6")},
 	}
-	legs := legsFromHistory(h, e, "sensor.odo", 50, m(300))
-	if len(legs) != 2 {
-		t.Fatalf("legs: %+v", legs)
+	legs, pending := legsFromHistory(h, e, "sensor.odo", 50, m(300))
+	if len(legs) != 2 || !pending.Equal(m(240)) { // the drive since 12:00 is still running
+		t.Fatalf("legs: %+v pending %v", legs, pending)
 	}
 	a, b := legs[0], legs[1]
 	if !a.Start.Equal(m(30)) || !a.End.Equal(m(60)) || a.StartOdo != 1000 || a.EndOdo != 1040 || a.Distance != 40.4 ||
@@ -38,13 +38,13 @@ func TestLegsFromHistory(t *testing.T) {
 		t.Errorf("leg 2: %+v used %v", b, *b.FuelUsed)
 	}
 	// without trip computer: odometer distance, fuel from the level × tank
-	legs = legsFromHistory(h, db.TripEntities{Ignition: "sensor.ign", FuelLevel: "sensor.fuel"}, "sensor.odo", 50, m(300))
+	legs, _ = legsFromHistory(h, db.TripEntities{Ignition: "sensor.ign", FuelLevel: "sensor.fuel"}, "sensor.odo", 50, m(300))
 	if legs[0].Distance != 40 || *legs[0].FuelUsed != 5 {
 		t.Errorf("no trip computer: %+v", legs[0])
 	}
 	// the last stop isn't settled yet: no leg until 15 min after it
-	if l := legsFromHistory(h, e, "sensor.odo", 50, m(110)); len(l) != 1 {
-		t.Errorf("unsettled: %d legs", len(l))
+	if l, p := legsFromHistory(h, e, "sensor.odo", 50, m(110)); len(l) != 1 || !p.Equal(m(70)) {
+		t.Errorf("unsettled: %d legs, pending %v", len(l), p)
 	}
 }
 

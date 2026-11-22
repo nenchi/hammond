@@ -114,6 +114,14 @@ export default {
       const ago = min < 60 ? `${min} min` : min < 2880 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} days`
       return `From Home Assistant, updated ${ago} ago`
     },
+    // more than the tank holds: a typo, or two fill-ups in one entry (soft, like the odometer check)
+    qtyWarning() {
+      const tank = this.selectedVehicle && this.selectedVehicle.tankCapacity
+      const q = Number(this.fillupModel.fuelQuantity)
+      // a tank takes a bit more than its nominal size (filler neck)
+      if (!tank || !q || q <= tank * 1.15) return ''
+      return `${q} is more than the tank holds (${tank}). Typo, or two fill-ups in one entry?`
+    },
     // soft warning only (typo check), saving still works: back-dated entries and long trips are legit
     odoWarning() {
       const odo = this.fillupModel.odoReading
@@ -470,7 +478,7 @@ export default {
           <b-input v-model="chargeEnd" type="time" class="charge-end"></b-input>
         </b-field>
       </b-field>
-      <b-field label="Quantity*" addons>
+      <b-field label="Quantity*" addons :type="qtyWarning ? 'is-warning' : ''" :message="qtyWarning" class="qty-field">
         <b-input v-model.number="fillupModel.fuelQuantity" type="number" step=".001" min="0" expanded required></b-input>
         <b-select v-model="fillupModel.fuelUnit" placeholder="Fuel Unit" required>
           <option v-for="(option, key) in fuelUnitMasters" :key="key" :value="key">
