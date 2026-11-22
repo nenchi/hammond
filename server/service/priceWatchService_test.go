@@ -86,3 +86,20 @@ func TestPriceWatchHistory(t *testing.T) {
 		t.Fatal("other users' watches are not found")
 	}
 }
+
+func TestShortAddress(t *testing.T) {
+	for in, want := range map[string]string{
+		"ODENWALDRING 84, 63069 OFFENBACH": "Odenwaldring 84, Offenbach",
+		"Celovška 150, 1000 Ljubljana":     "Celovška 150, Ljubljana", // mixed case kept, postcode goes
+		"HAUPTSTRASSE 1, A-1010 WIEN":      "Hauptstrasse 1, Wien",
+		"STRAßE DES 17. JUNI 1":            "Straße Des 17. Juni 1",
+		"":                                 "",
+	} {
+		if got := ShortAddress(in); got != want {
+			t.Errorf("ShortAddress(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if MapsDirections(0, 0) != "" || MapsDirections(50.1031, 8.7601) != "https://www.google.com/maps/dir/?api=1&destination=50.103100,8.760100" {
+		t.Error("MapsDirections")
+	}
+}
