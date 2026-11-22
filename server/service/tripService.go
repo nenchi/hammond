@@ -138,12 +138,12 @@ func fuelSinceStart(cons, dist []haPoint, start, end time.Time) (float64, bool) 
 	return b, true
 }
 
-// legsFromHistory: one leg per ignition on → off seen completely (a drive already running at the start of
+// legsFromHistory: one leg per ignition on → off seen completely; pending = start of the first drive that
+// isn't finished or settled yet (zero when there is none): the next sync has to read from there. (a drive already running at the start of
 // the history is skipped: its start is unknown). End values are read up to legSettle after the stop (or the
 // next start), since the car sends them late.
-func legsFromHistory(h map[string][]haPoint, e db.TripEntities, odoEntity string, tank float64, now time.Time) []db.TripLeg {
+func legsFromHistory(h map[string][]haPoint, e db.TripEntities, odoEntity string, g GaugeCalibration, now time.Time) (legs []db.TripLeg, pending time.Time) {
 	ign := h[e.Ignition]
-	var legs []db.TripLeg
 	for i := 1; i < len(ign); i++ {
 		if !driving(ign[i].State) || driving(ign[i-1].State) || ign[i-1].State == "unavailable" || ign[i-1].State == "unknown" {
 			continue
@@ -154,11 +154,13 @@ func legsFromHistory(h map[string][]haPoint, e db.TripEntities, odoEntity string
 			j++
 		}
 		if j == len(ign) {
+			pending = start
 			break // still driving
 		}
 		end := ign[j].At
 		settle := end.Add(legSettle)
 		if settle.After(now) {
+			pending = start
 			break // the car may still send the end values
 		}
 		for k := j + 1; k < len(ign); k++ {
@@ -188,8 +190,8 @@ func legsFromHistory(h map[string][]haPoint, e db.TripEntities, odoEntity string
 		// fuel since start = average l/100 km × distance since start, per point in time
 		if used, ok := fuelSinceStart(h[e.Consumption], h[e.Distance], start, settle); e.Consumption != "" && e.Distance != "" && ok && used > 0 {
 			l.FuelUsed = &used
-		} else if l.FuelStart != nil && l.FuelEnd != nil && *l.FuelStart > *l.FuelEnd && tank > 0 {
-			used := (*l.FuelStart - *l.FuelEnd) * tank / 100
+		} else if l.FuelStart != nil && l.FuelEnd != nil && *l.FuelStart > *l.FuelEnd && g.TankCapacity > 0 {
+			used := g.Litres(*l.FuelEnd, *l.FuelStart) // the learned gauge: 1 % isn't the same litres everywhere
 			l.FuelUsed = &used
 		}
 		if l.Distance < 0 {
@@ -198,7 +200,7 @@ func legsFromHistory(h map[string][]haPoint, e db.TripEntities, odoEntity string
 		legs = append(legs, l)
 		i = j
 	}
-	return legs
+	return legs, pending
 }
 
 // tripUser: whose Home Assistant reads the vehicle's trips: the owner, else any user of it with HA set up
@@ -228,9 +230,8 @@ func SyncTrips(vehicleID string) (int, error) {
 	}
 	now := time.Now()
 	from := now.Add(-tripBackfill)
-	var last db.TripLeg
-	if db.DB.Where("vehicle_id = ?", vehicleID).Order("ended_at desc").Limit(1).Find(&last); last.ID != "" && last.End.After(from) {
-		from = last.End
+	if v.TripsSyncedTo != nil && v.TripsSyncedTo.After(from) {
+		from = *v.TripsSyncedTo
 	}
 	ents := []string{v.TripEntities.Ignition, v.OdometerEntity}
 	for _, e := range []string{v.TripEntities.FuelLevel, v.TripEntities.Distance, v.TripEntities.Consumption} {
@@ -247,8 +248,10 @@ func SyncTrips(vehicleID string) (int, error) {
 		merge = u.TripMergeMinutes
 	}
 	n := 0
-	for _, l := range legsFromHistory(h, v.TripEntities, v.OdometerEntity, float64(v.TankCapacity), now) {
-		if !l.Start.After(from) {
+	legs, pending := legsFromHistory(h, v.TripEntities, v.OdometerEntity, Calibrate(v), now)
+	for _, l := range legs {
+		var dup int64 // "Sync now" and the timer at the same time
+		if db.DB.Model(&db.TripLeg{}).Where("vehicle_id = ? AND started_at = ?", vehicleID, l.Start).Count(&dup); dup > 0 || !l.Start.After(from) {
 			continue
 		}
 		l.VehicleID = vehicleID
@@ -258,7 +261,12 @@ func SyncTrips(vehicleID string) (int, error) {
 		}
 		n++
 	}
-	return n, nil
+	// next time from the unfinished drive, else from now: done drives are never read again
+	next := now.Add(-time.Minute)
+	if !pending.IsZero() {
+		next = pending.Add(-time.Second)
+	}
+	return n, db.DB.Model(&db.Vehicle{}).Where("id = ?", vehicleID).Update("trips_synced_to", next).Error
 }
 
 // tripFor: the trip of the drive before when it ended at most merge minutes before start, else a new trip
@@ -293,9 +301,10 @@ func TripTimer() {
 type fuelLot struct{ qty, price float64 }
 
 // fifoCosts: fuel cost per leg ID. The tank at the first leg holds the newest fill-ups before it (as much
-// as its level says, else the last fill-up); every fill-up adds a lot, a full-tank one sets the content to
+// as its level says with the learned gauge, else the last fill-up); every fill-up adds a lot, a full-tank one sets the content to
 // the tank size; a leg takes from the oldest lot. With nothing left, the last price is used.
-func fifoCosts(fills []db.Fillup, legs []db.TripLeg, tank float64) map[string]float64 {
+func fifoCosts(fills []db.Fillup, legs []db.TripLeg, g GaugeCalibration) map[string]float64 {
+	tank := g.TankCapacity
 	out := map[string]float64{}
 	if len(legs) == 0 || len(fills) == 0 {
 		return out
@@ -305,7 +314,7 @@ func fifoCosts(fills []db.Fillup, legs []db.TripLeg, tank float64) map[string]fl
 	first := legs[0].Start
 	content := 0.0
 	if legs[0].FuelStart != nil && tank > 0 {
-		content = *legs[0].FuelStart * tank / 100
+		content = g.Litres(0, *legs[0].FuelStart)
 	}
 	var lots []fuelLot
 	fi := 0
@@ -411,7 +420,7 @@ func ListTrips(vehicleID string, from, to time.Time) ([]TripView, error) {
 	}
 	var fills []db.Fillup
 	db.DB.Where("vehicle_id = ?", vehicleID).Find(&fills)
-	costs := fifoCosts(fills, append([]db.TripLeg(nil), all...), float64(v.TankCapacity))
+	costs := fifoCosts(fills, append([]db.TripLeg(nil), all...), Calibrate(v))
 	byTrip := map[string][]db.TripLeg{}
 	for _, l := range all {
 		byTrip[l.TripID] = append(byTrip[l.TripID], l)

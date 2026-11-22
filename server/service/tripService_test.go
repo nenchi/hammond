@@ -23,9 +23,9 @@ func TestLegsFromHistory(t *testing.T) {
 		"sensor.dist": {p(0, "3"), p(31, "0"), p(61, "40.4"), p(101, "75.6")},
 		"sensor.cons": {p(61, "7.5"), p(101, "x"), p(102, "6")},
 	}
-	legs := legsFromHistory(h, e, "sensor.odo", 50, m(300))
-	if len(legs) != 2 {
-		t.Fatalf("legs: %+v", legs)
+	legs, pending := legsFromHistory(h, e, "sensor.odo", linear(50), m(300))
+	if len(legs) != 2 || !pending.Equal(m(240)) { // the drive since 12:00 is still running
+		t.Fatalf("legs: %+v pending %v", legs, pending)
 	}
 	a, b := legs[0], legs[1]
 	if !a.Start.Equal(m(30)) || !a.End.Equal(m(60)) || a.StartOdo != 1000 || a.EndOdo != 1040 || a.Distance != 40.4 ||
@@ -38,13 +38,13 @@ func TestLegsFromHistory(t *testing.T) {
 		t.Errorf("leg 2: %+v used %v", b, *b.FuelUsed)
 	}
 	// without trip computer: odometer distance, fuel from the level × tank
-	legs = legsFromHistory(h, db.TripEntities{Ignition: "sensor.ign", FuelLevel: "sensor.fuel"}, "sensor.odo", 50, m(300))
+	legs, _ = legsFromHistory(h, db.TripEntities{Ignition: "sensor.ign", FuelLevel: "sensor.fuel"}, "sensor.odo", linear(50), m(300))
 	if legs[0].Distance != 40 || *legs[0].FuelUsed != 5 {
 		t.Errorf("no trip computer: %+v", legs[0])
 	}
 	// the last stop isn't settled yet: no leg until 15 min after it
-	if l := legsFromHistory(h, e, "sensor.odo", 50, m(110)); len(l) != 1 {
-		t.Errorf("unsettled: %d legs", len(l))
+	if l, p := legsFromHistory(h, e, "sensor.odo", linear(50), m(110)); len(l) != 1 || !p.Equal(m(70)) {
+		t.Errorf("unsettled: %d legs, pending %v", len(l), p)
 	}
 }
 
@@ -62,7 +62,7 @@ func TestFifoCosts(t *testing.T) {
 		{Base: db.Base{ID: "c"}, Start: d(6), FuelUsed: used(30)},
 	}
 	// tank 40 l at 50% = 20 l: the newest fill-ups before = 10 l @1.60 + 10 l @1.50
-	c := fifoCosts(fills, legs, 40)
+	c := fifoCosts(fills, legs, linear(40))
 	// a: oldest first = 10 @1.50, then 5 @1.60; b: the 5 @1.60 left, then nothing → the last price (1.60);
 	// c: the fill-up of day 5 (20 l @2.00), then nothing → 2.00
 	want := map[string]float64{"a": 10*1.50 + 5*1.60, "b": 5*1.60 + 10*1.60, "c": 20*2.00 + 10*2.00}
@@ -74,7 +74,7 @@ func TestFifoCosts(t *testing.T) {
 	// a full tank sets the content to the tank size: old cheap fuel beyond it is dropped
 	fills = []db.Fillup{f(1, 40, 1.00, true), f(2, 40, 2.00, true)}
 	legs = []db.TripLeg{{Base: db.Base{ID: "x"}, Start: d(1).Add(time.Hour), FuelUsed: used(5)}, {Base: db.Base{ID: "y"}, Start: d(3), FuelUsed: used(10)}}
-	c = fifoCosts(fills, legs, 40)
+	c = fifoCosts(fills, legs, linear(40))
 	if c["x"] != 5 || c["y"] != 20 {
 		t.Errorf("full tank: %v", c)
 	}
@@ -98,3 +98,24 @@ func TestTripsCSV(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// linear: a gauge without learned samples (tank / 100 litres per %)
+func linear(tank float64) GaugeCalibration {
+	return GaugeCalibration{Segments: 1, LitresPerPercent: []float64{tank / 100}, TankCapacity: tank}
+}
+
+func TestTripsUseLearnedGauge(t *testing.T) {
+	// top quarter holds more (gauge reads "full" long): 75–100 % = 0.64 l/%, the rest 0.36 l/%
+	g := GaugeCalibration{Segments: 4, LitresPerPercent: []float64{0.36, 0.36, 0.36, 0.64}, TankCapacity: 43}
+	if l := g.Litres(81, 100); math.Abs(l-12.16) > 1e-9 {
+		t.Errorf("81→100 %%: %.2f l", l)
+	}
+	t0 := time.Date(2026, 11, 20, 8, 0, 0, 0, time.UTC)
+	p := func(min int, s string) haPoint { return haPoint{t0.Add(time.Duration(min) * time.Minute), s} }
+	h := map[string][]haPoint{"i": {p(0, "0"), p(10, "4"), p(40, "0")}, "o": {p(0, "100"), p(41, "130")}, "f": {p(0, "90"), p(41, "70")}}
+	legs, _ := legsFromHistory(h, db.TripEntities{Ignition: "i", FuelLevel: "f"}, "o", g, t0.Add(2*time.Hour))
+	// 90→75 % = 15 × 0.64, 75→70 % = 5 × 0.36
+	if len(legs) != 1 || math.Abs(*legs[0].FuelUsed-(15*0.64+5*0.36)) > 1e-9 {
+		t.Errorf("legs %+v", legs)
+	}
+}

@@ -187,15 +187,26 @@ Also I had initially thought of a 2 container approach (1 for backend and 1 for 
 
 ### Features
 
-- Migrate data from Clarkson
-- Add/Manage multiple vehicles
-- Add/Manage multiple users
-- Track fuel and other expenses
-- Share vehicles across multiple users
-- Save attachment against vehicles
-- Quick Entries (take a photo of a receipt or pump screen to make entry later)
-- Vehicle level and overall reporting
-- Import from Fuelly (more apps coming soon)
+- Add/Manage multiple vehicles and users, share vehicles across users
+- Track fuel and other expenses, attachments per vehicle, Quick Entries (photo of a receipt, complete later)
+- Vehicle level and overall reporting, charts with zoom; import from Fuelly and Clarkson; CSV export and backup
+- Light/dark theme, works on phones
+
+Added in this fork:
+
+- **Trip log** from Home Assistant: drives joined across short stops, fuel cost first in, first out, purpose/notes,
+  tolls and other costs per trip, CSV and print/PDF, admin lock for times and kilometres ([Trip log](#trip-log-home-assistant))
+- **Detected fill-ups** from Home Assistant or any script, with duplicate handling and a fuel gauge calibration
+  ([Automatic fill-up detection](#automatic-fill-up-detection-home-assistant--api))
+- **Odometer from Home Assistant** in the fill-up form; warnings for odometer typos and quantities above the tank size
+- **Station prices** near you or near a detection: Germany, Austria, Slovenia, Croatia, France, Portugal, Italy, Spain
+  (free sources need no key), own price profiles per user
+- **Price watch:** favourite stations and grades, price history, cheapest hours, limits with a
+  [Gotify](https://gotify.net) alert that opens Google Maps navigation
+- **EV charging:** charging places with tariffs (fixed, time-based, Home Assistant price sensors), EVCC sessions as
+  fill-ups
+- **API keys** for `/api/v1`: detections (write) and read-only data for scripts and chat bots (vehicles, fill-ups,
+  expenses, mileage, price watches, trips)
 
 ## Installation
 
@@ -305,6 +316,8 @@ Distributed under the GPL-3.0 License. See `LICENSE` for more information.
 
 ## Roadmap
 
+- [ ] Trip start/stop and addresses from the phone's live location
+- [ ] Vignettes per country (one vignette counts for every trip in its period)
 - [ ] More reports
 - [ ] Vehicle specific reminders (servicing etc)
 - [ ] Native installer for Windows/Linux/MacOS

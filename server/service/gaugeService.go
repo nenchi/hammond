@@ -142,6 +142,17 @@ func Calibrate(v *db.Vehicle) GaugeCalibration {
 	return c
 }
 
+// Litres between two gauge levels (%), with this calibration
+func (c GaugeCalibration) Litres(from, to float64) float64 {
+	sum := 0.0
+	for i, o := range overlaps(from, to, c.Segments) {
+		if i < len(c.LitresPerPercent) {
+			sum += o * c.LitresPerPercent[i]
+		}
+	}
+	return sum
+}
+
 // EstimateLitres for a level jump, with the vehicle's calibration (linear until it has enough samples)
 func EstimateLitres(v *db.Vehicle, from, to float64) float32 {
 	c := Calibrate(v)
