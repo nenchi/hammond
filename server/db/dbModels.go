@@ -408,6 +408,9 @@ type TripEntities struct {
 	FuelLevel   string `json:"fuelLevel"`   // % of the tank: fuel used when the car has no trip computer
 	Distance    string `json:"distance"`    // trip computer: km since start (0.1 km instead of the whole-km odometer)
 	Consumption string `json:"consumption"` // trip computer: l/100 km since start
+	// start and end addresses: the car's own tracker, else the driver's phone (HA companion app)
+	CarLocation   string `json:"carLocation"`
+	PhoneLocation string `json:"phoneLocation"`
 }
 
 // TripLeg: one drive, ignition on → off (from Home Assistant history, or entered by hand)
@@ -426,6 +429,16 @@ type TripLeg struct {
 	// FuelUsed is the car's own (trip computer), not from the gauge: the gauge calibration learns from it
 	FuelFromCar bool   `json:"fuelFromCar"`
 	Source      string `json:"source"` // "ha" or "manual"
+	// where the drive started and ended (CarLocation, else PhoneLocation); addresses filled in afterwards
+	StartLat     *float64 `json:"startLat"`
+	StartLng     *float64 `json:"startLng"`
+	EndLat       *float64 `json:"endLat"`
+	EndLng       *float64 `json:"endLng"`
+	LocationFrom string   `json:"locationFrom"` // "car" or "phone" (the phone when either end came from it)
+	StartAddress string   `json:"startAddress"`
+	EndAddress   string   `json:"endAddress"`
+	// the positions during the drive, [[lat, lng], …] for the map (same source as LocationFrom)
+	Route [][2]float64 `gorm:"serializer:json" json:"route"`
 }
 
 // Trip: drives with short stops between them; purpose and notes for a business log

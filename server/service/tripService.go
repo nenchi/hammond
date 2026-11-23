@@ -78,6 +78,154 @@ func haHistory(userID string, entities []string, start, end time.Time) (map[stri
 	return out, nil
 }
 
+type posPoint struct {
+	At       time.Time
+	Lat, Lng float64
+	Acc      float64 // m, 0 = not reported (a car's tracker)
+}
+
+// haPositions: the positions of a device_tracker/person (latitude/longitude attributes): its own request,
+// with attributes, since a tracker's state only changes between zones while its position moves
+func haPositions(userID, entity string, start, end time.Time) ([]posPoint, error) {
+	haURL, token := haConfig(userID)
+	if haURL == "" || token == "" || entity == "" {
+		return nil, nil
+	}
+	u := fmt.Sprintf("%s/api/history/period/%s?end_time=%s&filter_entity_id=%s", haURL,
+		url.QueryEscape(start.UTC().Format(time.RFC3339)), url.QueryEscape(end.UTC().Format(time.RFC3339)), url.QueryEscape(entity))
+	req, _ := http.NewRequest("GET", u, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), token, "***"))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Home Assistant answered HTTP %d for the positions of %s", resp.StatusCode, entity)
+	}
+	var hist [][]struct {
+		LastUpdated time.Time `json:"last_updated"`
+		Attributes  struct {
+			Lat *float64 `json:"latitude"`
+			Lng *float64 `json:"longitude"`
+			Acc float64  `json:"gps_accuracy"`
+		} `json:"attributes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&hist); err != nil {
+		return nil, errors.New("Home Assistant answered without valid position history")
+	}
+	var out []posPoint
+	for _, list := range hist {
+		for _, st := range list {
+			if a := st.Attributes; a.Lat != nil && a.Lng != nil {
+				out = append(out, posPoint{st.LastUpdated, *a.Lat, *a.Lng, a.Acc})
+			}
+		}
+	}
+	return out, nil
+}
+
+const (
+	posWindow = 30 * time.Minute // a position this close in time to a drive's start/end counts for it
+	posMaxAcc = 500.0            // m: coarser phone fixes are ignored
+)
+
+// posAt: the position nearest in time to t, within posWindow
+func posAt(pts []posPoint, t time.Time) (posPoint, bool) {
+	best, ok := posPoint{}, false
+	for _, p := range pts {
+		d := p.At.Sub(t)
+		if d < 0 {
+			d = -d
+		}
+		if d > posWindow || p.Acc > posMaxAcc {
+			continue
+		}
+		if !ok || d < absDur(best.At.Sub(t)) {
+			best, ok = p, true
+		}
+	}
+	return best, ok
+}
+
+func absDur(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}
+
+// locate: start and end position of a drive, each from the car's tracker, else the phone's. The phone may not
+// have been in the car (someone else drove): positions whose straight distance doesn't fit the km driven are
+// dropped. ponytail: a single drive that ends where it started (a round trip without a stop) loses its
+// addresses when it came from the phone
+func locate(l *db.TripLeg, car, phone []posPoint) {
+	pick := func(t time.Time) (posPoint, string, bool) {
+		if p, ok := posAt(car, t); ok {
+			return p, "car", true
+		}
+		p, ok := posAt(phone, t)
+		return p, "phone", ok
+	}
+	s, sFrom, ok1 := pick(l.Start)
+	e, eFrom, ok2 := pick(l.End)
+	from := sFrom
+	if eFrom == "phone" {
+		from = "phone"
+	}
+	if ok1 && ok2 && from == "phone" {
+		straight := distanceKm(s.Lat, s.Lng, e.Lat, e.Lng)
+		if straight > l.Distance*1.2+1 || l.Distance > 3 && straight < 0.1 {
+			return // the phone stayed somewhere else, or went its own way
+		}
+	}
+	if ok1 {
+		l.StartLat, l.StartLng = &s.Lat, &s.Lng
+		l.LocationFrom = sFrom
+	}
+	if ok2 {
+		l.EndLat, l.EndLng = &e.Lat, &e.Lng
+		l.LocationFrom = from
+	}
+	if ok1 && ok2 { // the route: start, the positions while driving (car's, else phone's), end
+		pts := car
+		if from == "phone" {
+			pts = phone
+		}
+		l.Route = [][2]float64{{s.Lat, s.Lng}}
+		for _, p := range pts {
+			if p.At.After(l.Start) && p.At.Before(l.End) && p.Acc <= posMaxAcc {
+				l.Route = append(l.Route, [2]float64{p.Lat, p.Lng})
+			}
+		}
+		l.Route = append(l.Route, [2]float64{e.Lat, e.Lng})
+	}
+}
+
+// fillAddresses: addresses for up to max drives with a position but none yet (Nominatim allows 1 request/s:
+// a backlog is worked off over several syncs instead of blocking one)
+func fillAddresses(vehicleID string, max int) {
+	var legs []db.TripLeg
+	db.DB.Where("vehicle_id = ? AND ((start_lat IS NOT NULL AND start_address = '') OR (end_lat IS NOT NULL AND end_address = ''))",
+		vehicleID).Order("started_at desc").Limit(max).Find(&legs)
+	for _, l := range legs {
+		up := map[string]any{}
+		if l.StartLat != nil && l.StartAddress == "" {
+			if a := addressAt(*l.StartLat, *l.StartLng); a != "" {
+				up["start_address"] = a
+			}
+		}
+		if l.EndLat != nil && l.EndAddress == "" {
+			if a := addressAt(*l.EndLat, *l.EndLng); a != "" {
+				up["end_address"] = a
+			}
+		}
+		if len(up) > 0 {
+			db.DB.Model(&db.TripLeg{}).Where("id = ?", l.ID).Updates(up)
+		}
+	}
+}
+
 // valueAt: the last number of a series at or before t (ok false when there is none)
 func valueAt(pts []haPoint, t time.Time) (float64, bool) {
 	v, ok := 0.0, false
@@ -247,9 +395,19 @@ func SyncTrips(vehicleID string) (int, error) {
 	if u, err := db.GetUserById(userID); err == nil {
 		merge = u.TripMergeMinutes
 	}
+	// positions for the addresses; a failing tracker never blocks the drives themselves
+	car, err := haPositions(userID, v.TripEntities.CarLocation, from, now)
+	if err != nil {
+		fmt.Printf("trips %s: car location: %v\n", v.Nickname, err)
+	}
+	phone, err := haPositions(userID, v.TripEntities.PhoneLocation, from, now)
+	if err != nil {
+		fmt.Printf("trips %s: phone location: %v\n", v.Nickname, err)
+	}
 	n := 0
 	legs, pending := legsFromHistory(h, v.TripEntities, v.OdometerEntity, Calibrate(v), now)
 	for _, l := range legs {
+		locate(&l, car, phone)
 		var dup int64 // "Sync now" and the timer at the same time
 		if db.DB.Model(&db.TripLeg{}).Where("vehicle_id = ? AND started_at = ?", vehicleID, l.Start).Count(&dup); dup > 0 || !l.Start.After(from) {
 			continue
@@ -261,6 +419,7 @@ func SyncTrips(vehicleID string) (int, error) {
 		}
 		n++
 	}
+	fillAddresses(vehicleID, 20)
 	// next time from the unfinished drive, else from now: done drives are never read again
 	next := now.Add(-time.Minute)
 	if !pending.IsZero() {
@@ -406,6 +565,8 @@ type TripView struct {
 	Legs      []db.TripLeg `json:"legs"`
 	Costs     []db.Expense `json:"costs"`
 	LegCosts  []float64    `json:"legCosts"` // fuel cost of each leg, same order as Legs
+	From      string       `json:"from"`     // start address of the first drive ("" = unknown)
+	To        string       `json:"to"`       // end address of the last drive
 }
 
 // ListTrips: the vehicle's trips that started in [from, to), newest first
@@ -434,7 +595,8 @@ func ListTrips(vehicleID string, from, to time.Time) ([]TripView, error) {
 			continue
 		}
 		tv := TripView{Trip: t, Legs: legs, Start: legs[0].Start, End: legs[len(legs)-1].End,
-			StartOdo: legs[0].StartOdo, EndOdo: legs[len(legs)-1].EndOdo, FuelKnown: true}
+			StartOdo: legs[0].StartOdo, EndOdo: legs[len(legs)-1].EndOdo, FuelKnown: true,
+			From: legs[0].StartAddress, To: legs[len(legs)-1].EndAddress}
 		for _, l := range legs {
 			tv.Distance += l.Distance
 			tv.DriveMins += int(l.End.Sub(l.Start).Minutes() + 0.5)
@@ -459,7 +621,7 @@ func ListTrips(vehicleID string, from, to time.Time) ([]TripView, error) {
 // TripsCSV: the trips as CSV (oldest first), for the accountant or a spreadsheet
 func TripsCSV(w io.Writer, trips []TripView, currency string) error {
 	c := csv.NewWriter(w)
-	c.Write([]string{"date", "start", "end", "drive minutes", "start odometer", "end odometer", "distance",
+	c.Write([]string{"date", "start", "end", "from", "to", "drive minutes", "start odometer", "end odometer", "distance",
 		"business", "purpose", "notes", "fuel used", "fuel cost " + currency, "other costs " + currency, "other cost items", "total " + currency})
 	for i := len(trips) - 1; i >= 0; i-- {
 		t := trips[i]
@@ -471,7 +633,7 @@ func TripsCSV(w io.Writer, trips []TripView, currency string) error {
 		if t.FuelUsed > 0 {
 			fuel = fmt.Sprintf("%.2f", t.FuelUsed)
 		}
-		c.Write([]string{t.Start.Local().Format("2006-01-02"), t.Start.Local().Format("15:04"), t.End.Local().Format("15:04"),
+		c.Write([]string{t.Start.Local().Format("2006-01-02"), t.Start.Local().Format("15:04"), t.End.Local().Format("15:04"), t.From, t.To,
 			strconv.Itoa(t.DriveMins), fmt.Sprintf("%.0f", t.StartOdo), fmt.Sprintf("%.0f", t.EndOdo), fmt.Sprintf("%.1f", t.Distance),
 			map[bool]string{true: "yes", false: "no"}[t.Business], t.Purpose, t.Notes, fuel, fmt.Sprintf("%.2f", t.FuelCost),
 			fmt.Sprintf("%.2f", t.ExtraCost), strings.TrimSpace(strings.Join(items, "; ")), fmt.Sprintf("%.2f", t.FuelCost+t.ExtraCost)})
@@ -496,7 +658,7 @@ func SetTripMergeMinutes(userID string, m int) error {
 }
 
 func SetTripEntities(vehicleID string, e db.TripEntities) error {
-	for _, id := range []string{e.Ignition, e.FuelLevel, e.Distance, e.Consumption} {
+	for _, id := range []string{e.Ignition, e.FuelLevel, e.Distance, e.Consumption, e.CarLocation, e.PhoneLocation} {
 		if !ValidEntityID(id) {
 			return fmt.Errorf("%q is not an entity id", id)
 		}
