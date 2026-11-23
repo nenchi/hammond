@@ -199,6 +199,13 @@ func CreateDetection(userID, vehicleID string, req models.CreateDetectionRequest
 	if err := db.DB.Create(&d).Error; err != nil {
 		return nil, err
 	}
+	switch res.Result { // the chat can complete it: answer with the price
+	case "pending":
+		go SendToCommandChats(user, "⛽ Fill-up detected · "+vehicle.Nickname, fmt.Sprintf("%s%.1f %s at %d\nAnswer with the price per %s, e.g. 1.759",
+			approx, d.FuelQuantity, unit, d.OdoReading, unit))
+	case "duplicate":
+		go SendToCommandChats(user, "⛽ Fill-up detected · "+vehicle.Nickname, res.Message+"\n(decide in hammond → Detected)")
+	}
 	return res, nil
 }
 

@@ -5,9 +5,11 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -159,4 +161,22 @@ func first(s ...string) string {
 
 func mapsSearch(q string) string {
 	return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(q)
+}
+
+// QuickEntry: a photo (receipt, pump display) or PDF as a Quick Entry, to complete later in hammond
+func QuickEntry(userID, name string, data []byte, caption string) Reply {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	w.WriteField("comments", first(strings.TrimSpace(caption), "from the chat"))
+	fw, _ := w.CreateFormFile("file", first(name, "photo.jpg"))
+	fw.Write(data)
+	w.Close()
+	req, _ := http.NewRequestWithContext(context.WithValue(context.Background(), ctxKey{}, userID), "POST", "/api/quickEntries", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	rec := httptest.NewRecorder()
+	Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		return Reply{Text: fmt.Sprintf("⚠️ couldn't save the picture (HTTP %d)", rec.Code)}
+	}
+	return Reply{Text: "**📸 Saved as a Quick Entry\nComplete it in hammond → Quick Entries (fill-up or expense)."}
 }

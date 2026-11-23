@@ -20,6 +20,10 @@ func fakeTelegram(t *testing.T) (*[]map[string]any, func()) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/getMe"):
 			w.Write([]byte(`{"ok":true,"result":{"username":"ci_hammond_bot"}}`))
+		case strings.HasSuffix(r.URL.Path, "/getFile"):
+			w.Write([]byte(`{"ok":true,"result":{"file_path":"photos/file_7.jpg"}}`))
+		case strings.Contains(r.URL.Path, "/file/bot"):
+			w.Write([]byte("JPEG"))
 		case strings.HasSuffix(r.URL.Path, "/sendMessage"):
 			var m map[string]any
 			json.NewDecoder(r.Body).Decode(&m)
@@ -36,12 +40,29 @@ func fakeTelegram(t *testing.T) (*[]map[string]any, func()) {
 	return &sent, func() { TelegramAPI = old; srv.Close() }
 }
 
+func tm(chatID int64, text string) *tgMessage {
+	m := &tgMessage{Text: text}
+	m.Chat.ID = chatID
+	return m
+}
+
 func TestTelegramChannel(t *testing.T) {
 	setupDB(t)
 	sent, done := fakeTelegram(t)
 	defer done()
-	// the chat commands read hammond's /api/v1: here a fake one without watched stations
-	chat.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`[]`)) })
+	// the chat commands read hammond's /api/v1: here a fake one without watched stations, taking quick entries
+	var upload string
+	chat.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/quickEntries" {
+			f, h, _ := r.FormFile("file")
+			b := make([]byte, 10)
+			n, _ := f.Read(b)
+			upload = h.Filename + ":" + string(b[:n]) + ":" + r.FormValue("comments")
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.Write([]byte(`[]`))
+	})
 	u, _ := mkUserVehicle(t, "", 43)
 	if err := SendAlert(&u, "x", "y", ""); err == nil || !strings.Contains(err.Error(), "no notification channel") {
 		t.Fatalf("no channel: %v", err)
@@ -60,24 +81,41 @@ func TestTelegramChannel(t *testing.T) {
 		}
 		return (*sent)[len(*sent)-1]["text"].(string)
 	}
-	tgHandle(ch.ID, token, 555, "/start 000000")
+	tgHandle(ch.ID, token, tm(555, "/start 000000"))
 	if !strings.Contains(last(), "Link this chat first") {
 		t.Fatalf("wrong code: %q", last())
 	}
-	tgHandle(ch.ID, token, 555, "/start "+ch.Code)
+	tgHandle(ch.ID, token, tm(555, "/start "+ch.Code))
 	var c db.NotifyChannel
 	db.DB.First(&c, "id = ?", ch.ID)
 	if c.ChatID != 555 || !strings.HasPrefix(last(), "<b>✓ Linked to hammond</b>") {
 		t.Fatalf("link: chat %d, %q", c.ChatID, last())
 	}
 	n := len(*sent)
-	tgHandle(ch.ID, token, 999, "prices") // a stranger who found the bot
+	tgHandle(ch.ID, token, tm(999, "prices")) // a stranger who found the bot
 	if len(*sent) != n {
 		t.Fatal("a stranger got an answer")
 	}
-	tgHandle(ch.ID, token, 555, "/prices")
+	tgHandle(ch.ID, token, tm(555, "/prices"))
 	if !strings.Contains(last(), "no watched stations") {
 		t.Fatalf("command: %q", last())
+	}
+	photo := tm(555, "")
+	photo.Caption = "Aral A3"
+	photo.Photo = append(photo.Photo, struct {
+		FileID   string `json:"file_id"`
+		FileSize int    `json:"file_size"`
+	}{"small", 10}, struct {
+		FileID   string `json:"file_id"`
+		FileSize int    `json:"file_size"`
+	}{"big", 900})
+	tgHandle(ch.ID, token, photo)
+	if upload != "file_7.jpg:JPEG:Aral A3" || !strings.HasPrefix(last(), "<b>📸 Saved as a Quick Entry</b>") {
+		t.Fatalf("photo → quick entry: %q %q", upload, last())
+	}
+	SendToCommandChats(&u, "⛽ Fill-up detected · A180", "38.0 Lt at 81300\nAnswer with the price per Lt, e.g. 1.759")
+	if !strings.HasPrefix(last(), "<b>⛽ Fill-up detected · A180</b>\n38.0 Lt at 81300") {
+		t.Fatalf("detection prompt: %q", last())
 	}
 	if err := SendAlert(&u, "⛽ JET · Super E10", "1.759 EUR  (limit 1.800)\nOdenwaldring 84, Offenbach", "https://www.google.com/maps/dir/?api=1&destination=50.1,8.7"); err != nil {
 		t.Fatal(err)
@@ -87,7 +125,7 @@ func TestTelegramChannel(t *testing.T) {
 		t.Fatalf("alert:\n%q\nwant\n%q", last(), want)
 	}
 	UpdateChannel(u.ID, ch.ID, ChannelInput{Name: "Phone", Enabled: true, Commands: false})
-	tgHandle(ch.ID, token, 555, "prices")
+	tgHandle(ch.ID, token, tm(555, "prices"))
 	if !strings.HasPrefix(last(), "Commands are off") {
 		t.Fatalf("commands off: %q", last())
 	}
