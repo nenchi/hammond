@@ -1,0 +1,113 @@
+# hammond in Home Assistant: an example dashboard with built-in cards only (no custom cards needed).
+#
+# Needs: hammond → Settings → MQTT set up (hammond announces its sensors to HA by MQTT discovery).
+# Use: Settings → Dashboards → Add dashboard → open it → ⋮ → Edit → ⋮ → Raw configuration editor,
+# paste this file, then replace "a_class" with your car: hammond names its entities after the
+# vehicle's nickname (nickname "A-Class" → sensor.hammond_a_class_…). Station price sensors are
+# named after the station and grade (sensor.hammond_<station>_<grade>_price): see
+# Settings → Entities, search "hammond", and put yours into the "Fuel prices" section.
+title: Car
+views:
+  - title: Car
+    path: car
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Car
+            icon: mdi:car
+          # the car photo (Edit vehicle → Photo in hammond); hidden until there is one
+          - type: picture-entity
+            entity: image.hammond_a_class_photo
+            show_name: false
+            show_state: false
+            tap_action:
+              action: none
+            visibility:
+              - condition: state
+                entity: image.hammond_a_class_photo
+                state_not: unavailable
+          - type: tile
+            entity: sensor.hammond_a_class_odometer
+            name: Odometer (last fill-up)
+          - type: tile
+            entity: sensor.hammond_a_class_consumption
+            name: Consumption
+          - type: heading
+            heading: Last fill-up
+            icon: mdi:gas-station
+          - type: tile
+            entity: sensor.hammond_a_class_last_fill_up
+            name: When
+          - type: tile
+            entity: sensor.hammond_a_class_last_fill_up_quantity
+            name: Quantity
+          - type: tile
+            entity: sensor.hammond_a_class_last_fill_up_price
+            name: Price per litre
+          - type: tile
+            entity: sensor.hammond_a_class_last_fill_up_cost
+            name: Cost
+      - type: grid
+        cards:
+          - type: heading
+            heading: Costs
+            icon: mdi:cash-multiple
+          - type: tile
+            entity: sensor.hammond_a_class_costs_this_month
+            name: This month
+          - type: tile
+            entity: sensor.hammond_a_class_costs_last_30_days
+            name: Last 30 days
+          - type: tile
+            entity: sensor.hammond_a_class_costs_this_year
+            name: This year
+          - type: tile
+            entity: sensor.hammond_a_class_average_price_last_30_days
+            name: Average price (30 days)
+          # "this month" starts over on the 1st: HA's statistics turn it into costs per month
+          - type: statistics-graph
+            title: Costs per month
+            entities:
+              - entity: sensor.hammond_a_class_costs_this_month
+                name: Costs
+            stat_types:
+              - change
+            period: month
+            days_to_show: 365
+            chart_type: bar
+      - type: grid
+        cards:
+          - type: heading
+            heading: Trips
+            icon: mdi:map-marker-path
+          - type: tile
+            entity: sensor.hammond_a_class_trips_today
+            name: Today
+          - type: tile
+            entity: sensor.hammond_a_class_driving_today
+            name: Driving today
+          - type: tile
+            entity: sensor.hammond_a_class_trips_today_cost
+            name: Cost today
+          - type: tile
+            entity: sensor.hammond_a_class_trips_this_month
+            name: This month
+          - type: tile
+            entity: sensor.hammond_a_class_business_trips_this_month
+            name: Business this month
+          - type: heading
+            heading: Fuel prices
+            icon: mdi:gas-station-outline
+          # one tile per watched station (hammond → Price watch); replace with yours
+          - type: tile
+            entity: sensor.hammond_jet_super_e10_price
+            name: JET Super E10
+          - type: history-graph
+            title: Prices · 7 days
+            hours_to_show: 168
+            entities:
+              - entity: sensor.hammond_jet_super_e10_price
+                name: JET Super E10

@@ -58,6 +58,10 @@ level jumps by at least 10 % it waits until the value is stable, sends the detec
 to complete it. If the last reading before the fill-up was taken many km earlier, hammond marks the estimate
 *check quantity*.
 
+**Dashboards:** an example Home Assistant dashboard for hammond's MQTT sensors
+([`integrations/home-assistant/dashboard.yaml`](integrations/home-assistant/dashboard.yaml)) and a Grafana dashboard
+for longer statistics ([`integrations/grafana`](integrations/grafana/README.md)).
+
 **Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
 [Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE,
 France: prix-carburants, Portugal: DGEG, Italy: MIMIT, Spain: Ministerio (fetched with curl), no key;
