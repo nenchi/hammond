@@ -129,6 +129,8 @@ type Vehicle struct {
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
 	GaugeSegments int        `gorm:"default:4" json:"gaugeSegments"`
 	GaugeResetAt  *time.Time `json:"gaugeResetAt"`
+	// litres per gauge segment set by hand (bottom first); empty = learned. Wins over the learned values
+	GaugeManual []float64 `gorm:"serializer:json" json:"gaugeManual"`
 	// car photo: an attachment, shown via a random link (an <img> and Home Assistant can't log in);
 	// PhotoOrigin = the address the browser used when uploading, for Home Assistant's absolute link
 	PhotoID     string       `json:"-"`

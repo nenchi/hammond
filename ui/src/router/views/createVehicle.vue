@@ -21,6 +21,7 @@ export default {
     return {
       photoUrl: (this.vehicle && this.vehicle.photoUrl) || '',
       photoBusy: false,
+      gaugeEdit: null, // litres per segment while setting the gauge by hand
       photoShown: !(this.vehicle && this.vehicle.photoHidden),
       entityCheck: null, // { ok, text } from "Check" next to the odometer entity
       entityChecking: false,
@@ -102,6 +103,20 @@ export default {
           this.$buefy.toast.open({ message: msg, type: 'is-danger', duration: 5000, position: 'is-bottom' })
         })
         .finally(() => (this.photoBusy = false))
+    },
+    // gauge by hand: litres per bar, bottom first; null = back to the learned values
+    saveGauge(litres) {
+      axios
+        .put(`/api/vehicles/${this.vehicle.id}/gauge/manual`, { segmentLitres: litres })
+        .then(({ data }) => {
+          this.gauge = data
+          this.gaugeEdit = null
+          this.$buefy.toast.open({ message: litres ? 'Gauge saved' : 'Using the learned gauge', type: 'is-success', duration: 3000 })
+        })
+        .catch((ex) => {
+          const msg = (ex.response && ex.response.data && ex.response.data.error) || ex.message
+          this.$buefy.toast.open({ message: msg, type: 'is-danger', duration: 5000, position: 'is-bottom' })
+        })
     },
     setPhotoShown(shown) {
       axios
@@ -327,7 +342,8 @@ export default {
       <div v-if="gauge" class="box gauge-calibration mb-4">
         <p class="heading">
           Gauge calibration ·
-          <span v-if="gauge.calibrated" class="has-text-success"
+          <span v-if="gauge.manual" class="has-text-info">set by hand</span>
+          <span v-else-if="gauge.calibrated" class="has-text-success"
             >learned from {{ gauge.samples }} fill-ups and {{ gauge.driveSamples }} drives</span
           >
           <span v-else>linear (needs 2 confirmed detections or drives from Trips, has {{ gauge.samples + gauge.driveSamples }})</span>
@@ -362,6 +378,35 @@ export default {
           >
           <a v-if="gauge.samples" class="has-text-danger reset-gauge" @click="resetGauge">Reset</a></p
         >
+        <div v-if="gaugeEdit" class="gauge-edit">
+          <div class="is-flex" style="gap: 4px">
+            <b-input
+              v-for="(l, i) in gaugeEdit"
+              :key="i"
+              v-model.number="gaugeEdit[i]"
+              type="number"
+              step="0.1"
+              min="0.1"
+              size="is-small"
+              style="flex: 1"
+              :aria-label="`Litres ${(i * 100) / gauge.segments}–${((i + 1) * 100) / gauge.segments} %`"
+            />
+          </div>
+          <p class="help">
+            {{ tankUnit }} per segment, empty on the left. Sum {{ gaugeEdit.reduce((a, b) => a + (Number(b) || 0), 0).toFixed(1) }}
+            {{ tankUnit }}.
+          </p>
+          <div class="buttons mt-2">
+            <b-button size="is-small" type="is-primary" class="save-gauge" @click="saveGauge(gaugeEdit.map(Number))">Save</b-button>
+            <b-button size="is-small" @click="gaugeEdit = null">Cancel</b-button>
+          </div>
+        </div>
+        <div v-else class="buttons mt-2">
+          <b-button size="is-small" class="edit-gauge" @click="gaugeEdit = gauge.segmentLitres.slice()">Set manually</b-button>
+          <b-button v-if="gauge.manual" size="is-small" class="use-learned" @click="saveGauge(null)"
+            >Use learned ({{ gauge.samples + gauge.driveSamples }} samples)</b-button
+          >
+        </div>
       </div>
       <b-field label="Make / Company*">
         <b-input v-model="vehicleModel.make" type="text" required expanded></b-input>
