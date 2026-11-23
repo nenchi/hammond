@@ -29,7 +29,7 @@ func TestLegsFromHistory(t *testing.T) {
 	}
 	a, b := legs[0], legs[1]
 	if !a.Start.Equal(m(30)) || !a.End.Equal(m(60)) || a.StartOdo != 1000 || a.EndOdo != 1040 || a.Distance != 40.4 ||
-		*a.FuelStart != 60 || *a.FuelEnd != 50 || math.Abs(*a.FuelUsed-3.03) > 1e-9 {
+		*a.FuelStart != 60 || *a.FuelEnd != 50 || math.Abs(*a.FuelUsed-3.03) > 1e-9 || !a.FuelFromCar {
 		t.Errorf("leg 1: %+v used %v", a, *a.FuelUsed)
 	}
 	// the end values are read until the next start (9:10), not 15 min after the stop; distance and fuel are
@@ -39,7 +39,7 @@ func TestLegsFromHistory(t *testing.T) {
 	}
 	// without trip computer: odometer distance, fuel from the level × tank
 	legs, _ = legsFromHistory(h, db.TripEntities{Ignition: "sensor.ign", FuelLevel: "sensor.fuel"}, "sensor.odo", linear(50), m(300))
-	if legs[0].Distance != 40 || *legs[0].FuelUsed != 5 {
+	if legs[0].Distance != 40 || *legs[0].FuelUsed != 5 || legs[0].FuelFromCar { // from the gauge: not for calibration
 		t.Errorf("no trip computer: %+v", legs[0])
 	}
 	// the last stop isn't settled yet: no leg until 15 min after it

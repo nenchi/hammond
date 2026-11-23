@@ -269,7 +269,7 @@ export default {
       </b-field>
       <b-field
         label="Gauge segments"
-        message="How many parts the fuel gauge has (4 = quarters). Each part learns its own litres per % from your confirmed detections and, with Trips from Home Assistant, from your drives (km × your average consumption)."
+        message="How many parts the fuel gauge has (4 = quarters). Each part learns its own litres per % from your confirmed detections and, with Trips from Home Assistant, from your drives (the car's trip computer, else km × your average consumption)."
       >
         <b-input v-model.number="vehicleModel.gaugeSegments" type="number" min="1" max="10" step="1"></b-input>
       </b-field>
@@ -304,7 +304,11 @@ export default {
         </div>
         <p class="help"
           >Litres per segment, empty (0 %) on the left. Sum {{ gauge.tankCapacity }} {{ tankUnit }}.
-          <span v-if="gauge.driveSamples">Drives at {{ (gauge.litresPerKm * 100).toFixed(1) }} {{ tankUnit }}/100 (average of your fill-ups).</span>
+          <span v-if="gauge.driveSamples"
+            >Drives: litres from the car's trip computer<template v-if="gauge.litresPerKm">
+              , else {{ (gauge.litresPerKm * 100).toFixed(1) }} {{ tankUnit }}/100 (average of your fill-ups)</template
+            >.</span
+          >
           <a v-if="gauge.samples" class="has-text-danger reset-gauge" @click="resetGauge">Reset</a></p
         >
       </div>

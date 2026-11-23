@@ -291,3 +291,62 @@ func TestGaugeCalibrationLearnsFromDrives(t *testing.T) {
 		t.Fatalf("62→100 %%: want ~%.1f l, got %v", 11*(75-62)/25.0+14, got)
 	}
 }
+
+// with the trip computer's litres per drive, city and motorway drives (12 and 5 l/100 km) still give the
+// right segments, without any fill-up; old drives get FuelFromCar from the migration
+func TestGaugeCalibrationUsesTripComputer(t *testing.T) {
+	setupDB(t)
+	_, v := mkUserVehicle(t, "", 43)
+	truth := []float64{8, 10, 11, 14}
+	level := func(litres float64) float64 {
+		pct := 0.0
+		for _, q := range truth {
+			if litres >= q {
+				pct, litres = pct+25, litres-q
+				continue
+			}
+			pct += 25 * litres / q
+			break
+		}
+		return math.Floor(pct)
+	}
+	db.DB.Model(&v).Update("trip_entities", `{"ignition":"sensor.ign","fuelLevel":"sensor.fuel","distance":"sensor.d","consumption":"sensor.c"}`)
+	start, odo := at, 20000.0
+	for tank := 0; tank < 3; tank++ {
+		litres := 43.0
+		for i := 0; litres > 6; i++ {
+			lpk := 0.12 // city
+			if i%3 == 2 {
+				lpk = 0.05 // motorway, longer
+			}
+			km := 15.0 + float64(i%3)*20
+			used := km * lpk
+			fs := level(litres)
+			litres -= used
+			fe := level(litres)
+			// stored without the flag, like drives synced before it existed
+			db.DB.Create(&db.TripLeg{VehicleID: v.ID, Start: start, End: start.Add(time.Hour), StartOdo: odo, EndOdo: odo + km,
+				Distance: km, FuelStart: &fs, FuelEnd: &fe, FuelUsed: &used, Source: "ha"})
+			start, odo = start.Add(3*time.Hour), odo+km
+		}
+	}
+	if c := Calibrate(&v); c.DriveSamples != 0 {
+		t.Fatalf("no flag, no fill-ups: no litres to learn from, got %+v", c)
+	}
+	db.DB.Where("name = ?", "2026_11_23_TripLegFuelFromCar").Delete(&db.Migration{})
+	db.RunMigrations()
+	var marked int64
+	db.DB.Model(&db.TripLeg{}).Where("fuel_from_car = ?", true).Count(&marked)
+	if marked == 0 {
+		t.Fatal("migration didn't mark the drives of a vehicle with trip computer entities")
+	}
+	cal := Calibrate(&v)
+	if !cal.Calibrated || cal.DriveSamples < 30 {
+		t.Fatalf("want calibrated from the trip computer: %+v", cal)
+	}
+	for i, want := range truth {
+		if math.Abs(cal.SegmentLitres[i]-want) > 1.0 {
+			t.Fatalf("segment %d: want ~%v l, got %v (%v)", i+1, want, cal.SegmentLitres[i], cal.SegmentLitres)
+		}
+	}
+}

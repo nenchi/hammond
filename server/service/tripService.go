@@ -189,7 +189,7 @@ func legsFromHistory(h map[string][]haPoint, e db.TripEntities, odoEntity string
 		}
 		// fuel since start = average l/100 km × distance since start, per point in time
 		if used, ok := fuelSinceStart(h[e.Consumption], h[e.Distance], start, settle); e.Consumption != "" && e.Distance != "" && ok && used > 0 {
-			l.FuelUsed = &used
+			l.FuelUsed, l.FuelFromCar = &used, true
 		} else if l.FuelStart != nil && l.FuelEnd != nil && *l.FuelStart > *l.FuelEnd && g.TankCapacity > 0 {
 			used := g.Litres(*l.FuelEnd, *l.FuelStart) // the learned gauge: 1 % isn't the same litres everywhere
 			l.FuelUsed = &used

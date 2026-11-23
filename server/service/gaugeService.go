@@ -12,15 +12,16 @@ import (
 // litres-per-%. Learned from confirmed detections: "74 % → 99 %, the user filled 12.14 l" means
 // overlap(74–99, segment i) × k_i summed over i = 12.14. Least squares over all samples, pulled gently
 // towards the linear value (tank / 100) so few samples can't produce wild curves.
-// Drives teach it too (Trips from Home Assistant): "the gauge went 62 → 57 % over 80 km" at the average
-// consumption of the full-tank fill-ups (receipt litres, so never from the gauge itself) is a sample at half
-// weight. They cover the parts of the tank you rarely fill up from, and every drive adds one.
+// Drives teach it too (Trips from Home Assistant): "the gauge went 62 → 57 % on drives that used 4.1 l" is a
+// sample at half weight. Litres per drive from the car's trip computer (city and motorway differ a lot), else
+// km × the average of the full-tank fill-ups (receipt litres); never from the gauge itself. They cover the
+// parts of the tank you rarely fill up from, and every drive adds one.
 
 type GaugeCalibration struct {
 	Segments         int       `json:"segments"`
 	Samples          int       `json:"samples"`          // confirmed fill-ups
 	DriveSamples     int       `json:"driveSamples"`     // stretches of drives (≥ 5 % of the gauge each)
-	LitresPerKm      float64   `json:"litresPerKm"`      // average of the full-tank fill-ups, used for the drives
+	LitresPerKm      float64   `json:"litresPerKm"`      // average of the full-tank fill-ups, for drives without trip computer
 	Calibrated       bool      `json:"calibrated"`       // ≥ 2 samples (fill-ups and drives); else linear
 	LitresPerPercent []float64 `json:"litresPerPercent"` // per segment, bottom (0 %) first
 	SegmentLitres    []float64 `json:"segmentLitres"`    // litres each segment holds
@@ -81,12 +82,10 @@ func litresPerKm(v *db.Vehicle) float64 {
 }
 
 // driveSamples: consecutive drives chained until the gauge dropped driveMinDrop %; a fill-up (level up),
-// a drive without levels or a level that rose while driving starts a new chain.
+// a drive without levels or litres, or a level that rose while driving starts a new chain. Litres: the trip
+// computer's (FuelFromCar), else km × lpk.
 // ponytail: reads all legs since the reset on every Calibrate; a few thousand rows, cache it if it gets slow
 func driveSamples(v *db.Vehicle, lpk float64) []gaugeSample {
-	if lpk <= 0 {
-		return nil
-	}
 	var legs []db.TripLeg
 	q := db.DB.Where("vehicle_id = ? AND fuel_start IS NOT NULL AND fuel_end IS NOT NULL", v.ID)
 	if v.GaugeResetAt != nil {
@@ -94,19 +93,25 @@ func driveSamples(v *db.Vehicle, lpk float64) []gaugeSample {
 	}
 	q.Order("started_at").Find(&legs)
 	var out []gaugeSample
-	from, last, km, open := 0.0, 0.0, 0.0, false
+	from, last, litres, open := 0.0, 0.0, 0.0, false
 	for _, l := range legs {
 		s, e := *l.FuelStart, *l.FuelEnd
-		if !open || s > last+driveMaxJump || e > s+driveMaxJump {
-			from, km, open = s, 0, e <= s+driveMaxJump
+		used := l.Distance * lpk
+		if l.FuelFromCar && l.FuelUsed != nil {
+			used = *l.FuelUsed
+		}
+		if !open || s > last+driveMaxJump || e > s+driveMaxJump || used <= 0 && l.Distance > 0 {
+			// a fill-up, a level that rose while driving, or a drive without litres (no trip computer and
+			// no average yet): start a new chain
+			from, litres, open = s, 0, e <= s+driveMaxJump && (used > 0 || l.Distance == 0)
 			if !open {
 				continue
 			}
 		}
-		last, km = e, km+l.Distance
+		last, litres = e, litres+used
 		if from-last >= driveMinDrop {
-			out = append(out, gaugeSample{last, from, km * lpk, driveWeight})
-			from, km = last, 0
+			out = append(out, gaugeSample{last, from, litres, driveWeight})
+			from, litres = last, 0
 		}
 	}
 	return out
