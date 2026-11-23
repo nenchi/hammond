@@ -224,6 +224,27 @@ export default [
     props: (route) => ({ vehicle: route.meta.tmp.vehicle }),
   },
   {
+    // the Trips menu: the car picked last time, else the first one (the page has a picker when there are several)
+    path: '/trips',
+    name: 'trips',
+    meta: {
+      authRequired: true,
+      beforeResolve(routeTo, routeFrom, next) {
+        store
+          .dispatch('vehicles/fetchVehicles')
+          .then((list) => {
+            let last = ''
+            try {
+              last = localStorage.getItem('tripsVehicle') || ''
+            } catch (e) {}
+            const v = (list || []).find((x) => x.id === last) || (list || [])[0]
+            next(v ? `/vehicles/${v.id}/trips` : { name: 'home' })
+          })
+          .catch(() => next({ name: 'home' }))
+      },
+    },
+  },
+  {
     path: '/vehicles/:vehicleId/trips',
     name: 'vehicle-trips',
     component: () => lazyLoadView(import('@views/trips.vue')),

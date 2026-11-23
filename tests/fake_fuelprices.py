@@ -150,6 +150,10 @@ class H(BaseHTTPRequestHandler):
                       "sensor.ci_odometer": [(300, "1000"), (209, "1040"), (179, "1075")],
                       "sensor.ci_fuel": [(300, "60"), (209, "50"), (179, "42")]}
             ids = q.get("filter_entity_id", [""])[0].split(",")
+            if ids == ["device_tracker.ci_phone"]:  # the phone along both drives (home → work, with attributes)
+                pos = [(242, 50.079, 8.77), (225, 50.09, 8.75), (211, 50.10, 8.73), (206, 50.10, 8.73), (190, 50.105, 8.70), (181, 50.11, 8.68)]
+                return self.reply(200, [[{"entity_id": ids[0], "state": "not_home", "last_updated": at(m), "last_changed": at(m),
+                                          "attributes": {"latitude": la, "longitude": ln, "gps_accuracy": 15}} for m, la, ln in pos]])
             return self.reply(200, [[{"entity_id": e, "state": st, "last_changed": at(m)} if i == 0 else
                                      {"state": st, "last_changed": at(m)} for i, (m, st) in enumerate(series[e])]
                                     for e in ids if e in series])

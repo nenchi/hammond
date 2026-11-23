@@ -3,6 +3,7 @@ import Layout from "@layouts/main.vue";
 import axios from "axios";
 import store from "@state/store";
 import { mapState } from "vuex";
+import TripsMap from "@components/tripsMap.vue";
 
 const ymd = (d) => {
   const p = (n) => String(n).padStart(2, "0");
@@ -18,7 +19,7 @@ const suggestions = {
 
 export default {
   page: { title: "Trips" },
-  components: { Layout },
+  components: { Layout, TripsMap },
   data() {
     const today = new Date();
     return {
@@ -31,8 +32,17 @@ export default {
       loading: false,
       syncing: false,
       setupOpen: false,
-      entities: { ignition: "", fuelLevel: "", distance: "", consumption: "" },
+      entities: {
+        ignition: "",
+        fuelLevel: "",
+        distance: "",
+        consumption: "",
+        carLocation: "",
+        phoneLocation: "",
+      },
       mergeMinutes: 15,
+      vehicles: [], // the user's cars: a picker when there are several
+      focus: "", // trip id shown on the map
       edit: {}, // trip id → { purpose, notes, business }
       cost: {}, // trip id → { amount, type, comment } while adding a cost
       adding: false,
@@ -96,16 +106,18 @@ export default {
       );
     },
   },
+  watch: {
+    // another car picked: same page, new data
+    "$route.params.vehicleId"() {
+      this.focus = "";
+      this.loadVehicle();
+      this.load();
+    },
+  },
   mounted() {
     store.dispatch("utils/getSettings");
-    axios.get(`/api/vehicles/${this.$route.params.vehicleId}`).then((r) => {
-      this.vehicle = r.data;
-      this.entities = Object.assign(
-        { ignition: "", fuelLevel: "", distance: "", consumption: "" },
-        r.data.tripEntities || {}
-      );
-      this.setupOpen = !this.entities.ignition;
-    });
+    axios.get("/api/me/vehicles").then((r) => (this.vehicles = r.data || []));
+    this.loadVehicle();
     store.dispatch("users/me").then((me) => {
       if (me && me.tripMergeMinutes !== undefined)
         this.mergeMinutes = me.tripMergeMinutes;
@@ -113,6 +125,70 @@ export default {
     this.load();
   },
   methods: {
+    loadVehicle() {
+      try {
+        localStorage.setItem("tripsVehicle", this.$route.params.vehicleId); // /trips opens it next time
+      } catch (e) {
+        // private mode: /trips opens the first car
+      }
+      axios.get(`/api/vehicles/${this.$route.params.vehicleId}`).then((r) => {
+        this.vehicle = r.data;
+        this.entities = Object.assign(
+          {
+            ignition: "",
+            fuelLevel: "",
+            distance: "",
+            consumption: "",
+            carLocation: "",
+            phoneLocation: "",
+          },
+          r.data.tripEntities || {}
+        );
+        this.setupOpen = !this.entities.ignition;
+      });
+    },
+    pickVehicle(id) {
+      this.$router.push(`/vehicles/${id}/trips`);
+    },
+    // a trip's numbers: tank % from the first drive's start to the last one's end, stops = time between drives
+    tank(t) {
+      const a = t.legs[0].fuelStart;
+      const b = t.legs[t.legs.length - 1].fuelEnd;
+      return a != null && b != null
+        ? `${a.toFixed(0)} → ${b.toFixed(0)} %`
+        : "";
+    },
+    stopMins(t) {
+      return Math.max(
+        0,
+        Math.round((new Date(t.end) - new Date(t.start)) / 60000) -
+          t.driveMinutes
+      );
+    },
+    hasRoute(t) {
+      return t.legs.some((l) => l.route && l.route.length > 1);
+    },
+    summary(t) {
+      const out = [
+        `${this.time(t.start)} – ${this.time(t.end)} · ${t.distance.toFixed(
+          1
+        )} ${this.km}`,
+      ];
+      if (t.from || t.to) out.push(`${t.from || "?"} → ${t.to || "?"}`);
+      let fuel = `${this.dur(t.driveMinutes)} driving`;
+      if (this.stopMins(t)) fuel += ` · ${this.dur(this.stopMins(t))} stops`;
+      out.push(fuel);
+      if (t.fuelUsed && t.distance)
+        out.push(
+          `⛽ ${t.fuelUsed.toFixed(2)} l · ${(
+            (100 * t.fuelUsed) /
+            t.distance
+          ).toFixed(1)} l/100 ${this.km}`
+        );
+      if (this.tank(t)) out.push(`Tank ${this.tank(t)}`);
+      out.push(`Total ${this.money(t.fuelCost + t.extraCost)}`);
+      return out;
+    },
     toast(message, type = "is-success") {
       this.$buefy.toast.open({
         message,
@@ -172,6 +248,12 @@ export default {
       const prefix = odo.slice(0, -"odometer".length);
       for (const k in suggestions)
         if (!this.entities[k]) this.entities[k] = prefix + suggestions[k];
+      // Mercedes: device_tracker.<plate>_device_tracker (only when the car shares its location)
+      if (!this.entities.carLocation)
+        this.entities.carLocation =
+          "device_tracker." +
+          prefix.replace(/^sensor\./, "") +
+          "device_tracker";
     },
     saveSetup() {
       Promise.all([
@@ -296,8 +378,17 @@ export default {
   <Layout>
     <div class="trips-page">
       <h1 class="title">
-        Trips<span v-if="vehicle"> · {{ vehicle.nickname }}</span>
+        Trips<span v-if="vehicle && vehicles.length < 2">
+          · {{ vehicle.nickname }}</span
+        >
       </h1>
+      <b-field v-if="vehicles.length > 1" class="no-print" label="Car">
+        <b-select :value="$route.params.vehicleId" @input="pickVehicle">
+          <option v-for="v in vehicles" :key="v.id" :value="v.id">
+            {{ v.nickname }}{{ v.registration ? " · " + v.registration : "" }}
+          </option>
+        </b-select>
+      </b-field>
       <p class="subtitle is-6 no-print">
         Drives from Home Assistant (engine on → off), joined into one trip when
         the stop between them is short. Fuel is priced first in, first out: the
@@ -365,6 +456,9 @@ export default {
             fuelLevel: 'Fuel level (%)',
             distance: 'Trip distance since start',
             consumption: 'Trip consumption since start (l/100 km)',
+            carLocation: 'Car location (device_tracker, preferred)',
+            phoneLocation:
+              'Phone location (HA companion app: when the car has none)',
           }"
           :key="k"
           :label="label"
@@ -374,7 +468,9 @@ export default {
             pattern="[a-z0-9_]+\.[a-z0-9_]+"
             maxlength="100"
             :has-counter="false"
-            placeholder="sensor.…"
+            :placeholder="
+              k.endsWith('Location') ? 'device_tracker.…' : 'sensor.…'
+            "
           />
         </b-field>
         <b-field
@@ -438,6 +534,13 @@ export default {
         No trips in this period.
       </div>
 
+      <TripsMap
+        v-if="trips.length"
+        :trips="trips"
+        :focus="focus"
+        :summary="summary"
+      />
+
       <section v-for="d in days" :key="d.day" class="day">
         <h2 class="subtitle is-5 day-head">
           {{ dayName(d.day) }}
@@ -459,9 +562,25 @@ export default {
                   <strong>{{ time(t.start) }} – {{ time(t.end) }}</strong> ·
                   {{ t.distance.toFixed(1) }} {{ km }}
                 </p>
+                <p v-if="t.from || t.to">
+                  📍 {{ t.from || "?" }} → {{ t.to || "?" }}
+                </p>
                 <p>
                   {{ t.startOdo.toFixed(0) }} → {{ t.endOdo.toFixed(0) }}
-                  {{ km }} · {{ dur(t.driveMinutes) }} driving
+                  {{ km }} · {{ dur(t.driveMinutes) }} driving<span
+                    v-if="stopMins(t)"
+                  >
+                    · {{ dur(stopMins(t)) }} stops</span
+                  ><span v-if="tank(t)"> · tank {{ tank(t) }}</span>
+                  <a
+                    v-if="hasRoute(t)"
+                    class="no-print"
+                    @click="
+                      focus = '';
+                      $nextTick(() => (focus = t.id));
+                    "
+                    >· map</a
+                  >
                 </p>
                 <p>
                   ⛽ {{ t.fuelUsed ? t.fuelUsed.toFixed(2) + " l" : "–"
@@ -579,6 +698,10 @@ export default {
               <p v-for="(l, i) in t.legs" :key="l.id">
                 {{ time(l.start) }}–{{ time(l.end) }} ·
                 {{ l.distance.toFixed(1) }} {{ km }}
+                <span v-if="l.startAddress || l.endAddress"
+                  >· {{ l.startAddress || "?" }} →
+                  {{ l.endAddress || "?" }}</span
+                >
                 <span v-if="l.fuelUsed"
                   >· {{ l.fuelUsed.toFixed(2) }} l ·
                   {{ money(t.legCosts[i]) }}</span

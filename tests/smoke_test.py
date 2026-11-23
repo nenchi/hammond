@@ -473,7 +473,8 @@ s, r = call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "sensor.ci_
 check("trip entities saved", s == 200 and r["ignition"] == "sensor.ci_ignition", (s, r))
 s, r = call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "../api/config"}, token=tok)
 check("trip entity must be an entity id", s == 422, (s, r))
-call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "sensor.ci_ignition", "fuelLevel": "sensor.ci_fuel"}, token=tok)
+call("PUT", f"/api/vehicles/{vid}/tripEntities", {"ignition": "sensor.ci_ignition", "fuelLevel": "sensor.ci_fuel",
+                                                   "phoneLocation": "device_tracker.ci_phone"}, token=tok)
 s, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
 check("trips: sync reads 2 drives from HA", s == 200 and r["added"] == 2, (s, r))
 s, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
@@ -483,6 +484,10 @@ t = trips[0] if s == 200 and trips else {}
 check("trips: the 5 min stop joins both drives into one trip", s == 200 and len(trips) == 1 and len(t["legs"]) == 2
       and t["distance"] == 75 and t["startOdo"] == 1000 and t["endOdo"] == 1075 and abs(t["fuelUsed"] - 9) < 1e-6
       and t["driveMinutes"] == 55, (s, trips))
+legs = t.get("legs") or [{}, {}]
+check("trips: start/end positions and the route from the phone", legs[0].get("locationFrom") == "phone"
+      and legs[0].get("startLat") == 50.079 and legs[1].get("endLat") == 50.11 and len(legs[0].get("route") or []) == 4
+      and len(legs[1].get("route") or []) == 4, legs)
 s, _ = call("GET", f"/api/vehicles/{vid}/trips", token=ptok)
 check("trips: another user's vehicle is 404", s == 404, s)
 s, _ = call("PUT", f"/api/trips/{t.get('id')}", {"business": True, "purpose": "Customer A, Frankfurt", "notes": "contract"}, token=tok)

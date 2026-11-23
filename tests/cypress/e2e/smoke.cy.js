@@ -589,7 +589,18 @@ describe('hammond UI', () => {
     cy.get('.trips-page .trip').contains('button', /^\s*Add\s*$/).click()
     cy.wait('@addCost').its('response.statusCode').should('eq', 201)
     cy.get('.trips-page .trip').should('contain', 'Toll').and('contain', '9.90')
+    // the map: a trip entered by hand has no route, so the map says how to get one
+    cy.get('.trips-page .trips-map .leaflet-container').should('exist')
+    cy.get('.trips-page .trips-map').should('contain', 'No routes yet')
     cy.document().then((doc) => expect(doc.documentElement.scrollWidth).to.be.at.most(390))
+    noConsoleErrors()
+  })
+
+  it('trips: the Trips menu opens the trips of a car (the one picked last time)', () => {
+    visit(`/vehicles/${vehicleId}/trips`)
+    cy.get('.trips-page', { timeout: 10000 })
+    visit('/trips')
+    cy.location('pathname', { timeout: 10000 }).should('eq', `/vehicles/${vehicleId}/trips`)
     noConsoleErrors()
   })
 

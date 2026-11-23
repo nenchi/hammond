@@ -1,7 +1,10 @@
 package service
 
 import (
+	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -85,11 +88,12 @@ func TestTripsCSV(t *testing.T) {
 	w := writerFunc(func(p []byte) (int, error) { b.s = append(b.s, p...); return len(p), nil })
 	tr := TripView{Trip: db.Trip{Business: true, Purpose: "Customer, Frankfurt"}, Start: time.Date(2026, 11, 20, 8, 0, 0, 0, time.Local),
 		End: time.Date(2026, 11, 20, 9, 40, 0, 0, time.Local), StartOdo: 1000, EndOdo: 1075, Distance: 75.6, DriveMins: 60,
-		FuelUsed: 5.1, FuelCost: 8.5, ExtraCost: 2, Costs: []db.Expense{{ExpenseType: "Parking", Amount: 2}}}
+		FuelUsed: 5.1, FuelCost: 8.5, ExtraCost: 2, Costs: []db.Expense{{ExpenseType: "Parking", Amount: 2}},
+		From: "Neusalzer Straße 77, 63069 Offenbach am Main", To: "Mainzer Landstraße 1, 60329 Frankfurt am Main"}
 	if err := TripsCSV(w, []TripView{tr}, "EUR"); err != nil {
 		t.Fatal(err)
 	}
-	want := "2026-11-20,08:00,09:40,60,1000,1075,75.6,yes,\"Customer, Frankfurt\",,5.10,8.50,2.00,Parking 2.00,10.50\n"
+	want := "2026-11-20,08:00,09:40,\"Neusalzer Straße 77, 63069 Offenbach am Main\",\"Mainzer Landstraße 1, 60329 Frankfurt am Main\",60,1000,1075,75.6,yes,\"Customer, Frankfurt\",,5.10,8.50,2.00,Parking 2.00,10.50\n"
 	if got := string(b.s); len(got) < len(want) || got[len(got)-len(want):] != want {
 		t.Errorf("csv:\n%s", strconv.Quote(got))
 	}
@@ -138,5 +142,73 @@ func TestAddTripCostReturnsItsID(t *testing.T) {
 	var e db.Expense
 	if db.DB.First(&e, "id = ?", second); e.Comments != "A5" {
 		t.Fatalf("second ID is the A5 toll: %+v", e)
+	}
+}
+
+// addresses: the car's tracker first, else the phone; a phone that stayed home while the car drove gives none
+func TestLocateCarThenPhone(t *testing.T) {
+	m := func(min int) time.Time { return at.Add(time.Duration(min) * time.Minute) }
+	home, work := posPoint{m(-5), 50.079, 8.77, 15}, posPoint{m(42), 50.11, 8.68, 20}
+	mid := posPoint{m(20), 50.095, 8.72, 30}
+	leg := func() db.TripLeg { return db.TripLeg{Start: m(0), End: m(40), Distance: 9.5} }
+
+	l := leg()
+	locate(&l, nil, []posPoint{home, mid, work})
+	if l.LocationFrom != "phone" || l.StartLat == nil || *l.StartLat != 50.079 || *l.EndLat != 50.11 || len(l.Route) != 3 {
+		t.Fatalf("phone: %+v", l)
+	}
+	l = leg()
+	carStart := posPoint{m(0), 50.08, 8.771, 0}
+	carEnd := posPoint{m(41), 50.111, 8.681, 0}
+	locate(&l, []posPoint{carStart, carEnd}, []posPoint{home, mid, work})
+	if l.LocationFrom != "car" || *l.StartLat != 50.08 || *l.EndLat != 50.111 || len(l.Route) != 2 {
+		t.Fatalf("car first: %+v", l)
+	}
+	l = leg()
+	locate(&l, nil, []posPoint{home, {m(41), 50.0791, 8.7701, 15}}) // phone at home the whole time, car drove 9.5 km
+	if l.StartLat != nil || l.EndLat != nil || l.LocationFrom != "" {
+		t.Fatalf("phone left at home: want no position, got %+v", l)
+	}
+	l = leg()
+	locate(&l, nil, []posPoint{home, {m(41), 51.5, 7.0, 15}}) // 150 km away after 9.5 km: not with the car
+	if l.EndLat != nil {
+		t.Fatalf("phone elsewhere: want no position, got %+v", l)
+	}
+	l = leg()
+	locate(&l, nil, []posPoint{{m(-90), 50.079, 8.77, 15}}) // only a position 90 min before
+	if l.StartLat != nil {
+		t.Fatalf("too old: %+v", l)
+	}
+}
+
+// addresses from Nominatim: street, postcode, town; a backlog is limited per sync
+func TestFillAddresses(t *testing.T) {
+	setupDB(t)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Query().Get("lat") == "50.11" {
+			fmt.Fprint(w, `{"display_name":"Rastanlage Taunusblick, A 5, Hessen, Deutschland","address":{"road":"A 5"}}`)
+			return
+		}
+		fmt.Fprint(w, `{"display_name":"x","address":{"road":"Neusalzer Straße","house_number":"77","postcode":"63069","city":"Offenbach am Main"}}`)
+	}))
+	defer srv.Close()
+	old := GeocodeURL
+	GeocodeURL = srv.URL
+	defer func() { GeocodeURL = old }()
+	_, v := mkUserVehicle(t, "", 43)
+	la, ln, la2, ln2 := 50.079, 8.77, 50.11, 8.68
+	db.DB.Create(&db.TripLeg{VehicleID: v.ID, Start: at, End: at.Add(time.Hour), StartLat: &la, StartLng: &ln, EndLat: &la2, EndLng: &ln2,
+		Route: [][2]float64{{la, ln}, {la2, ln2}}})
+	fillAddresses(v.ID, 20)
+	var l db.TripLeg
+	db.DB.First(&l, "vehicle_id = ?", v.ID)
+	if l.StartAddress != "Neusalzer Straße 77, 63069 Offenbach am Main" || l.EndAddress != "Rastanlage Taunusblick, A 5, Hessen" || len(l.Route) != 2 {
+		t.Fatalf("addresses: %q / %q route %v", l.StartAddress, l.EndAddress, l.Route)
+	}
+	fillAddresses(v.ID, 20) // nothing left to look up
+	if calls != 2 {
+		t.Fatalf("want 2 lookups, got %d", calls)
 	}
 }

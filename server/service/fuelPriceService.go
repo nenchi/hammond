@@ -119,6 +119,71 @@ func countryAt(lat, lng float64) (code, name string) {
 	return c[0], c[1]
 }
 
+var (
+	addressCache   = map[string]string{}
+	addressCacheMu sync.Mutex
+	lastNominatim  time.Time // Nominatim policy: at most 1 request per second
+)
+
+// addressAt: "Frankfurter Str. 12, 63067 Offenbach am Main" for a position, "" when unknown. Cached per
+// ~10 m; uncached lookups wait for Nominatim's 1 request/s. ponytail: cache never evicted, one household's
+// drives start and end at the same few places
+func addressAt(lat, lng float64) string {
+	if GeocodeURL == "" {
+		return ""
+	}
+	key := fmt.Sprintf("%.4f,%.4f", lat, lng)
+	addressCacheMu.Lock()
+	defer addressCacheMu.Unlock() // also serializes the lookups for the rate limit
+	if a, ok := addressCache[key]; ok {
+		return a
+	}
+	if wait := time.Second - time.Since(lastNominatim); wait > 0 {
+		time.Sleep(wait)
+	}
+	lastNominatim = time.Now()
+	q := url.Values{"format": {"jsonv2"}, "lat": {fmt.Sprint(lat)}, "lon": {fmt.Sprint(lng)}, "zoom": {"18"}, "addressdetails": {"1"}}
+	req, _ := http.NewRequest("GET", GeocodeURL+"?"+q.Encode(), nil)
+	req.Header.Set("User-Agent", "hammond (https://github.com/nenchi/hammond)")
+	resp, err := priceClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var body struct {
+		DisplayName string            `json:"display_name"`
+		Address     map[string]string `json:"address"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || resp.StatusCode != http.StatusOK {
+		return "" // not cached: tried again on the next sync
+	}
+	a := body.Address
+	street := strings.TrimSpace(firstOf(a, "road", "pedestrian", "footway", "square") + " " + a["house_number"])
+	place := strings.TrimSpace(a["postcode"] + " " + firstOf(a, "city", "town", "village", "municipality", "county"))
+	addr := strings.Trim(street+", "+place, ", ")
+	if street == "" || place == "" { // e.g. a motorway service area: the first parts of the full name
+		addr = strings.Join(firstN(strings.Split(body.DisplayName, ", "), 3), ", ")
+	}
+	addressCache[key] = addr
+	return addr
+}
+
+func firstOf(m map[string]string, keys ...string) string {
+	for _, k := range keys {
+		if m[k] != "" {
+			return m[k]
+		}
+	}
+	return ""
+}
+
+func firstN(s []string, n int) []string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
 type Place struct {
 	Name string  `json:"name"`
 	Lat  float64 `json:"lat"`
