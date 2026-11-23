@@ -140,9 +140,12 @@ to every channel that is on; tapping it opens Google Maps navigation to the stat
 - **Telegram**: your own bot (@BotFather → `/newbot` → token). Link your chat by sending `/start <code>` (the code is
   shown in the settings); only that chat is answered. hammond asks Telegram for new messages (no webhook, no open port);
   without a Telegram channel nothing connects to Telegram.
-- A **Matrix** channel can be marked as homebot's Fuel room: "fill-up detected" goes there too.
+- **Matrix as a bot, like Telegram**: a bot account (e.g. `@hammond`) and its access token, an unencrypted room
+  with the bot invited, *Answer the fuel commands in this room* on. hammond joins and reads that room (sync, outgoing
+  only), you link yourself with `/start <code>`; then the same commands, charts, PDF/CSV files, "fill-up detected →
+  answer with the price" and receipt pictures (→ Quick Entry) as on Telegram. Other people in the room are ignored.
 
-### Chat commands (Telegram, or Matrix through homebot)
+### Chat commands (Telegram and Matrix)
 
 With *Answer the fuel commands* on, the chat works like a small app. `[car]` is a car's number (`cars`), name or plate;
 with one car you never name it, with several the reading commands show all and the writing ones ask (or use the
@@ -157,7 +160,7 @@ default set with `car 2`).
 
 - **Fill-up detected** (e.g. by Home Assistant): the chat gets "38 l at 81300, answer with the price"; answering
   `1.759` saves it.
-- **A photo** of a receipt or the pump's display becomes a Quick Entry (Telegram), to complete later.
+- **A photo** of a receipt or the pump's display becomes a Quick Entry, to complete later.
 - Writing commands go through the same checks as the web app.
 
 The same commands for other chat bots: `POST /api/v1/command {"text": "prices"}` with an API key (text, plus a PNG or a

@@ -23,17 +23,21 @@ var notifyKinds = map[string]string{"gotify": "Gotify", "ntfy": "ntfy", "matrix"
 // ChannelView: a channel as the settings page shows it (secrets only as "set")
 type ChannelView struct {
 	db.NotifyChannel
-	SecretSet bool   `json:"secretSet"`
-	Linked    bool   `json:"linked"`         // telegram: a chat is linked
-	Code      string `json:"code,omitempty"` // telegram, not linked: send "/start <code>" to the bot
-	Bot       string `json:"bot,omitempty"`  // telegram: @username
+	SecretSet  bool   `json:"secretSet"`
+	Linked     bool   `json:"linked"`               // telegram: a chat is linked; matrix: a user is linked
+	LinkedUser string `json:"linkedUser,omitempty"` // matrix: who answers are for
+	Code       string `json:"code,omitempty"`       // telegram, not linked: send "/start <code>" to the bot
+	Bot        string `json:"bot,omitempty"`        // telegram: @username
 }
 
 func channelView(c db.NotifyChannel, withBot bool) ChannelView {
-	v := ChannelView{NotifyChannel: c, SecretSet: c.Secret != "", Linked: c.ChatID != 0}
+	v := ChannelView{NotifyChannel: c, SecretSet: c.Secret != "", Linked: c.ChatID != 0 || c.MatrixUser != "", LinkedUser: c.MatrixUser}
+	if c.Kind == "matrix" && c.Commands && !v.Linked {
+		v.Code = LinkCode(c.ID)
+	}
 	if c.Kind == "telegram" && c.Secret != "" {
 		if !v.Linked {
-			v.Code = TelegramCode(c.ID)
+			v.Code = LinkCode(c.ID)
 		}
 		if withBot {
 			var me struct{ Username string }
@@ -97,7 +101,13 @@ func (in ChannelInput) apply(c *db.NotifyChannel) error {
 	}
 	// telegram: hammond answers in the chat; matrix: the room is homebot's Fuel room (homebot relays to hammond)
 	c.Enabled, c.Commands = in.Enabled, in.Commands && (c.Kind == "telegram" || c.Kind == "matrix")
+	oldRoom, oldSecret := c.Room, c.Secret
 	c.URL, c.Room = strings.TrimRight(strings.TrimSpace(in.URL), "/"), strings.TrimSpace(in.Room)
+	defer func() { // matrix: another room or account = link again
+		if c.Kind == "matrix" && (c.Room != oldRoom || c.Secret != oldSecret) {
+			c.MatrixUser = ""
+		}
+	}()
 	switch secret := strings.TrimSpace(in.Secret); secret {
 	case "":
 	case "-":
@@ -188,13 +198,13 @@ func DeleteChannel(userID, id string) error {
 	return db.DB.Delete(c).Error
 }
 
-// UnlinkChannel: telegram: forget the linked chat (a new code links another one)
+// UnlinkChannel: forget the linked Telegram chat / Matrix user (a new code links another one)
 func UnlinkChannel(userID, id string) error {
 	c, err := getChannel(userID, id)
 	if err != nil {
 		return err
 	}
-	return db.DB.Model(c).Update("chat_id", 0).Error
+	return db.DB.Model(c).Updates(map[string]interface{}{"chat_id": 0, "matrix_user": ""}).Error
 }
 
 // TestChannel: a test message through this channel, also when it's turned off
@@ -273,43 +283,6 @@ func sendNtfy(c *db.NotifyChannel, title, message, click string) error {
 	}
 	if err := postJSON(root, m, h, "POST"); err != nil {
 		return errors.New("ntfy " + err.Error())
-	}
-	return nil
-}
-
-// sendMatrix: an m.text message (title bold, link as "Navigate") as the account of the access token
-func sendMatrix(c *db.NotifyChannel, title, message, click string) error {
-	room := c.Room
-	auth := map[string]string{"Authorization": "Bearer " + c.Secret}
-	if strings.HasPrefix(room, "#") { // alias → room ID
-		req, _ := http.NewRequest("GET", c.URL+"/_matrix/client/v3/directory/room/"+url.PathEscape(room), nil)
-		req.Header.Set("Authorization", "Bearer "+c.Secret)
-		resp, err := notifyClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("Matrix not reachable: %s", err)
-		}
-		var r struct {
-			RoomID string `json:"room_id"`
-		}
-		json.NewDecoder(resp.Body).Decode(&r)
-		resp.Body.Close()
-		if r.RoomID == "" {
-			return fmt.Errorf("Matrix: no room %s (HTTP %d)", room, resp.StatusCode)
-		}
-		room = r.RoomID
-	}
-	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;").Replace
-	plain := title + "\n" + message
-	html := "<b>" + esc(title) + "</b><br>" + strings.ReplaceAll(esc(message), "\n", "<br>")
-	if click != "" {
-		plain += "\n🧭 Navigate " + click
-		html += `<br><a href="` + esc(click) + `">🧭 Navigate</a>`
-	}
-	txn := fmt.Sprintf("hammond%d", time.Now().UnixNano())
-	err := postJSON(c.URL+"/_matrix/client/v3/rooms/"+url.PathEscape(room)+"/send/m.room.message/"+txn,
-		map[string]string{"msgtype": "m.text", "body": plain, "format": "org.matrix.custom.html", "formatted_body": html}, auth, "PUT")
-	if err != nil {
-		return errors.New("Matrix " + err.Error())
 	}
 	return nil
 }
