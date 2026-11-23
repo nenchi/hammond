@@ -592,12 +592,6 @@ describe('hammond UI', () => {
     // the map: a trip entered by hand has no route, so the map says how to get one
     cy.get('.trips-page .trips-map .leaflet-container').should('exist')
     cy.get('.trips-page .trips-map').should('contain', 'No routes yet')
-    // the toolbar: date fields (with a label) and buttons share one bottom line
-    cy.get('.trips-page .trips-toolbar input[type=date]').first().then(($d) => {
-      cy.get('.trips-page .trips-toolbar .buttons .button').first().then(($b) => {
-        expect(Math.abs($d[0].getBoundingClientRect().bottom - $b[0].getBoundingClientRect().bottom)).to.be.lessThan(3)
-      })
-    })
     cy.document().then((doc) => expect(doc.documentElement.scrollWidth).to.be.at.most(390))
     noConsoleErrors()
   })
@@ -626,6 +620,13 @@ describe('hammond UI', () => {
     cy.get('.trips-page', { timeout: 10000 })
     visit('/trips')
     cy.location('pathname', { timeout: 10000 }).should('eq', `/vehicles/${vehicleId}/trips`)
+    // desktop width: date fields (with a label) and the buttons in one row, on one bottom line
+    // (on a phone they stack, so this is only checked here)
+    cy.get('.trips-page .trips-toolbar input[type=date]', { timeout: 10000 }).first().then(($d) => {
+      cy.get('.trips-page .trips-toolbar .buttons .button').first().then(($b) => {
+        expect(Math.abs($d[0].getBoundingClientRect().bottom - $b[0].getBoundingClientRect().bottom)).to.be.lessThan(3)
+      })
+    })
     noConsoleErrors()
   })
 
