@@ -278,7 +278,9 @@ func UpdateMqttSettings(userID, rawURL, user, password, prefix string) error {
 		return errors.New("invalid MQTT username or discovery prefix")
 	}
 	upd := map[string]interface{}{"mqtt_url": rawURL, "mqtt_user": strings.TrimSpace(user), "mqtt_prefix": prefix}
-	switch password {
+	// a password pasted from a terminal often brings a space or line break along: the broker then says
+	// "not Authorized" although the password looks right
+	switch password = strings.TrimSpace(password); password {
 	case "":
 	case "-":
 		upd["mqtt_password"] = ""

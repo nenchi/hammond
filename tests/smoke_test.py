@@ -536,7 +536,7 @@ check("mqtt: only broker URLs", s == 422, s)
 s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "wrong", "password": "ci-pw"}, token=tok)
 s2, r = call("POST", "/api/me/mqtt/publish", token=tok)
 check("mqtt: a refused login is a clear error", s == 200 and s2 == 422 and "MQTT broker" in str(r), (s, s2, r))
-s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "ci-mqtt", "password": ""}, token=tok)
+s, u = call("POST", "/api/me/mqtt", {"url": "mqtt://127.0.0.1:4000", "user": "ci-mqtt", "password": " ci-pw\n"}, token=tok)  # pasted with a line break
 check("mqtt: settings saved, password kept and never shown", s == 200 and u["mqttUser"] == "ci-mqtt" and u["mqttPasswordSet"] is True
       and "ci-pw" not in json.dumps(u), (s, u))
 s, r = call("POST", "/api/me/mqtt/publish", token=tok)
