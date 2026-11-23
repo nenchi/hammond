@@ -238,7 +238,7 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 	// unavailable until the next reconnect. Now at most until the next publish (5 minutes)
 	pub(base+"/status", "online")
 	seen := map[string]bool{}
-	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any, picture string) {
+	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any) {
 		for _, e := range ents {
 			topic := fmt.Sprintf("%s/%s/hammond_%s/%s/config", prefix, e.component, id, e.key)
 			seen[topic] = true
@@ -249,9 +249,6 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 				if v != "" {
 					cfg[k] = v
 				}
-			}
-			if picture != "" { // the car photo on HA's cards (absolute: HA's frontend loads it)
-				cfg["entity_picture"] = picture
 			}
 			if e.component == "binary_sensor" {
 				delete(cfg, "json_attributes_topic")
@@ -276,7 +273,8 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 		// HA's distance units are lower case (km, mi); hammond's are "Km", "Mi"
 		device := map[string]any{"identifiers": []string{"hammond_" + v.ID},
 			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration}
-		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), device, pic)
+		// the photo only on its image entity: as every sensor's entity_picture it replaced their icons in HA's lists
+		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), device)
 		pub(st, vehicleState(v))
 		if pic != "" { // the photo as an image entity (image.hammond_<car>_photo): a picture card shows it, a new photo updates it
 			topic := fmt.Sprintf("%s/image/hammond_%s/photo/config", prefix, v.ID)
@@ -290,7 +288,7 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 	for _, w := range s.Watches {
 		st := base + "/watch/" + w.ID
 		announce(w.ID, st, watchEntities(s.Currency), map[string]any{"identifiers": []string{"hammond_" + w.ID},
-			"name": "hammond " + w.Name + " " + w.GradeName, "manufacturer": "hammond price watch", "model": w.Address}, "")
+			"name": "hammond " + w.Name + " " + w.GradeName, "manufacturer": "hammond price watch", "model": w.Address})
 		pub(st, watchState(w))
 	}
 	res := &MqttResult{Vehicles: len(s.Vehicles), Watches: len(s.Watches)}
