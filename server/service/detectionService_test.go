@@ -240,3 +240,54 @@ func TestGaugeCalibrationLearnsNonLinearTank(t *testing.T) {
 		t.Fatalf("after reset: want linear, got %+v", c)
 	}
 }
+
+// drives teach the gauge without detections: a tank that reads "full" longer (top quarter 14 l of 43)
+// is learned from whole-% levels on drives at the fill-ups' average consumption
+func TestGaugeCalibrationLearnsFromDrives(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 43)
+	truth := []float64{8, 10, 11, 14}       // litres per quarter, bottom first
+	level := func(litres float64) float64 { // the gauge % for litres in the tank, whole % like the car
+		pct := 0.0
+		for _, q := range truth {
+			if litres >= q {
+				pct, litres = pct+25, litres-q
+				continue
+			}
+			pct += 25 * litres / q
+			break
+		}
+		return math.Floor(pct)
+	}
+	const lpk = 0.06 // 6 l/100 km
+	// two full-tank fill-ups 1000 km apart: average 6 l/100 km
+	manualFillup(t, u, v, 10000, 40, "")
+	manualFillup(t, u, v, 11000, 60, "")
+	start := at.Add(24 * time.Hour)
+	odo := 11000.0
+	for tank := 0; tank < 3; tank++ { // three tanks driven from full to ~5 l, 23 km per drive
+		litres := 43.0
+		for litres-23*lpk > 5 {
+			l := db.TripLeg{VehicleID: v.ID, Start: start, End: start.Add(30 * time.Minute), StartOdo: odo, EndOdo: odo + 23, Distance: 23, Source: "ha"}
+			fs := level(litres)
+			litres -= 23 * lpk
+			fe := level(litres)
+			l.FuelStart, l.FuelEnd = &fs, &fe
+			db.DB.Create(&l)
+			start, odo = start.Add(2*time.Hour), odo+23
+		}
+	}
+	cal := Calibrate(&v)
+	if !cal.Calibrated || cal.Samples != 0 || cal.DriveSamples < 30 || math.Abs(cal.LitresPerKm-lpk) > 0.001 {
+		t.Fatalf("want calibrated from drives at 0.06 l/km: %+v", cal)
+	}
+	for i, want := range truth {
+		if math.Abs(cal.SegmentLitres[i]-want) > 1.0 {
+			t.Fatalf("segment %d: want ~%v l, got %v (%v)", i+1, want, cal.SegmentLitres[i], cal.SegmentLitres)
+		}
+	}
+	// a fill-up between drives (level up) starts a new chain instead of counting as fuel used
+	if got := EstimateLitres(&v, 62, 100); math.Abs(float64(got)-(11*(75-62)/25.0+14)) > 1.0 {
+		t.Fatalf("62→100 %%: want ~%.1f l, got %v", 11*(75-62)/25.0+14, got)
+	}
+}

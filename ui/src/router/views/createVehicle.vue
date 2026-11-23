@@ -269,15 +269,17 @@ export default {
       </b-field>
       <b-field
         label="Gauge segments"
-        message="How many parts the fuel gauge has (4 = quarters). Each part learns its own litres per % from your confirmed detections."
+        message="How many parts the fuel gauge has (4 = quarters). Each part learns its own litres per % from your confirmed detections and, with Trips from Home Assistant, from your drives (km × your average consumption)."
       >
         <b-input v-model.number="vehicleModel.gaugeSegments" type="number" min="1" max="10" step="1"></b-input>
       </b-field>
       <div v-if="gauge" class="box gauge-calibration mb-4">
         <p class="heading">
           Gauge calibration ·
-          <span v-if="gauge.calibrated" class="has-text-success">learned from {{ gauge.samples }} fill-ups</span>
-          <span v-else>linear (needs 2 confirmed detections, has {{ gauge.samples }})</span>
+          <span v-if="gauge.calibrated" class="has-text-success"
+            >learned from {{ gauge.samples }} fill-ups and {{ gauge.driveSamples }} drives</span
+          >
+          <span v-else>linear (needs 2 confirmed detections or drives from Trips, has {{ gauge.samples + gauge.driveSamples }})</span>
         </p>
         <div class="is-flex is-align-items-flex-end" style="gap: 4px; height: 90px">
           <div
@@ -302,6 +304,7 @@ export default {
         </div>
         <p class="help"
           >Litres per segment, empty (0 %) on the left. Sum {{ gauge.tankCapacity }} {{ tankUnit }}.
+          <span v-if="gauge.driveSamples">Drives at {{ (gauge.litresPerKm * 100).toFixed(1) }} {{ tankUnit }}/100 (average of your fill-ups).</span>
           <a v-if="gauge.samples" class="has-text-danger reset-gauge" @click="resetGauge">Reset</a></p
         >
       </div>

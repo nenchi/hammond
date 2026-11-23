@@ -12,11 +12,16 @@ import (
 // litres-per-%. Learned from confirmed detections: "74 % → 99 %, the user filled 12.14 l" means
 // overlap(74–99, segment i) × k_i summed over i = 12.14. Least squares over all samples, pulled gently
 // towards the linear value (tank / 100) so few samples can't produce wild curves.
+// Drives teach it too (Trips from Home Assistant): "the gauge went 62 → 57 % over 80 km" at the average
+// consumption of the full-tank fill-ups (receipt litres, so never from the gauge itself) is a sample at half
+// weight. They cover the parts of the tank you rarely fill up from, and every drive adds one.
 
 type GaugeCalibration struct {
 	Segments         int       `json:"segments"`
-	Samples          int       `json:"samples"`
-	Calibrated       bool      `json:"calibrated"`       // ≥ 2 samples; else linear
+	Samples          int       `json:"samples"`          // confirmed fill-ups
+	DriveSamples     int       `json:"driveSamples"`     // stretches of drives (≥ 5 % of the gauge each)
+	LitresPerKm      float64   `json:"litresPerKm"`      // average of the full-tank fill-ups, used for the drives
+	Calibrated       bool      `json:"calibrated"`       // ≥ 2 samples (fill-ups and drives); else linear
 	LitresPerPercent []float64 `json:"litresPerPercent"` // per segment, bottom (0 %) first
 	SegmentLitres    []float64 `json:"segmentLitres"`    // litres each segment holds
 	LinearPerPercent float64   `json:"linearPerPercent"` // tank / 100
@@ -47,6 +52,64 @@ func overlaps(from, to float64, n int) []float64 {
 
 type gaugeSample struct {
 	from, to, litres float64
+	w                float64 // weight; 0 = 1 (a confirmed fill-up)
+}
+
+const (
+	driveWeight  = 0.5 // a drive's litres are km × average consumption: less exact than a receipt
+	driveMinDrop = 5.0 // % of the gauge per drive sample: the level comes in whole % steps
+	driveMaxJump = 1.0 // a level higher than the last one by more = fuel was added in between
+)
+
+// litresPerKm: average consumption of the full-tank fill-ups (fuel per distance unit), 0 = unknown
+func litresPerKm(v *db.Vehicle) float64 {
+	ms, err := GetMileageByVehicleId(v.ID, time.Time{})
+	if err != nil {
+		return 0
+	}
+	var km, litres float64
+	for _, m := range ms {
+		if m.Mileage > 0 {
+			km += float64(m.Mileage * m.FuelQuantity)
+			litres += float64(m.FuelQuantity)
+		}
+	}
+	if km < 300 { // ponytail: one short tank says little about the average
+		return 0
+	}
+	return litres / km
+}
+
+// driveSamples: consecutive drives chained until the gauge dropped driveMinDrop %; a fill-up (level up),
+// a drive without levels or a level that rose while driving starts a new chain.
+// ponytail: reads all legs since the reset on every Calibrate; a few thousand rows, cache it if it gets slow
+func driveSamples(v *db.Vehicle, lpk float64) []gaugeSample {
+	if lpk <= 0 {
+		return nil
+	}
+	var legs []db.TripLeg
+	q := db.DB.Where("vehicle_id = ? AND fuel_start IS NOT NULL AND fuel_end IS NOT NULL", v.ID)
+	if v.GaugeResetAt != nil {
+		q = q.Where("started_at > ?", *v.GaugeResetAt)
+	}
+	q.Order("started_at").Find(&legs)
+	var out []gaugeSample
+	from, last, km, open := 0.0, 0.0, 0.0, false
+	for _, l := range legs {
+		s, e := *l.FuelStart, *l.FuelEnd
+		if !open || s > last+driveMaxJump || e > s+driveMaxJump {
+			from, km, open = s, 0, e <= s+driveMaxJump
+			if !open {
+				continue
+			}
+		}
+		last, km = e, km+l.Distance
+		if from-last >= driveMinDrop {
+			out = append(out, gaugeSample{last, from, km * lpk, driveWeight})
+			from, km = last, 0
+		}
+	}
+	return out
 }
 
 func calibrationSamples(v *db.Vehicle) []gaugeSample {
@@ -66,7 +129,7 @@ func calibrationSamples(v *db.Vehicle) []gaugeSample {
 		if err != nil || f.FuelQuantity <= 0 {
 			continue
 		}
-		out = append(out, gaugeSample{float64(*d.LevelBefore), float64(*d.LevelAfter), float64(f.FuelQuantity)})
+		out = append(out, gaugeSample{float64(*d.LevelBefore), float64(*d.LevelAfter), float64(f.FuelQuantity), 1})
 	}
 	return out
 }
@@ -81,12 +144,15 @@ func solveCalibration(samples []gaugeSample, n int, k0 float64) []float64 {
 		m[i][n] = prior * prior * k0
 	}
 	for _, s := range samples {
-		a := overlaps(s.from, s.to, n)
+		a, w := overlaps(s.from, s.to, n), s.w
+		if w == 0 {
+			w = 1
+		}
 		for i := 0; i < n; i++ {
 			for j := 0; j < n; j++ {
-				m[i][j] += a[i] * a[j]
+				m[i][j] += w * a[i] * a[j]
 			}
-			m[i][n] += a[i] * s.litres
+			m[i][n] += w * a[i] * s.litres
 		}
 	}
 	for c := 0; c < n; c++ {
@@ -122,6 +188,11 @@ func Calibrate(v *db.Vehicle) GaugeCalibration {
 	c := GaugeCalibration{Segments: n, LinearPerPercent: k0, TankCapacity: float64(v.TankCapacity)}
 	samples := calibrationSamples(v)
 	c.Samples = len(samples)
+	c.LitresPerKm = litresPerKm(v)
+	drives := driveSamples(v, c.LitresPerKm)
+	c.DriveSamples = len(drives)
+	c.LitresPerKm = math.Round(c.LitresPerKm*10000) / 10000
+	samples = append(samples, drives...)
 	k := make([]float64, n)
 	if len(samples) >= minCalibrationSamples && k0 > 0 {
 		k = solveCalibration(samples, n, k0)
