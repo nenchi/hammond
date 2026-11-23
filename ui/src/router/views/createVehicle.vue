@@ -83,14 +83,14 @@ export default {
   },
   methods: {
     // car photo: the phone offers the camera or the gallery; origin = this address, for Home Assistant's link
-    uploadPhoto(e) {
+    async uploadPhoto(e) {
       const file = e.target.files && e.target.files[0]
       e.target.value = ''
       if (!file) return
-      const form = new FormData()
-      form.append('file', file)
-      form.append('origin', window.location.origin)
       this.photoBusy = true
+      const form = new FormData()
+      form.append('file', await this.shrinkPhoto(file), 'car.jpg')
+      form.append('origin', window.location.origin)
       axios
         .put(`/api/vehicles/${this.vehicle.id}/photo`, form)
         .then(({ data }) => {
@@ -122,6 +122,23 @@ export default {
       axios
         .put(`/api/vehicles/${this.vehicle.id}/photoHidden`, { hidden: !shown })
         .then(() => this.$store.dispatch('vehicles/fetchVehicles'))
+    },
+    // a phone photo is 3–8 MB: at most 1280 px as a JPEG (~200–300 KB) before upload. The browser applies
+    // the photo's rotation (EXIF) when drawing it, so the car isn't sideways. Anything it can't read
+    // (HEIC on some browsers) goes up as it is and the server decides
+    async shrinkPhoto(file) {
+      try {
+        const img = await createImageBitmap(file, { imageOrientation: 'from-image' })
+        const scale = Math.min(1, 1280 / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+        return blob && blob.size < file.size ? blob : file
+      } catch (err) {
+        return file
+      }
     },
     removePhoto() {
       axios.delete(`/api/vehicles/${this.vehicle.id}/photo`).then(() => {

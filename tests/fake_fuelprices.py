@@ -98,6 +98,10 @@ class H(BaseHTTPRequestHandler):
             m = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             MESSAGES.append({**m, "via": "ntfy"})
             return self.reply(200, {"id": "x"})
+        if urlparse(self.path).path == "/mqtt/set":  # plant a retained message, e.g. a late last will "offline"
+            m = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            MQTT[m["topic"]] = m["payload"]
+            return self.reply(200, {})
         if urlparse(self.path).path != "/message":
             return self.reply(404, {})
         if self.headers.get("X-Gotify-Key") != "ci-gotify":
