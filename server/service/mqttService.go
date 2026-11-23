@@ -238,20 +238,22 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 	// unavailable until the next reconnect. Now at most until the next publish (5 minutes)
 	pub(base+"/status", "online")
 	seen := map[string]bool{}
-	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any) {
+	// attrs: HA attributes of each entity ("" = none). Not the whole state: as every sensor's attributes the
+	// ~40 values were exported again per sensor (HA → InfluxDB/VictoriaMetrics: ~960 series for one car)
+	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any, attrs string) {
 		for _, e := range ents {
 			topic := fmt.Sprintf("%s/%s/hammond_%s/%s/config", prefix, e.component, id, e.key)
 			seen[topic] = true
 			cfg := map[string]any{"name": e.name, "unique_id": "hammond_" + id + "_" + e.key, "state_topic": stateTopic,
 				"value_template": "{{ value_json." + e.key + " }}", "availability_topic": base + "/status", "device": device,
-				"json_attributes_topic": stateTopic, "origin": map[string]string{"name": "hammond", "url": "https://github.com/nenchi/hammond"}}
+				"origin": map[string]string{"name": "hammond", "url": "https://github.com/nenchi/hammond"}}
+			if attrs != "" && e.component != "binary_sensor" {
+				cfg["json_attributes_topic"], cfg["json_attributes_template"] = stateTopic, attrs
+			}
 			for k, v := range map[string]string{"unit_of_measurement": e.unit, "device_class": e.deviceClass, "state_class": e.stateClass, "icon": e.icon} {
 				if v != "" {
 					cfg[k] = v
 				}
-			}
-			if e.component == "binary_sensor" {
-				delete(cfg, "json_attributes_topic")
 			}
 			if e.stateClass == "total" { // totals that start over: tell HA when
 				for prefix, start := range map[string]string{"month_": "month_start", "trips_month": "month_start",
@@ -274,7 +276,7 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 		device := map[string]any{"identifiers": []string{"hammond_" + v.ID},
 			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration}
 		// the photo only on its image entity: as every sensor's entity_picture it replaced their icons in HA's lists
-		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), device)
+		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), device, "") // every value is its own sensor
 		pub(st, vehicleState(v))
 		if pic != "" { // the photo as an image entity (image.hammond_<car>_photo): a picture card shows it, a new photo updates it
 			topic := fmt.Sprintf("%s/image/hammond_%s/photo/config", prefix, v.ID)
@@ -288,7 +290,8 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 	for _, w := range s.Watches {
 		st := base + "/watch/" + w.ID
 		announce(w.ID, st, watchEntities(s.Currency), map[string]any{"identifiers": []string{"hammond_" + w.ID},
-			"name": "hammond " + w.Name + " " + w.GradeName, "manufacturer": "hammond price watch", "model": w.Address})
+			"name": "hammond " + w.Name + " " + w.GradeName, "manufacturer": "hammond price watch", "model": w.Address},
+			"{{ dict(address=value_json.address, grade=value_json.grade, country=value_json.country) | tojson }}") // where a price is from (tested on HA)
 		pub(st, watchState(w))
 	}
 	res := &MqttResult{Vehicles: len(s.Vehicles), Watches: len(s.Watches)}
