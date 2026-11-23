@@ -138,10 +138,27 @@ to every channel that is on; tapping it opens Google Maps navigation to the stat
 - **ntfy**: topic URL (`https://ntfy.sh/my-hammond-alerts`), optional access token for protected topics
 - **Matrix**: homeserver URL, room ID or alias, access token of the account that posts
 - **Telegram**: your own bot (@BotFather → `/newbot` → token). Link your chat by sending `/start <code>` (the code is
-  shown in the settings); only that chat is answered. With *Answer the fuel commands* on, the chat works like a small
-  app: `prices`, `watched`, `price 3 30`, `cheap-time e10`, `stats`, `graph fuel 90` (a chart picture),
-  `trips 10`, `trips 30 pdf` (the trip log as a PDF or CSV file), `help`. hammond asks Telegram for new messages
-  (no webhook, no open port); without a Telegram channel nothing connects to Telegram.
+  shown in the settings); only that chat is answered. hammond asks Telegram for new messages (no webhook, no open port);
+  without a Telegram channel nothing connects to Telegram.
+- A **Matrix** channel can be marked as homebot's Fuel room: "fill-up detected" goes there too.
+
+### Chat commands (Telegram, or Matrix through homebot)
+
+With *Answer the fuel commands* on, the chat works like a small app. `[car]` is a car's number (`cars`), name or plate;
+with one car you never name it, with several the reading commands show all and the writing ones ask (or use the
+default set with `car 2`).
+
+| Read | Write |
+|---|---|
+| `prices`, `watched`, `price 3 30`, `cheap-time e10` | `fill 40.5 1.759 [km] [partial] [car]` (km from Home Assistant when left out, station as last time) |
+| `stats [car]`, `graph fuel 90 [car]` (a chart picture) | `cost toll 12.50 A3` (on today's trip, else an expense) |
+| `trips 10 [car]`, `trips 30 pdf` (a PDF or CSV file) | `purpose Customer X`, `business`, `private` (the latest trip) |
+| `cars`, `help` | `undo` (the last fill-up or cost, 10 minutes) |
+
+- **Fill-up detected** (e.g. by Home Assistant): the chat gets "38 l at 81300, answer with the price"; answering
+  `1.759` saves it.
+- **A photo** of a receipt or the pump's display becomes a Quick Entry (Telegram), to complete later.
+- Writing commands go through the same checks as the web app.
 
 The same commands for other chat bots: `POST /api/v1/command {"text": "prices"}` with an API key (text, plus a PNG or a
 file base64-encoded).
