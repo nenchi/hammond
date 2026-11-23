@@ -597,6 +597,16 @@ check("mqtt: HA discovery + state for the vehicle", s == 200 and r["vehicles"] =
       and cfg.get("device", {}).get("name") == "hammond Smoke" and cfg.get("state_topic") == f"{base}/vehicle/{vid}"
       and cfg.get("unit_of_measurement") == "km" and m.get(f"{base}/status") == "online" and state.get("odometer", 0) > 0
       and "month_total" in state and f"homeassistant/sensor/hammond_{vid}/month_total/config" in m, (s, r, cfg, state, sorted(m)[:5]))
+# a restart: the old connection's last will ("offline", retained) can reach the broker after the new "online";
+# the next publish must say "online" again, or HA shows every entity unavailable until a reconnect
+urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:3999/mqtt/set", method="POST",
+                       data=json.dumps({"topic": f"{base}/status", "payload": "offline"}).encode()), timeout=5)
+s, _ = call("POST", "/api/me/mqtt/publish", token=tok)
+img = json.loads(fake_mqtt().get(f"homeassistant/image/hammond_{vid}/photo/config", "{}"))
+check("mqtt: the car photo as an image entity (absolute link from the upload's origin)",
+      img.get("url_topic") == f"{base}/vehicle/{vid}/photo" and fake_mqtt().get(f"{base}/vehicle/{vid}/photo", "").startswith("https://fuel.example.com/api/public/photo/"), img)
+check("mqtt: a late last will (offline) is overwritten by the next publish", s == 200 and fake_mqtt().get(f"{base}/status") == "online",
+      fake_mqtt().get(f"{base}/status"))
 mt = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/month_total/config", "{}"))
 l30 = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/last30_total/config", "{}"))
 check("mqtt: last 30 days + this year; monthly totals tell HA when they start over",

@@ -233,6 +233,10 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 			}
 		}
 	}
+	// "online" again with every publish, not only on connect: after a restart the broker can deliver the old
+	// connection's last will ("offline", retained) after the new "online", and HA showed everything
+	// unavailable until the next reconnect. Now at most until the next publish (5 minutes)
+	pub(base+"/status", "online")
 	seen := map[string]bool{}
 	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any, picture string) {
 		for _, e := range ents {
@@ -270,9 +274,18 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 			pic = PhotoLink(dv, true)
 		}
 		// HA's distance units are lower case (km, mi); hammond's are "Km", "Mi"
-		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), map[string]any{"identifiers": []string{"hammond_" + v.ID},
-			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration}, pic)
+		device := map[string]any{"identifiers": []string{"hammond_" + v.ID},
+			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration}
+		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), device, pic)
 		pub(st, vehicleState(v))
+		if pic != "" { // the photo as an image entity (image.hammond_<car>_photo): a picture card shows it, a new photo updates it
+			topic := fmt.Sprintf("%s/image/hammond_%s/photo/config", prefix, v.ID)
+			seen[topic] = true
+			pub(topic, map[string]any{"name": "Photo", "unique_id": "hammond_" + v.ID + "_photo", "url_topic": st + "/photo",
+				"availability_topic": base + "/status", "device": device,
+				"origin": map[string]string{"name": "hammond", "url": "https://github.com/nenchi/hammond"}})
+			pub(st+"/photo", pic)
+		}
 	}
 	for _, w := range s.Watches {
 		st := base + "/watch/" + w.ID

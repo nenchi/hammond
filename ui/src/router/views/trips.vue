@@ -398,13 +398,6 @@ export default {
 <template>
   <Layout>
     <div class="trips-page">
-      <img
-        v-if="vehicle && vehicle.photoUrl && !vehicle.photoHidden"
-        :src="vehicle.photoUrl"
-        alt=""
-        class="no-print"
-        style="height: 48px; width: 72px; object-fit: cover; border-radius: 4px; float: right"
-      />
       <h1 class="title">
         Trips<span v-if="vehicle && vehicles.length < 2">
           · {{ vehicle.nickname }}</span
