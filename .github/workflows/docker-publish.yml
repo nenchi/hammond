@@ -36,7 +36,7 @@ jobs:
           load: true
           tags: hammond:test
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       # host network: hammond reaches the fake fuel price service on 127.0.0.1:3999
       - name: End-to-end test the container
@@ -144,4 +144,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
