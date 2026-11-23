@@ -510,7 +510,7 @@ check("chat: purpose and private on the latest trip", r.startswith("**✓ Trip")
 today_trip = tr[0]["start"][:10] == time.strftime("%Y-%m-%d", time.gmtime())  # the fake drives are 4 h ago: yesterday just after midnight
 r = cmd2("cost toll 4.20 A5")
 s, tr = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
-check("chat: a cost lands on today's trip", (r.startswith("**✓ Toll 4.20 on today's trip") and tr[0]["extraCost"] == 12.5 + 4.2)
+check("chat: a cost lands on today's trip", (r.startswith("**✓ Toll 4.20 on today's trip") and abs(tr[0]["extraCost"] - (12.5 + 4.2)) < 1e-3)  # float32 amounts: 16.6999998
       if today_trip else r.startswith("**✓ Toll 4.20 saved"), (today_trip, r, tr[0]["extraCost"]))
 cmd2("undo")
 cmd2("business")

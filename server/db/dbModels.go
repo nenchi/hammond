@@ -423,7 +423,9 @@ type TripLeg struct {
 	FuelStart *float64  `json:"fuelStart"` // tank %
 	FuelEnd   *float64  `json:"fuelEnd"`
 	FuelUsed  *float64  `json:"fuelUsed"` // litres (or kWh); nil = unknown
-	Source    string    `json:"source"`   // "ha" or "manual"
+	// FuelUsed is the car's own (trip computer), not from the gauge: the gauge calibration learns from it
+	FuelFromCar bool   `json:"fuelFromCar"`
+	Source      string `json:"source"` // "ha" or "manual"
 }
 
 // Trip: drives with short stops between them; purpose and notes for a business log

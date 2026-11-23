@@ -477,6 +477,18 @@ describe('hammond UI', () => {
       })
   })
 
+  it('detected fill-up at a station: that station and its live price are taken', () => {
+    cy.request({ method: 'POST', url: '/api/me/apikeys', headers: apiHeaders, body: { name: 'at station test' } }).then(({ body: k }) =>
+      cy.request({ method: 'POST', url: `/api/v1/vehicles/${vehicleId}/detections`, headers: { 'X-Api-Key': k.key },
+        body: { odoReading: 22100, fuelQuantity: 30, lat: 50.1031, lng: 8.7601, date: '2026-11-07T16:00:00Z' } }))
+      .its('body.detection.id').then((id) => {
+        visit(`/vehicles/${vehicleId}/fillup?detection=${id}`)
+        cy.contains('.field', 'Filling Station Name').find('input').should('have.value', 'ARAL, Frankfurter Str. 12, 63067 Offenbach')
+        cy.contains('.field', 'Price per').find('input').invoke('val').should('match', /^1\.(739|799|629)$/) // ARAL's price of the vehicle's grade
+        cy.request({ method: 'POST', url: `/api/detections/${id}/discard`, headers: apiHeaders })
+      })
+  })
+
   it('fill-up form opened by a fresh page load can be saved while the vehicles are still loading', () => {
     // upstream copied the vehicle list once at mount: slow loading left the required vehicle select empty,
     // so the browser silently refused to save (seen in CI as a "flaky" test)

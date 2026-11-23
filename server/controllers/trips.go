@@ -139,9 +139,12 @@ func RegisterTripController(router *gin.RouterGroup) {
 			Type    string  `json:"type" binding:"required,max=50"`
 			Comment string  `json:"comment" binding:"max=500"`
 		}
-		if err := c.ShouldBindJSON(&req); !fail(c, err) &&
-			!fail(c, service.AddTripCost(c.MustGet("userId").(string), c.Param("tripId"), req.Amount, req.Type, req.Comment)) {
-			c.JSON(http.StatusCreated, gin.H{})
+		if err := c.ShouldBindJSON(&req); fail(c, err) {
+			return
+		}
+		id, err := service.AddTripCost(c.MustGet("userId").(string), c.Param("tripId"), req.Amount, req.Type, req.Comment)
+		if !fail(c, err) {
+			c.JSON(http.StatusCreated, gin.H{"id": id})
 		}
 	})
 	router.POST("/legs/:legId/split", ownLeg, func(c *gin.Context) {

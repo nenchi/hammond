@@ -29,7 +29,7 @@ func TestLegsFromHistory(t *testing.T) {
 	}
 	a, b := legs[0], legs[1]
 	if !a.Start.Equal(m(30)) || !a.End.Equal(m(60)) || a.StartOdo != 1000 || a.EndOdo != 1040 || a.Distance != 40.4 ||
-		*a.FuelStart != 60 || *a.FuelEnd != 50 || math.Abs(*a.FuelUsed-3.03) > 1e-9 {
+		*a.FuelStart != 60 || *a.FuelEnd != 50 || math.Abs(*a.FuelUsed-3.03) > 1e-9 || !a.FuelFromCar {
 		t.Errorf("leg 1: %+v used %v", a, *a.FuelUsed)
 	}
 	// the end values are read until the next start (9:10), not 15 min after the stop; distance and fuel are
@@ -39,7 +39,7 @@ func TestLegsFromHistory(t *testing.T) {
 	}
 	// without trip computer: odometer distance, fuel from the level × tank
 	legs, _ = legsFromHistory(h, db.TripEntities{Ignition: "sensor.ign", FuelLevel: "sensor.fuel"}, "sensor.odo", linear(50), m(300))
-	if legs[0].Distance != 40 || *legs[0].FuelUsed != 5 {
+	if legs[0].Distance != 40 || *legs[0].FuelUsed != 5 || legs[0].FuelFromCar { // from the gauge: not for calibration
 		t.Errorf("no trip computer: %+v", legs[0])
 	}
 	// the last stop isn't settled yet: no leg until 15 min after it
@@ -117,5 +117,26 @@ func TestTripsUseLearnedGauge(t *testing.T) {
 	// 90→75 % = 15 × 0.64, 75→70 % = 5 × 0.36
 	if len(legs) != 1 || math.Abs(*legs[0].FuelUsed-(15*0.64+5*0.36)) > 1e-9 {
 		t.Errorf("legs %+v", legs)
+	}
+}
+
+// the chat's undo deletes the cost by the ID AddTripCost returns: the new one, not an older cost of the trip
+func TestAddTripCostReturnsItsID(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 43)
+	trip := db.Trip{VehicleID: v.ID}
+	db.DB.Create(&trip)
+	db.DB.Create(&db.TripLeg{VehicleID: v.ID, TripID: trip.ID, Start: at, End: at.Add(time.Hour), StartOdo: 1000, EndOdo: 1075, Distance: 75})
+	first, err := AddTripCost(u.ID, trip.ID, 12.5, "Toll", "A3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := AddTripCost(u.ID, trip.ID, 4.2, "Toll", "A5")
+	if err != nil || second == "" || second == first {
+		t.Fatalf("want a new ID per cost: %q %q %v", first, second, err)
+	}
+	var e db.Expense
+	if db.DB.First(&e, "id = ?", second); e.Comments != "A5" {
+		t.Fatalf("second ID is the A5 toll: %+v", e)
 	}
 }

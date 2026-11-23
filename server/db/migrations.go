@@ -22,6 +22,13 @@ var migrations = []localMigration{
 		Name:  "2021_02_07_00_09_LowerCaseEmails",
 		Query: "update users set email=lower(email)",
 	},
+	{
+		// drives synced before FuelFromCar existed: the trip computer's whenever the vehicle has its entities.
+		// ponytail: a drive that fell back to the gauge (no trip computer values then) is marked too; rare
+		Name: "2026_11_23_TripLegFuelFromCar",
+		Query: `update trip_legs set fuel_from_car = 1 where source = 'ha' and fuel_used is not null and vehicle_id in
+			(select id from vehicles where json_extract(trip_entities, '$.consumption') <> '' and json_extract(trip_entities, '$.distance') <> '')`,
+	},
 }
 
 func RunMigrations() {

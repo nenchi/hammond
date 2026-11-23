@@ -167,8 +167,11 @@ class H(BaseHTTPRequestHandler):
             return
         if u.path != "/json/list.php":
             self.send_response(404); self.end_headers(); return
+        # asked from ARAL's own position (a detection at the pump): it's 0 km away
+        at_aral = q.get("lat") == ["50.1031"] and q.get("lng") == ["8.7601"]
+        stations = [{**STATIONS[0], "dist": 0.0}, *STATIONS[1:]] if at_aral else STATIONS
         body = ({"ok": False, "message": "apikey falsch"} if q.get("apikey") != ["ci-key"] else
-                {"ok": True, "license": "CC BY 4.0", "data": "MTS-K (CI fake)", "status": "ok", "stations": STATIONS})
+                {"ok": True, "license": "CC BY 4.0", "data": "MTS-K (CI fake)", "status": "ok", "stations": stations})
         data = json.dumps(body).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
