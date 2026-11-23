@@ -305,9 +305,9 @@ export default {
         <p class="help"
           >Litres per segment, empty (0 %) on the left. Sum {{ gauge.tankCapacity }} {{ tankUnit }}.
           <span v-if="gauge.driveSamples"
-            >Drives: litres from the car's trip computer<template v-if="gauge.litresPerKm">
-              , else {{ (gauge.litresPerKm * 100).toFixed(1) }} {{ tankUnit }}/100 (average of your fill-ups)</template
-            >.</span
+            >Drives: litres from the car's trip computer{{
+              gauge.litresPerKm ? `, else ${(gauge.litresPerKm * 100).toFixed(1)} ${tankUnit}/100 (average of your fill-ups)` : ''
+            }}.</span
           >
           <a v-if="gauge.samples" class="has-text-danger reset-gauge" @click="resetGauge">Reset</a></p
         >
