@@ -234,7 +234,7 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 		}
 	}
 	seen := map[string]bool{}
-	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any) {
+	announce := func(id, stateTopic string, ents []mqttEntity, device map[string]any, picture string) {
 		for _, e := range ents {
 			topic := fmt.Sprintf("%s/%s/hammond_%s/%s/config", prefix, e.component, id, e.key)
 			seen[topic] = true
@@ -245,6 +245,9 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 				if v != "" {
 					cfg[k] = v
 				}
+			}
+			if picture != "" { // the car photo on HA's cards (absolute: HA's frontend loads it)
+				cfg["entity_picture"] = picture
 			}
 			if e.component == "binary_sensor" {
 				delete(cfg, "json_attributes_topic")
@@ -262,15 +265,19 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 	}
 	for _, v := range s.Vehicles {
 		st := base + "/vehicle/" + v.ID
+		pic := ""
+		if dv, err := db.GetVehicleById(v.ID); err == nil {
+			pic = PhotoLink(dv, true)
+		}
 		// HA's distance units are lower case (km, mi); hammond's are "Km", "Mi"
 		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), map[string]any{"identifiers": []string{"hammond_" + v.ID},
-			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration})
+			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration}, pic)
 		pub(st, vehicleState(v))
 	}
 	for _, w := range s.Watches {
 		st := base + "/watch/" + w.ID
 		announce(w.ID, st, watchEntities(s.Currency), map[string]any{"identifiers": []string{"hammond_" + w.ID},
-			"name": "hammond " + w.Name + " " + w.GradeName, "manufacturer": "hammond price watch", "model": w.Address})
+			"name": "hammond " + w.Name + " " + w.GradeName, "manufacturer": "hammond price watch", "model": w.Address}, "")
 		pub(st, watchState(w))
 	}
 	res := &MqttResult{Vehicles: len(s.Vehicles), Watches: len(s.Watches)}

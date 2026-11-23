@@ -17,6 +17,17 @@ import (
 func RegisterAnonController(router *gin.RouterGroup) {
 	router.POST("/login", userLogin)
 	router.POST("/auth/initialize", initializeSystem)
+	// a vehicle photo by its random link: <img> tags and Home Assistant can't send a login
+	router.GET("/public/photo/:token", func(c *gin.Context) {
+		path, kind, err := service.PhotoFile(c.Param("token"))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		c.Header("Content-Type", kind)
+		c.Header("Cache-Control", "private, max-age=86400") // a new photo gets a new link
+		c.File(path)
+	})
 
 }
 func RegisterAuthController(router *gin.RouterGroup) {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/akhilrex/hammond/common"
+	"github.com/akhilrex/hammond/db"
 	"github.com/akhilrex/hammond/models"
 	"github.com/akhilrex/hammond/service"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,28 @@ func RegisterVehicleController(router *gin.RouterGroup) {
 	router.GET("/vehicles/:id", getVehicleById)
 	router.PUT("/vehicles/:id", updateVehicle)
 	router.DELETE("/vehicles/:id", deleteVehicle)
+	router.PUT("/vehicles/:id/photo", putVehiclePhoto)
+	router.PUT("/vehicles/:id/photoHidden", func(c *gin.Context) {
+		var req struct {
+			Hidden bool `json:"hidden"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		if err := db.DB.Model(&db.Vehicle{}).Where("id = ?", c.Param("id")).Update("photo_hidden", req.Hidden).Error; err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"hidden": req.Hidden})
+	})
+	router.DELETE("/vehicles/:id/photo", func(c *gin.Context) {
+		if err := service.RemoveVehiclePhoto(c.Param("id")); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{})
+	})
 	router.GET("/vehicles/:id/stats", getVehicleStats)
 	router.GET("/vehicles/:id/users", getVehicleUsers)
 	router.POST("/vehicles/:id/users/:subId", shareVehicle)
@@ -498,4 +521,43 @@ func getMystats(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
 	}
 
+}
+
+// a car photo from the phone camera or a file: an image of at most 15 MB; "origin" = the address the
+// browser uses, for Home Assistant's link
+func putVehiclePhoto(c *gin.Context) {
+	f, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "choose a photo"})
+		return
+	}
+	if f.Size > 15<<20 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "the photo is larger than 15 MB"})
+		return
+	}
+	r, err := f.Open()
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	head := make([]byte, 512)
+	n, _ := r.Read(head)
+	r.Close()
+	kind := http.DetectContentType(head[:n]) // the bytes, not the browser's claim: only real images
+	if kind != "image/jpeg" && kind != "image/png" && kind != "image/webp" && kind != "image/gif" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "not a JPEG, PNG, WebP or GIF image"})
+		return
+	}
+	a, err := saveUploadedFile(c, "file")
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	db.DB.Model(a).Update("content_type", kind)
+	link, err := service.SetVehiclePhoto(c.Param("id"), a, c.PostForm("origin"))
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"photoUrl": link})
 }

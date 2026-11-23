@@ -238,6 +238,14 @@ func RegisterHomeAssistantController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, o)
 	})
+	router.GET("/me/homeAssistant/trackers", func(c *gin.Context) {
+		t, err := service.HATrackers(c.MustGet("userId").(string))
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, t)
+	})
 	router.GET("/me/homeAssistant/test", func(c *gin.Context) {
 		c.JSON(http.StatusOK, service.TestHomeAssistant(c.MustGet("userId").(string)))
 	})

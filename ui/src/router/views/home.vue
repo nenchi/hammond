@@ -117,6 +117,7 @@ export default {
             <template v-slot:trigger="props">
               <div class="card-header" role="button" aria-controls="contentIdForA11y3">
                 <div class="card-header-title">
+                  <img v-if="vehicle.photoUrl && !vehicle.photoHidden" :src="vehicle.photoUrl" alt="" class="car-thumb" />
                   <div>{{ `${vehicle.nickname} - ${vehicle.registration}` }} </div>
                 </div>
                 <a class="card-header-icon">
@@ -168,3 +169,13 @@ export default {
     </section>
   </Layout>
 </template>
+
+<style>
+.car-thumb {
+  height: 32px;
+  width: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-right: 0.5rem;
+}
+</style>
