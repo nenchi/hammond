@@ -1,6 +1,7 @@
 """Runs on every push to main (docker-publish.yml, release job), normally after a Renovate merge.
 
-Compares the current main with the last v* release tag. If a base image (Dockerfile FROM), a Go module
+Compares the current main with the last v* release tag. If the merge changed VERSION itself (a feature PR):
+release exactly that version (tag only, no commit). Otherwise, if a base image (Dockerfile FROM), a Go module
 (server/go.mod) or an npm package (ui/package.json or ui/package-lock.json) changed since then: bump the
 patch version in VERSION (skipping tags that already exist), commit, tag, write release-notes.md and
 version=X.Y.Z to $GITHUB_OUTPUT. Pushing and the GitHub Release are done by the workflow.
@@ -60,6 +61,39 @@ def npm(text):
     return {**p.get("dependencies", {}), **p.get("devDependencies", {})}
 
 
+taken = set(git("tag", "-l", "v*").split())
+repo = os.environ.get("GITHUB_REPOSITORY", "nenchi/hammond")
+
+
+def merged_prs(rng):
+    """merged PRs in a range, by title: Update dependency x to v2 (#5)"""
+    prs = []
+    for sha in git("log", "--merges", "--format=%H", rng).split():
+        subj, _, body = git("log", "-1", "--format=%s%n%b", sha).partition("\n")
+        m = re.match(r"Merge pull request #(\d+)", subj)
+        if m:
+            prs.append(f"{(body.strip().splitlines() or [subj])[0]} (#{m.group(1)})")
+    return prs
+
+
+# A feature PR sets VERSION itself (e.g. 2.1.0): release exactly that version here, nothing bumped on top. Before
+# this, the new Go module of such a PR made an extra patch release (v2.1.1) next to the hand-made v2.1.0 tag.
+cur = new("VERSION").strip()
+if cur != old("VERSION").strip():
+    if f"v{cur}" in taken:
+        print(f"v{cur} is already released")
+        sys.exit(0)
+    git("tag", "-a", f"v{cur}", "-m", f"v{cur}")
+    prs = merged_prs(f"{BASE}..HEAD")
+    open("release-notes.md", "w").write(
+        "Feature release. The API end-to-end test and the Cypress UI test passed before the merge.\n\n## Changed\n"
+        + "".join(f"- {p}\n" for p in prs or [git("log", "-1", "--format=%s", "HEAD").strip()])
+        + f"\nImage: `ghcr.io/{repo}:{cur}`\n")
+    with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as f:
+        f.write(f"version={cur}\n")
+    print(f"Released v{cur} (version set by the merge)")
+    sys.exit(0)
+
 changes = (diff("base image ", froms(old("Dockerfile")), froms(new("Dockerfile")))
            + diff("Go module ", gomod(old("server/go.mod")), gomod(new("server/go.mod")))
            + diff("npm ", npm(old("ui/package.json")), npm(new("ui/package.json"))))
@@ -73,7 +107,6 @@ if not changes:
     sys.exit(0)
 
 major, minor, patch = map(int, new("VERSION").strip().split("."))
-taken = set(git("tag", "-l", "v*").split())
 patch += 1
 while f"v{major}.{minor}.{patch}" in taken:  # e.g. a tag left by a failed release
     patch += 1
@@ -84,16 +117,8 @@ git("add", "VERSION")
 git("commit", "-q", "-m", f"release: v{ver} — {changes[0]}")
 git("tag", "-a", f"v{ver}", "-m", f"v{ver}")
 
-# merged PRs since the last release, by title: "Update dependency x to v2 (#5)"
-prs = []
-for sha in git("log", "--merges", "--format=%H", f"{BASE}..HEAD~1").split():
-    subj, _, body = git("log", "-1", "--format=%s%n%b", sha).partition("\n")
-    m = re.match(r"Merge pull request #(\d+)", subj)
-    if m:
-        prs.append(f"{(body.strip().splitlines() or [subj])[0]} (#{m.group(1)})")
-src = ", ".join(prs) or git("log", "-1", "--format=%s", "HEAD~1").strip()
+src = ", ".join(merged_prs(f"{BASE}..HEAD~1")) or git("log", "-1", "--format=%s", "HEAD~1").strip()
 
-repo = os.environ.get("GITHUB_REPOSITORY", "nenchi/hammond")
 open("release-notes.md", "w").write(
     "Automatic release after a dependency update. The API end-to-end test (setup, login, JWT checks, vehicles, "
     "fill-ups, stats) and the Cypress UI test passed before the merge.\n\n## Changed\n"
