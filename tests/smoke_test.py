@@ -603,6 +603,8 @@ urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:3999/mqtt/set", 
                        data=json.dumps({"topic": f"{base}/status", "payload": "offline"}).encode()), timeout=5)
 s, _ = call("POST", "/api/me/mqtt/publish", token=tok)
 img = json.loads(fake_mqtt().get(f"homeassistant/image/hammond_{vid}/photo/config", "{}"))
+odo_cfg = json.loads(fake_mqtt().get(f"homeassistant/sensor/hammond_{vid}/odometer/config", "{}"))
+check("mqtt: sensors keep their icons (no car photo as entity_picture)", "entity_picture" not in odo_cfg, odo_cfg.get("entity_picture"))
 check("mqtt: the car photo as an image entity (absolute link from the upload's origin)",
       img.get("url_topic") == f"{base}/vehicle/{vid}/photo" and fake_mqtt().get(f"{base}/vehicle/{vid}/photo", "").startswith("https://fuel.example.com/api/public/photo/"), img)
 check("mqtt: a late last will (offline) is overwritten by the next publish", s == 200 and fake_mqtt().get(f"{base}/status") == "online",
