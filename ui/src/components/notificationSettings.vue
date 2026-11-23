@@ -24,7 +24,7 @@ const kinds = {
     urlHint: "https://matrix.example.com",
     secret: "Access token",
     secretHint:
-      "Of the account that posts (a bot account is best): Element → Settings → Help & About → Access token",
+      "Of a bot account (e.g. @hammond): log in as it in Element → Settings → Help & About → Access token; close that session without signing out (that would end the token)",
     room: true,
   },
   telegram: {
@@ -200,7 +200,17 @@ export default {
       </div>
       <p class="help">
         <span v-if="c.url">{{ c.url }}</span
-        ><span v-if="c.room"> · {{ c.room }}</span><span v-if="c.kind === 'matrix' && c.commands"> · Fuel room (homebot)</span>
+        ><span v-if="c.room"> · {{ c.room }}</span>
+        <template v-if="c.kind === 'matrix' && c.commands">
+          ·
+          <span v-if="c.linked"
+            >answers {{ c.linkedUser }} · <a @click="unlink(c)">unlink</a></span
+          >
+          <span v-else class="has-text-warning-dark matrix-code"
+            >not linked yet: send <code>/start {{ c.code }}</code> in the room,
+            then reload this page</span
+          >
+        </template>
         <template v-if="c.kind === 'telegram'">
           <span v-if="c.bot">{{ c.bot }} · </span>
           <span v-if="c.linked"
@@ -277,8 +287,10 @@ export default {
       >
       <b-field
         v-if="form.kind === 'matrix'"
-        message="homebot relays that room to hammond: you can answer there, e.g. with the price"
-        ><b-switch v-model="form.commands">This is homebot's Fuel room: "fill-up detected" goes here too</b-switch></b-field
+        message="hammond reads this room like the Telegram bot: link yourself with /start <code>, then the commands, charts, PDF files and 'fill-up detected → answer with the price' work here. Use an unencrypted room just for the bot (not homebot's Fuel room); invite the bot account first."
+        ><b-switch v-model="form.commands"
+          >Answer the fuel commands in this room</b-switch
+        ></b-field
       >
       <div class="buttons">
         <b-button

@@ -446,8 +446,10 @@ type NotifyChannel struct {
 	URL string `json:"url"`
 	// gotify: app token; ntfy: access token (optional); matrix: access token; telegram: bot token. Write-only.
 	Secret string `json:"-"`
-	Room   string `json:"room"`  // matrix: room ID (!abc:server) or alias (#fuel:server)
-	ChatID int64  `json:"-"`     // telegram: the chat linked with /start <code>
+	Room   string `json:"room"` // matrix: room ID (!abc:server) or alias (#fuel:server)
+	ChatID int64  `json:"-"`    // telegram: the chat linked with /start <code>
+	// matrix with commands: the user linked with /start <code> (only they get answers)
+	MatrixUser string `json:"-"`
 	// telegram: also answer the fuel commands (prices, graph, trips…) in the linked chat
 	Commands bool `json:"commands"`
 }

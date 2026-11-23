@@ -157,8 +157,25 @@ func SendToCommandChats(u *db.User, title, message string) {
 	}
 }
 
-// TelegramCode: the code to send to the bot as "/start <code>" (one per channel, until linked or restart)
-func TelegramCode(channelID string) string {
+// LinkCode: the code to send to the bot as "/start <code>" (Telegram and Matrix; one per channel, until linked
+// or restart)
+func forgetCode(channelID string) {
+	tgMu.Lock()
+	delete(tgCodes, channelID)
+	tgMu.Unlock()
+}
+
+// wrongCode: after 10 wrong codes a new one, so it can't be guessed
+func wrongCode(channelID string) {
+	tgMu.Lock()
+	if tgWrong[channelID]++; tgWrong[channelID] >= 10 {
+		delete(tgCodes, channelID)
+		tgWrong[channelID] = 0
+	}
+	tgMu.Unlock()
+}
+
+func LinkCode(channelID string) string {
 	tgMu.Lock()
 	defer tgMu.Unlock()
 	if c, ok := tgCodes[channelID]; ok {
@@ -269,11 +286,9 @@ func tgHandle(channelID, token string, m *tgMessage) {
 	}
 	if c.ChatID == 0 { // not linked yet: only "/start <code>" links this chat
 		f := strings.Fields(text)
-		if len(f) == 2 && f[0] == "/start" && f[1] == TelegramCode(channelID) {
+		if len(f) == 2 && f[0] == "/start" && f[1] == LinkCode(channelID) {
 			db.DB.Model(&c).Update("chat_id", chatID)
-			tgMu.Lock()
-			delete(tgCodes, channelID)
-			tgMu.Unlock()
+			forgetCode(channelID)
 			msg := "**✓ Linked to hammond\nAlerts arrive here."
 			if c.Commands {
 				msg += " Type help for the commands."
@@ -282,12 +297,7 @@ func tgHandle(channelID, token string, m *tgMessage) {
 			return
 		}
 		if len(f) == 2 && f[0] == "/start" {
-			tgMu.Lock()
-			if tgWrong[channelID]++; tgWrong[channelID] >= 10 {
-				delete(tgCodes, channelID)
-				tgWrong[channelID] = 0
-			}
-			tgMu.Unlock()
+			wrongCode(channelID)
 		}
 		tgSend(token, chatID, chat.Reply{Text: "Link this chat first: hammond → Settings → Notifications shows the code, send /start <code>."})
 		return
