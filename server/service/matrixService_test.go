@@ -16,10 +16,12 @@ import (
 
 // a fake homeserver: whoami, join, sync (a queue of events), send (recorded), upload, authenticated download
 type fakeHS struct {
-	mu     sync.Mutex
-	sent   []map[string]any
-	events []map[string]any
-	srv    *httptest.Server
+	mu      sync.Mutex
+	joined  map[string]bool // rooms the bot is in (nil = every room)
+	invited map[string]bool
+	sent    []map[string]any
+	events  []map[string]any
+	srv     *httptest.Server
 }
 
 func newFakeHS(t *testing.T) *fakeHS {
@@ -51,6 +53,15 @@ func newFakeHS(t *testing.T) *fakeHS {
 		case p == "/_matrix/client/v3/account/whoami":
 			w.Write([]byte(`{"user_id":"@hammond:ci"}`))
 		case strings.HasPrefix(p, "/_matrix/client/v3/join/"):
+			room := strings.TrimPrefix(r.URL.EscapedPath(), "/_matrix/client/v3/join/")
+			if f.joined != nil {
+				if !f.invited[room] {
+					w.WriteHeader(403)
+					w.Write([]byte(`{"errcode":"M_FORBIDDEN","error":"You are not invited to this room."}`))
+					return
+				}
+				f.joined[room] = true
+			}
 			w.Write([]byte(`{"room_id":"!fuel:ci"}`))
 		case p == "/_matrix/client/v3/sync":
 			evs := f.events
@@ -62,6 +73,11 @@ func newFakeHS(t *testing.T) *fakeHS {
 				"rooms": map[string]any{"join": map[string]any{"!fuel:ci": map[string]any{"timeline": map[string]any{"events": evs}}}}})
 			w.Write(b)
 		case strings.Contains(p, "/send/m.room.message/"):
+			if f.joined != nil && !f.joined[strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/_matrix/client/v3/rooms/"), "/")[0]] {
+				w.WriteHeader(403)
+				w.Write([]byte(`{"errcode":"M_FORBIDDEN","error":"Event is not authorized."}`))
+				return
+			}
 			var m map[string]any
 			json.NewDecoder(r.Body).Decode(&m)
 			f.sent = append(f.sent, m)
@@ -226,5 +242,22 @@ func TestMatrixRoomV12(t *testing.T) {
 		if (err == nil) != ok {
 			t.Errorf("%q: %v", room, err)
 		}
+	}
+}
+
+// Test before the bot joined: invited = it joins and sends; not invited = a clear hint
+func TestMatrixTestJoins(t *testing.T) {
+	setupDB(t)
+	hs := newFakeHS(t)
+	defer hs.srv.Close()
+	hs.joined, hs.invited = map[string]bool{}, map[string]bool{}
+	u, _ := mkUserVehicle(t, "", 43)
+	ch, _ := CreateChannel(u.ID, ChannelInput{Kind: "matrix", URL: hs.srv.URL, Room: "!Vw6Ii5yVos", Secret: "bot-token", Enabled: true})
+	if err := TestChannel(u.ID, ch.ID); err == nil || !strings.Contains(err.Error(), "the bot @hammond:ci isn't in the room: invite it") {
+		t.Fatalf("not invited: %v", err)
+	}
+	hs.invited["%21Vw6Ii5yVos"] = true
+	if err := TestChannel(u.ID, ch.ID); err != nil || hs.last()["body"] != "hammond\nTest: alerts will arrive here." {
+		t.Fatalf("invited: %v %v", err, hs.last())
 	}
 }

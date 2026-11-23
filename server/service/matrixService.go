@@ -144,7 +144,19 @@ func sendMatrix(c *db.NotifyChannel, title, message, click string) error {
 	if click != "" {
 		text += "\n[🧭 Navigate](" + click + ")"
 	}
-	return mxReply(c, roomID, chat.Reply{Text: text})
+	err = mxReply(c, roomID, chat.Reply{Text: text})
+	if err != nil && strings.Contains(err.Error(), "HTTP 403") { // not in the room yet: join (accepts an invite) and retry
+		if jerr := mxJSON(c, "POST", "/_matrix/client/v3/join/"+url.PathEscape(roomID), map[string]any{}, nil); jerr != nil {
+			var who struct {
+				UserID string `json:"user_id"`
+			}
+			mxJSON(c, "GET", "/_matrix/client/v3/account/whoami", nil, &who)
+			return fmt.Errorf("the bot %s isn't in the room: invite it in Element (room → People → Invite), then try again (%v)",
+				first(who.UserID, "account"), jerr)
+		}
+		err = mxReply(c, roomID, chat.Reply{Text: text})
+	}
+	return err
 }
 
 // MatrixTimer: a poller per enabled Matrix channel that answers commands
