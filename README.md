@@ -14,6 +14,10 @@
 > - Base images pinned by digest, end-to-end smoke test in CI (`tests/smoke_test.py`)
 
 
+**Guides:** step by step in [`docs/`](docs/README.md) (getting started, fuel prices and Price watch,
+notifications and chat, API keys, Home Assistant, trips, gauge calibration, electric/EVCC, Grafana).
+Screenshots: [Screenshots.md](Screenshots.md).
+
 ## Automatic fill-up detection (Home Assistant / API)
 
 hammond can take **detected fill-ups** from Home Assistant, Node-RED, an OBD script or anything else that can
