@@ -119,3 +119,24 @@ func TestTripsUseLearnedGauge(t *testing.T) {
 		t.Errorf("legs %+v", legs)
 	}
 }
+
+// the chat's undo deletes the cost by the ID AddTripCost returns: the new one, not an older cost of the trip
+func TestAddTripCostReturnsItsID(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 43)
+	trip := db.Trip{VehicleID: v.ID}
+	db.DB.Create(&trip)
+	db.DB.Create(&db.TripLeg{VehicleID: v.ID, TripID: trip.ID, Start: at, End: at.Add(time.Hour), StartOdo: 1000, EndOdo: 1075, Distance: 75})
+	first, err := AddTripCost(u.ID, trip.ID, 12.5, "Toll", "A3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := AddTripCost(u.ID, trip.ID, 4.2, "Toll", "A5")
+	if err != nil || second == "" || second == first {
+		t.Fatalf("want a new ID per cost: %q %q %v", first, second, err)
+	}
+	var e db.Expense
+	if db.DB.First(&e, "id = ?", second); e.Comments != "A5" {
+		t.Fatalf("second ID is the A5 toll: %+v", e)
+	}
+}

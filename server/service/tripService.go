@@ -632,17 +632,19 @@ func DeleteTrip(tripID string) error {
 }
 
 // AddTripCost: an expense (toll, parking, vignette…) that belongs to the trip, dated at its start
-func AddTripCost(userID, tripID string, amount float64, kind, comment string) error {
+// AddTripCost: returns the new expense's ID (the chat's undo deletes exactly that one)
+func AddTripCost(userID, tripID string, amount float64, kind, comment string) (string, error) {
 	var first db.TripLeg
 	db.DB.Where("trip_id = ?", tripID).Order("started_at").Limit(1).Find(&first)
 	if first.ID == "" {
-		return errors.New("trip has no drives")
+		return "", errors.New("trip has no drives")
 	}
 	u, err := db.GetUserById(userID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	e := db.Expense{VehicleID: first.VehicleID, Amount: float32(amount), OdoReading: int(first.StartOdo), Comments: comment,
 		ExpenseType: kind, UserID: userID, Date: first.Start, Currency: u.Currency, DistanceUnit: u.DistanceUnit, Source: "trip", TripID: tripID}
-	return db.DB.Create(&e).Error
+	err = db.DB.Create(&e).Error // before reading e.ID: Create sets it
+	return e.ID, err
 }

@@ -198,20 +198,12 @@ func (b *bot) cost(args []string) (string, error) {
 	today := time.Now().Format("2006-01-02")
 	if len(trips) > 0 && trips[0].Start.Local().Format("2006-01-02") == today {
 		t := trips[0]
-		if err := b.hammond.call("POST", "/api/trips/"+t.ID+"/costs", map[string]any{"amount": amount, "type": kind, "comment": comment}, nil); err != nil {
+		// the new cost's own ID for undo: the trip may have other costs already
+		var created struct{ ID string }
+		if err := b.hammond.call("POST", "/api/trips/"+t.ID+"/costs", map[string]any{"amount": amount, "type": kind, "comment": comment}, &created); err != nil {
 			return "", err
 		}
-		// the cost is an expense of the trip: find it for undo
-		var ex []struct {
-			ID, TripID string
-		}
-		b.hammond.get("/vehicles/"+t.car.ID+"/expenses", &ex)
-		for _, e := range ex {
-			if e.TripID == t.ID {
-				remember(b.hammond.userID, fmt.Sprintf("%s %.2f", kind, amount), "/api/vehicles/"+t.car.ID+"/expenses/"+e.ID)
-				break
-			}
-		}
+		remember(b.hammond.userID, fmt.Sprintf("%s %.2f", kind, amount), "/api/vehicles/"+t.car.ID+"/expenses/"+created.ID)
 		return fmt.Sprintf("**✓ %s %.2f on today's trip\n🚗 %s · %s %.1f km\n`undo` within 10 min", kind, amount, t.car.Nickname,
 			t.Start.Local().Format("15:04"), t.Distance), nil
 	}
