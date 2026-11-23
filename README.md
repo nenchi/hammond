@@ -121,8 +121,10 @@ Vehicle → **Trips**: every drive (engine on → off) is read from your Home As
 Settings → **MQTT**: your broker (`mqtt://192.168.1.10:1883`, user, password). hammond announces its sensors with
 Home Assistant's MQTT discovery, so HA creates the devices by itself, no YAML:
 
-- **hammond <vehicle>**: odometer, last fill-up (date, litres, price, cost), fuel / other / total costs this month,
-  fill-ups this month, consumption (90 days), trips today and this month (distance, business distance, driving time, cost)
+- **hammond <vehicle>**: odometer, last fill-up (date, litres, price, cost), fuel / other / total costs this month and
+  the last 30 days, fill-ups, litres and average price of the last 30 days, costs this year, consumption (90 days),
+  trips today and this month (distance, business distance, driving time, cost). The "this month / today / this year"
+  totals tell HA when they start over, so HA's statistics cards show correct bars per month.
 - **hammond <station> <grade>** per watched station: price, price limit, below limit (binary sensor), last check
 
 Values are sent after every change (fill-up, expense, trip, price) and every 5 minutes; turning MQTT off shows the

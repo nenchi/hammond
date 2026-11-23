@@ -548,6 +548,12 @@ check("mqtt: HA discovery + state for the vehicle", s == 200 and r["vehicles"] =
       and cfg.get("device", {}).get("name") == "hammond Smoke" and cfg.get("state_topic") == f"{base}/vehicle/{vid}"
       and cfg.get("unit_of_measurement") == "km" and m.get(f"{base}/status") == "online" and state.get("odometer", 0) > 0
       and "month_total" in state and f"homeassistant/sensor/hammond_{vid}/month_total/config" in m, (s, r, cfg, state, sorted(m)[:5]))
+mt = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/month_total/config", "{}"))
+l30 = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/last30_total/config", "{}"))
+check("mqtt: last 30 days + this year; monthly totals tell HA when they start over",
+      "last30_total" in state and "last30_fillups" in state and "year_total" in state and state.get("month_start", "").endswith(("Z", ":00"))
+      and mt.get("last_reset_value_template") == "{{ value_json.month_start }}" and l30.get("name") == "Costs last 30 days"
+      and "last_reset_value_template" not in l30, (state, mt, l30))
 s, _ = call("POST", "/api/me/mqtt", {"url": ""}, token=tok)
 check("mqtt: turned off = HA shows it offline", s == 200 and fake_mqtt().get(f"{base}/status") == "offline", fake_mqtt().get(f"{base}/status"))
 
