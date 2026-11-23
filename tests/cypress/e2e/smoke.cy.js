@@ -625,6 +625,17 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  it('stats: a custom date range asks the chart for its start and end', () => {
+    cy.intercept('GET', `/api/vehicles/${vehicleId}/mileage*`).as('mileage')
+    visit(`/vehicles/${vehicleId}`)
+    cy.wait('@mileage')
+    cy.get('.stats-range select').select('Custom…')
+    cy.get('.stats-from').type('2026-01-01')
+    cy.get('.stats-to').type('2026-03-31')
+    cy.wait('@mileage').its('request.url').should('include', 'until=')
+    noConsoleErrors()
+  })
+
   it('trips: the Trips menu opens the trips of a car (the one picked last time)', () => {
     visit(`/vehicles/${vehicleId}/trips`)
     cy.get('.trips-page', { timeout: 10000 })

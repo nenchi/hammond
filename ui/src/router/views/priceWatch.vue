@@ -11,6 +11,9 @@ import { parseAndFormatFillupDate } from '@utils/format-date'
 
 // Favourite stations: price checked in the background (interval per price source), history graph, and a
 // Gotify message when it's at or below the limit. Stations are added with "Watch" in Stations nearby.
+// "2026-11-24" in local time, for <input type="date">
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 export default {
   components: { Layout, StationPicker, PriceChart, PriceHoursChart },
   page: { title: 'Price watch' },
@@ -19,7 +22,9 @@ export default {
       watches: [],
       loading: true,
       checking: false,
-      days: 30,
+      days: 30, // 0 = custom range (from/to)
+      customFrom: ymd(new Date(Date.now() - 90 * 864e5)),
+      customTo: ymd(new Date()),
       graphs: {}, // station key → { histories: { watch id: history }, select } while its graph is shown
       settings: null,
       hours: {}, // kind → hours between checks (form)
@@ -62,6 +67,12 @@ export default {
   watch: {
     days() {
       this.reloadGraphs()
+    },
+    customFrom() {
+      if (this.days === 0) this.reloadGraphs()
+    },
+    customTo() {
+      if (this.days === 0) this.reloadGraphs()
     },
   },
   mounted() {
@@ -153,7 +164,9 @@ export default {
     },
     // all grades of the station: one line each
     fetchHistory(st) {
-      Promise.all(st.watches.map((w) => axios.get(`/api/me/priceWatches/${w.id}/history`, { params: { days: this.days } })))
+      Promise.all(st.watches.map((w) => axios.get(`/api/me/priceWatches/${w.id}/history`, {
+            params: this.days ? { days: this.days } : { from: this.customFrom, to: this.customTo },
+          })))
         .then((res) => {
           const g = this.graphs[st.key]
           if (g) g.histories = Object.fromEntries(res.map(({ data }, i) => [st.watches[i].id, data]))
@@ -200,7 +213,12 @@ export default {
             <option :value="30">30 days</option>
             <option :value="90">90 days</option>
             <option :value="365">1 year</option>
+            <option :value="0">Custom…</option>
           </b-select>
+          <template v-if="days === 0">
+            <input v-model="customFrom" class="input is-small graph-from" type="date" :max="customTo" title="From" style="width: auto" />
+            <input v-model="customTo" class="input is-small graph-to" type="date" :min="customFrom" title="To" style="width: auto" />
+          </template>
           <b-button size="is-small" icon-left="sync" :loading="checking" :disabled="!watches.length" class="check-now" @click="checkNow"
             >Check now</b-button
           >

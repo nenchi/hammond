@@ -192,7 +192,8 @@ type WatchHistory struct {
 	Fillups []FillupPoint     `json:"fillups"` // the user's own fill-ups at this station, for the graph
 }
 
-func PriceWatchHistory(userID, id string, since time.Time) (*WatchHistory, error) {
+// PriceWatchHistory: prices from since to until (zero = up to now), and the fill-ups at the station then
+func PriceWatchHistory(userID, id string, since, until time.Time) (*WatchHistory, error) {
 	w, err := getWatch(userID, id)
 	if err != nil {
 		return nil, err
@@ -205,7 +206,11 @@ func PriceWatchHistory(userID, id string, since time.Time) (*WatchHistory, error
 		h.Prices = append(h.Prices, before)
 	}
 	var rest []db.StationPrice
-	if err := db.DB.Where("watch_id = ? AND at >= ?", w.ID, since).Order("at").Find(&rest).Error; err != nil {
+	q := db.DB.Where("watch_id = ? AND at >= ?", w.ID, since)
+	if !until.IsZero() {
+		q = q.Where("at < ?", until)
+	}
+	if err := q.Order("at").Find(&rest).Error; err != nil {
 		return nil, err
 	}
 	h.Prices = append(h.Prices, rest...)
@@ -216,7 +221,11 @@ func PriceWatchHistory(userID, id string, since time.Time) (*WatchHistory, error
 		station += ", " + w.Address
 	}
 	var fillups []db.Fillup
-	db.DB.Where("user_id = ? AND date >= ? AND lower(filling_station) = lower(?)", userID, since, station).Order("date").Find(&fillups)
+	fq := db.DB.Where("user_id = ? AND date >= ? AND lower(filling_station) = lower(?)", userID, since, station)
+	if !until.IsZero() {
+		fq = fq.Where("date < ?", until)
+	}
+	fq.Order("date").Find(&fillups)
 	for _, f := range fillups {
 		h.Fillups = append(h.Fillups, FillupPoint{At: f.Date, Price: f.PerUnitPrice})
 	}

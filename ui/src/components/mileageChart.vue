@@ -9,6 +9,7 @@ export default {
   props: {
     vehicle: { type: Object, required: true },
     since: { type: Date, default: '' },
+    until: { type: Date, default: null }, // end of a custom range; null = up to now
     user: { type: Object, required: true },
     styles: { type: Object, default: () => ({}) },
   },
@@ -50,6 +51,10 @@ export default {
       if (newOne && old && newOne.getTime() === old.getTime()) return
       this.fetchMileage()
     },
+    until(newOne, old) {
+      if (newOne && old && newOne.getTime() === old.getTime()) return
+      this.fetchMileage()
+    },
   },
   mounted() {
     this.fetchMileage()
@@ -57,7 +62,7 @@ export default {
   methods: {
     fetchMileage() {
       axios
-        .get(`/api/vehicles/${this.vehicle.id}/mileage`, { params: { since: this.since } })
+        .get(`/api/vehicles/${this.vehicle.id}/mileage`, { params: this.until ? { since: this.since, until: this.until } : { since: this.since } })
         .then((response) => (this.points = response.data || []))
         .catch((err) => console.log(err))
     },

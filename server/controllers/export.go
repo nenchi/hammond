@@ -280,7 +280,15 @@ func priceWatchHistory(c *gin.Context) {
 	if days < 1 || days > 3660 {
 		days = 30
 	}
-	list, err := service.PriceWatchHistory(c.MustGet("userId").(string), c.Param("id"), time.Now().AddDate(0, 0, -days))
+	since, until := time.Now().AddDate(0, 0, -days), time.Time{}
+	// a custom range: ?from=2026-01-01&to=2026-03-31 (local days, "to" included)
+	if f, err := time.ParseInLocation("2006-01-02", c.Query("from"), time.Local); err == nil {
+		since = f
+		if t, err := time.ParseInLocation("2006-01-02", c.Query("to"), time.Local); err == nil && !t.Before(f) {
+			until = t.AddDate(0, 0, 1)
+		}
+	}
+	list, err := service.PriceWatchHistory(c.MustGet("userId").(string), c.Param("id"), since, until)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
