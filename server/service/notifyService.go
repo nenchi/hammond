@@ -102,7 +102,7 @@ func (in ChannelInput) apply(c *db.NotifyChannel) error {
 	// telegram: hammond answers in the chat; matrix: the room is homebot's Fuel room (homebot relays to hammond)
 	c.Enabled, c.Commands = in.Enabled, in.Commands && (c.Kind == "telegram" || c.Kind == "matrix")
 	oldRoom, oldSecret := c.Room, c.Secret
-	c.URL, c.Room = strings.TrimRight(strings.TrimSpace(in.URL), "/"), strings.TrimSpace(in.Room)
+	c.URL, c.Room = strings.TrimRight(strings.TrimSpace(in.URL), "/"), matrixRoom(in.Room)
 	defer func() { // matrix: another room or account = link again
 		if c.Kind == "matrix" && (c.Room != oldRoom || c.Secret != oldSecret) {
 			c.MatrixUser = ""
@@ -140,8 +140,10 @@ func (in ChannelInput) apply(c *db.NotifyChannel) error {
 		if !httpURL(c.URL) {
 			return errors.New("Matrix: the homeserver URL, e.g. https://matrix.example.com")
 		}
-		if !strings.HasPrefix(c.Room, "!") && !strings.HasPrefix(c.Room, "#") || !strings.Contains(c.Room, ":") || len(c.Room) > 255 {
-			return errors.New("Matrix: the room ID (!abc:example.com) or alias (#fuel:example.com)")
+		// room IDs of room version 12 have no ":server" any more (!abc…); aliases always do (#fuel:example.com)
+		if len(c.Room) < 2 || len(c.Room) > 255 || strings.ContainsAny(c.Room, " /") ||
+			!(strings.HasPrefix(c.Room, "!") || strings.HasPrefix(c.Room, "#") && strings.Contains(c.Room, ":")) {
+			return errors.New("Matrix: the room ID (Element → room settings → Advanced → Internal room ID, starts with !) or an address (#fuel:example.com)")
 		}
 		if c.Secret == "" {
 			return errors.New("Matrix: the access token of the account that posts (Element → Settings → Help & About)")
@@ -153,6 +155,19 @@ func (in ChannelInput) apply(c *db.NotifyChannel) error {
 		}
 	}
 	return nil
+}
+
+// matrixRoom: the room as typed or copied: a share link (https://matrix.to/#/!abc:example.com?via=…) or an
+// encoded ID becomes !abc:example.com
+func matrixRoom(s string) string {
+	s = strings.TrimSpace(s)
+	if _, after, ok := strings.Cut(s, "matrix.to/#/"); ok {
+		s, _, _ = strings.Cut(after, "?")
+	}
+	if u, err := url.PathUnescape(s); err == nil {
+		s = u
+	}
+	return strings.TrimSpace(s)
 }
 
 func mustPath(s string) string {

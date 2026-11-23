@@ -245,6 +245,21 @@ func RegisterTripController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
+	// the token of a Matrix bot account from username + password; nothing is stored here
+	router.POST("/me/notifications/matrixLogin", func(c *gin.Context) {
+		var req struct {
+			Homeserver string `json:"homeserver"`
+			User       string `json:"user"`
+			Password   string `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&req); fail(c, err) {
+			return
+		}
+		token, user, err := service.MatrixLogin(req.Homeserver, req.User, req.Password)
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, gin.H{"token": token, "userId": user})
+		}
+	})
 	router.POST("/me/notifications/:cid/unlink", func(c *gin.Context) {
 		if !fail(c, service.UnlinkChannel(c.MustGet("userId").(string), c.Param("cid"))) {
 			c.JSON(http.StatusOK, gin.H{})

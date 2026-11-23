@@ -37,6 +37,14 @@ type VehicleSummary struct {
 	MonthFuel    float64        `json:"monthFuel"`
 	MonthOther   float64        `json:"monthOther"`
 	MonthFillups int            `json:"monthFillups"`
+	// rolling: the last 30 days (fill-ups, litres, costs, average price per unit) and this calendar year
+	Last30Fuel    float64  `json:"last30Fuel"`
+	Last30Other   float64  `json:"last30Other"`
+	Last30Fillups int      `json:"last30Fillups"`
+	Last30Litres  float64  `json:"last30Litres"`
+	Last30Price   *float64 `json:"last30Price"` // fuel cost / litres; nil without fill-ups
+	YearFuel      float64  `json:"yearFuel"`
+	YearOther     float64  `json:"yearOther"`
 	// fuel per 100 distance units over the last 90 days (full-tank fill-ups); nil = not enough data
 	Consumption *float64   `json:"consumption"`
 	TripsToday  TripTotals `json:"tripsToday"`
@@ -85,6 +93,8 @@ func GetSummary(userID string) (*Summary, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+	year := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.Local)
+	last30 := now.AddDate(0, 0, -30)
 	s := &Summary{Currency: u.Currency, DistanceUnit: db.DistanceUnitDetails[u.DistanceUnit].Short, At: now,
 		Vehicles: []VehicleSummary{}, Watches: []WatchSummary{}}
 	vs, err := GetUserVehicles(userID)
@@ -106,6 +116,14 @@ func GetSummary(userID string) (*Summary, error) {
 				vsum.MonthFuel += float64(f.TotalAmount)
 				vsum.MonthFillups++
 			}
+			if !f.Date.Before(last30) {
+				vsum.Last30Fuel += float64(f.TotalAmount)
+				vsum.Last30Litres += float64(f.FuelQuantity)
+				vsum.Last30Fillups++
+			}
+			if !f.Date.Before(year) {
+				vsum.YearFuel += float64(f.TotalAmount)
+			}
 		}
 		var exps []db.Expense
 		db.DB.Where("vehicle_id = ?", v.ID).Find(&exps)
@@ -113,6 +131,12 @@ func GetSummary(userID string) (*Summary, error) {
 			vsum.Odometer = max(vsum.Odometer, float64(e.OdoReading))
 			if !e.Date.Before(month) {
 				vsum.MonthOther += float64(e.Amount)
+			}
+			if !e.Date.Before(last30) {
+				vsum.Last30Other += float64(e.Amount)
+			}
+			if !e.Date.Before(year) {
+				vsum.YearOther += float64(e.Amount)
 			}
 		}
 		var last db.TripLeg
@@ -156,6 +180,12 @@ func GetSummary(userID string) (*Summary, error) {
 	for i := range s.Vehicles {
 		v := &s.Vehicles[i]
 		v.MonthFuel, v.MonthOther = round2(v.MonthFuel), round2(v.MonthOther)
+		if v.Last30Litres > 0 {
+			p := math.Round(v.Last30Fuel/v.Last30Litres*1000) / 1000
+			v.Last30Price = &p
+		}
+		v.Last30Fuel, v.Last30Other, v.Last30Litres = round2(v.Last30Fuel), round2(v.Last30Other), round2(v.Last30Litres)
+		v.YearFuel, v.YearOther = round2(v.YearFuel), round2(v.YearOther)
 	}
 	return s, nil
 }

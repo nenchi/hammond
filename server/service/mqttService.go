@@ -126,6 +126,13 @@ func vehicleEntities(cur, dist string) []mqttEntity {
 		{"sensor", "month_other", "Other costs this month", cur, "monetary", "total", ""},
 		{"sensor", "month_total", "Costs this month", cur, "monetary", "total", ""},
 		{"sensor", "month_fillups", "Fill-ups this month", "", "", "measurement", "mdi:gas-station"},
+		{"sensor", "last30_fuel", "Fuel last 30 days", cur, "monetary", "", "mdi:gas-station"},
+		{"sensor", "last30_other", "Other costs last 30 days", cur, "monetary", "", "mdi:cash"},
+		{"sensor", "last30_total", "Costs last 30 days", cur, "monetary", "", "mdi:cash-multiple"},
+		{"sensor", "last30_fillups", "Fill-ups last 30 days", "", "", "measurement", "mdi:gas-station"},
+		{"sensor", "last30_litres", "Litres last 30 days", "L", "", "measurement", "mdi:fuel"},
+		{"sensor", "last30_price", "Average price last 30 days", cur + "/L", "", "measurement", "mdi:cash"},
+		{"sensor", "year_total", "Costs this year", cur, "monetary", "total", "mdi:calendar"},
 		{"sensor", "consumption", "Consumption", "L/100" + dist, "", "measurement", "mdi:fuel"},
 		{"sensor", "trips_today_distance", "Trips today", dist, "distance", "total", "mdi:map-marker-path"},
 		{"sensor", "trips_today_count", "Trips today count", "", "", "measurement", "mdi:map-marker-path"},
@@ -153,7 +160,14 @@ func vehicleState(v VehicleSummary) map[string]any {
 		"trips_today_distance": round2(v.TripsToday.Distance), "trips_today_count": v.TripsToday.Count,
 		"trips_today_minutes": v.TripsToday.DriveMinutes, "trips_today_cost": round2(v.TripsToday.Cost),
 		"trips_month_distance": round2(v.TripsMonth.Distance), "trips_month_business": round2(v.TripsMonth.BusinessDistance),
-		"trips_month_cost": round2(v.TripsMonth.Cost)}
+		"trips_month_cost": round2(v.TripsMonth.Cost),
+		"last30_fuel":      v.Last30Fuel, "last30_other": v.Last30Other, "last30_total": round2(v.Last30Fuel + v.Last30Other),
+		"last30_fillups": v.Last30Fillups, "last30_litres": v.Last30Litres, "last30_price": v.Last30Price,
+		"year_total": round2(v.YearFuel + v.YearOther),
+		// when the "this month" / "this year" totals start over: HA's statistics then show correct bars per period
+		"month_start": time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Local).Format(time.RFC3339),
+		"year_start":  time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local).Format(time.RFC3339),
+		"day_start":   time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Local).Format(time.RFC3339)}
 	if v.Consumption != nil {
 		st["consumption"] = round2(*v.Consumption)
 	}
@@ -235,6 +249,14 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 			if e.component == "binary_sensor" {
 				delete(cfg, "json_attributes_topic")
 			}
+			if e.stateClass == "total" { // totals that start over: tell HA when
+				for prefix, start := range map[string]string{"month_": "month_start", "trips_month": "month_start",
+					"year_": "year_start", "trips_today": "day_start"} {
+					if strings.HasPrefix(e.key, prefix) {
+						cfg["last_reset_value_template"] = "{{ value_json." + start + " }}"
+					}
+				}
+			}
 			pub(topic, cfg)
 		}
 	}
@@ -278,7 +300,9 @@ func UpdateMqttSettings(userID, rawURL, user, password, prefix string) error {
 		return errors.New("invalid MQTT username or discovery prefix")
 	}
 	upd := map[string]interface{}{"mqtt_url": rawURL, "mqtt_user": strings.TrimSpace(user), "mqtt_prefix": prefix}
-	switch password {
+	// a password pasted from a terminal often brings a space or line break along: the broker then says
+	// "not Authorized" although the password looks right
+	switch password = strings.TrimSpace(password); password {
 	case "":
 	case "-":
 		upd["mqtt_password"] = ""
