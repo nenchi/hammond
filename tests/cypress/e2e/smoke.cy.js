@@ -592,7 +592,32 @@ describe('hammond UI', () => {
     // the map: a trip entered by hand has no route, so the map says how to get one
     cy.get('.trips-page .trips-map .leaflet-container').should('exist')
     cy.get('.trips-page .trips-map').should('contain', 'No routes yet')
+    // the toolbar: date fields (with a label) and buttons share one bottom line
+    cy.get('.trips-page .trips-toolbar input[type=date]').first().then(($d) => {
+      cy.get('.trips-page .trips-toolbar .buttons .button').first().then(($b) => {
+        expect(Math.abs($d[0].getBoundingClientRect().bottom - $b[0].getBoundingClientRect().bottom)).to.be.lessThan(3)
+      })
+    })
     cy.document().then((doc) => expect(doc.documentElement.scrollWidth).to.be.at.most(390))
+    noConsoleErrors()
+  })
+
+  it('car photo: chosen on the vehicle page, shown on the home card, can be hidden (only for Home Assistant)', () => {
+    const png = Cypress.Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+    visit(`/vehicles/${vehicleId}/edit`)
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}/photo`).as('photo')
+    cy.get('.vehicle-photo input.photo-input', { timeout: 10000 }).selectFile({ contents: png, fileName: 'car.png', mimeType: 'image/png' }, { force: true })
+    cy.wait('@photo').its('response.statusCode').should('eq', 200)
+    cy.get('.vehicle-photo img').should('have.attr', 'src').and('match', /^\/api\/public\/photo\/[0-9a-f]{32}$/)
+    visit('/')
+    cy.get('img.car-thumb', { timeout: 10000 }).should('exist')
+    visit(`/vehicles/${vehicleId}/edit`)
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}/photoHidden`).as('hide')
+    cy.get('.vehicle-photo .photo-shown', { timeout: 10000 }).click()
+    cy.wait('@hide').its('request.body.hidden').should('eq', true)
+    visit('/')
+    cy.contains('.card-header-title', 'Cypress', { timeout: 10000 })
+    cy.get('img.car-thumb').should('not.exist')
     noConsoleErrors()
   })
 

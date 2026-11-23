@@ -42,6 +42,7 @@ export default {
       },
       mergeMinutes: 15,
       vehicles: [], // the user's cars: a picker when there are several
+      trackers: [], // HA device_trackers/persons with a position, offered for the location fields
       focus: "", // trip id shown on the map
       edit: {}, // trip id → { purpose, notes, business }
       cost: {}, // trip id → { amount, type, comment } while adding a cost
@@ -107,6 +108,9 @@ export default {
     },
   },
   watch: {
+    setupOpen(open) {
+      if (open && !this.trackers.length) this.loadTrackers();
+    },
     // another car picked: same page, new data
     "$route.params.vehicleId"() {
       this.focus = "";
@@ -238,6 +242,12 @@ export default {
         .catch(this.err)
         .finally(() => (this.syncing = false));
     },
+    loadTrackers() {
+      return axios
+        .get("/api/me/homeAssistant/trackers")
+        .then((r) => (this.trackers = r.data || []))
+        .catch(() => (this.trackers = [])); // no HA yet: the fields stay free text
+    },
     suggest() {
       const odo = (this.vehicle && this.vehicle.odometerEntity) || "";
       if (!odo.endsWith("_odometer"))
@@ -248,12 +258,23 @@ export default {
       const prefix = odo.slice(0, -"odometer".length);
       for (const k in suggestions)
         if (!this.entities[k]) this.entities[k] = prefix + suggestions[k];
-      // Mercedes: device_tracker.<plate>_device_tracker (only when the car shares its location)
-      if (!this.entities.carLocation)
-        this.entities.carLocation =
-          "device_tracker." +
-          prefix.replace(/^sensor\./, "") +
-          "device_tracker";
+      // locations: only trackers HA really has. The car's carries its name (Mercedes:
+      // device_tracker.<plate>_device_tracker); the phone = the only other GPS tracker
+      this.loadTrackers().then(() => {
+        const car = prefix.replace(/^sensor\./, "");
+        const isCar = (t) => t.entity.startsWith("device_tracker." + car);
+        const carT = this.trackers.find(isCar);
+        if (!this.entities.carLocation && carT)
+          this.entities.carLocation = carT.entity;
+        const phones = this.trackers.filter(
+          (t) =>
+            t.entity.startsWith("device_tracker.") &&
+            t.source === "gps" &&
+            !isCar(t)
+        );
+        if (!this.entities.phoneLocation && phones.length === 1)
+          this.entities.phoneLocation = phones[0].entity;
+      });
     },
     saveSetup() {
       Promise.all([
@@ -377,6 +398,13 @@ export default {
 <template>
   <Layout>
     <div class="trips-page">
+      <img
+        v-if="vehicle && vehicle.photoUrl && !vehicle.photoHidden"
+        :src="vehicle.photoUrl"
+        alt=""
+        class="no-print"
+        style="height: 48px; width: 72px; object-fit: cover; border-radius: 4px; float: right"
+      />
       <h1 class="title">
         Trips<span v-if="vehicle && vehicles.length < 2">
           · {{ vehicle.nickname }}</span
@@ -403,7 +431,7 @@ export default {
       </p>
 
       <div class="box no-print">
-        <div class="columns is-multiline is-vcentered">
+        <div class="columns is-multiline trips-toolbar">
           <div class="column is-narrow">
             <b-field label="From"
               ><input v-model="from" class="input" type="date" @change="load"
@@ -471,8 +499,18 @@ export default {
             :placeholder="
               k.endsWith('Location') ? 'device_tracker.…' : 'sensor.…'
             "
+            :list="k.endsWith('Location') ? 'ha-trackers' : null"
           />
         </b-field>
+        <datalist id="ha-trackers">
+          <option v-for="t in trackers" :key="t.entity" :value="t.entity">
+            {{ t.name }}{{ t.source ? " · " + t.source : "" }}
+          </option>
+        </datalist>
+        <p v-if="trackers.length" class="help mb-3">
+          Locations: tap the field to pick one of your
+          {{ trackers.length }} Home Assistant trackers with a position.
+        </p>
         <b-field
           label="Join drives into one trip when the stop is at most (minutes)"
         >
@@ -729,6 +767,20 @@ export default {
 }
 .trips-page .trip.business {
   border-left-color: #3273dc;
+}
+/* date fields have a label, the buttons don't: line both up on the bottom */
+.trips-page .trips-toolbar {
+  align-items: flex-end;
+}
+.trips-page .trips-toolbar .field {
+  margin-bottom: 0;
+}
+.trips-page .trips-toolbar .buttons {
+  margin-bottom: 0;
+}
+.trips-page .trips-toolbar .buttons .button {
+  margin-bottom: 0; /* bottom flush with the inputs; wrapped rows keep a gap above */
+  margin-top: 0.5rem;
 }
 .trips-page .day-head {
   margin: 1.5rem 0 0.5rem;

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -221,4 +222,48 @@ func CheckHAEntity(userID, entity string) (*Odometer, error) {
 		return nil, errors.New("set up your Home Assistant first (Settings → Home Assistant)")
 	}
 	return o, nil
+}
+
+type HATracker struct {
+	Entity string `json:"entity"`
+	Name   string `json:"name"`
+	Source string `json:"source"` // gps (phone app, car), router, …
+}
+
+// HATrackers: the user's device_trackers and persons that report a position (latitude), for the Trips setup
+// picker: a phone with the HA companion app, the car's own tracker
+func HATrackers(userID string) ([]HATracker, error) {
+	haURL, token := haConfig(userID)
+	if haURL == "" || token == "" {
+		return nil, errors.New("set up your Home Assistant first (Settings → Home Assistant)")
+	}
+	req, _ := http.NewRequest("GET", haURL+"/api/states", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Home Assistant not reachable: %s", strings.ReplaceAll(err.Error(), token, "***"))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Home Assistant answered HTTP %d", resp.StatusCode)
+	}
+	var states []struct {
+		EntityID   string `json:"entity_id"`
+		Attributes struct {
+			Name   string   `json:"friendly_name"`
+			Lat    *float64 `json:"latitude"`
+			Source string   `json:"source_type"`
+		} `json:"attributes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&states); err != nil {
+		return nil, errors.New("Home Assistant answered without valid states")
+	}
+	out := []HATracker{}
+	for _, s := range states {
+		a := s.Attributes
+		if (strings.HasPrefix(s.EntityID, "device_tracker.") || strings.HasPrefix(s.EntityID, "person.")) && a.Lat != nil {
+			out = append(out, HATracker{s.EntityID, a.Name, a.Source})
+		}
+	}
+	return out, nil
 }

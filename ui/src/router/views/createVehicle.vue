@@ -19,6 +19,9 @@ export default {
   },
   data() {
     return {
+      photoUrl: (this.vehicle && this.vehicle.photoUrl) || '',
+      photoBusy: false,
+      photoShown: !(this.vehicle && this.vehicle.photoHidden),
       entityCheck: null, // { ok, text } from "Check" next to the odometer entity
       entityChecking: false,
       authError: null,
@@ -78,6 +81,39 @@ export default {
     }
   },
   methods: {
+    // car photo: the phone offers the camera or the gallery; origin = this address, for Home Assistant's link
+    uploadPhoto(e) {
+      const file = e.target.files && e.target.files[0]
+      e.target.value = ''
+      if (!file) return
+      const form = new FormData()
+      form.append('file', file)
+      form.append('origin', window.location.origin)
+      this.photoBusy = true
+      axios
+        .put(`/api/vehicles/${this.vehicle.id}/photo`, form)
+        .then(({ data }) => {
+          this.photoUrl = data.photoUrl
+          this.$store.dispatch('vehicles/fetchVehicles')
+          this.$buefy.toast.open({ message: 'Photo saved', type: 'is-success', duration: 3000 })
+        })
+        .catch((ex) => {
+          const msg = (ex.response && ex.response.data && ex.response.data.error) || ex.message
+          this.$buefy.toast.open({ message: msg, type: 'is-danger', duration: 5000, position: 'is-bottom' })
+        })
+        .finally(() => (this.photoBusy = false))
+    },
+    setPhotoShown(shown) {
+      axios
+        .put(`/api/vehicles/${this.vehicle.id}/photoHidden`, { hidden: !shown })
+        .then(() => this.$store.dispatch('vehicles/fetchVehicles'))
+    },
+    removePhoto() {
+      axios.delete(`/api/vehicles/${this.vehicle.id}/photo`).then(() => {
+        this.photoUrl = ''
+        this.$store.dispatch('vehicles/fetchVehicles')
+      })
+    },
     // asks your Home Assistant for the entity right away (before saving)
     checkEntity() {
       this.entityChecking = true
@@ -207,6 +243,21 @@ export default {
           Back to Vehicle
         </router-link>
       </div>
+    </div>
+    <div v-if="vehicle && vehicle.id" class="box vehicle-photo mb-4">
+      <p class="heading">Photo</p>
+      <img v-if="photoUrl" :src="photoUrl" alt="Car photo" style="max-height: 200px; border-radius: 6px; display: block" />
+      <p v-else class="help mb-2">No photo yet. Shown on your cars and in Home Assistant (over MQTT).</p>
+      <div class="buttons mt-2">
+        <label class="button is-primary" :class="{ 'is-loading': photoBusy }">
+          <input class="photo-input" type="file" accept="image/*" style="display: none" @change="uploadPhoto" />
+          {{ photoUrl ? 'Change photo' : 'Take or choose a photo' }}
+        </label>
+        <b-button v-if="photoUrl" type="is-danger" outlined @click="removePhoto">Remove</b-button>
+      </div>
+      <b-switch v-if="photoUrl" v-model="photoShown" class="photo-shown" @input="setPhotoShown"
+        >Show in hammond (off: only for Home Assistant)</b-switch
+      >
     </div>
     <form @submit.prevent="createVehicle">
       <b-field label="Nickname*">

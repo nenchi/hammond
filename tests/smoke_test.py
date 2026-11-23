@@ -131,6 +131,38 @@ s, _ = call("POST", "/api/me/settings", {**base_settings, "theme": "auto", "pref
 s, v_upd = call("PUT", f"/api/vehicles/{vid}", {"nickname": "Smoke", "registration": "LJ SMOKE1", "make": "Skoda",
                                                "model": "Octavia", "fuelUnit": 0, "fuelType": 1, "tankCapacity": 50}, token=tok)
 check("vehicle tank size saved", s == 200 and call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tankCapacity") == 50, (s, v_upd))
+
+
+def upload_photo(path, data, filename, token, origin="https://fuel.example.com"):
+    """multipart PUT of a car photo (the UI's camera/file upload)"""
+    bnd = "----hammondsmoke"
+    body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"origin\"\r\n\r\n{origin}\r\n"
+            f"--{bnd}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: image/png\r\n\r\n").encode() + data + f"\r\n--{bnd}--\r\n".encode()
+    req = urllib.request.Request(BASE + path, method="PUT", data=body)
+    req.add_header("Content-Type", "multipart/form-data; boundary=" + bnd)
+    req.add_header("Authorization", "Bearer " + token)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(errors="replace")
+
+
+png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+s, r = upload_photo(f"/api/vehicles/{vid}/photo", png, "car.png", tok)
+photo = r.get("photoUrl", "") if isinstance(r, dict) else ""
+check("car photo uploaded: a random public link", s == 200 and photo.startswith("/api/public/photo/") and len(photo) == len("/api/public/photo/") + 32, (s, r))
+with urllib.request.urlopen(BASE + photo, timeout=10) as pr:  # no login: <img> tags and Home Assistant
+    check("car photo served without login", pr.status == 200 and pr.read() == png and pr.headers.get("Content-Type") == "image/png", pr.status)
+check("vehicle shows its photo link", call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("photoUrl") == photo)
+s, _ = call("PUT", f"/api/vehicles/{vid}/photoHidden", {"hidden": True}, token=tok)
+vv = call("GET", f"/api/vehicles/{vid}", token=tok)[1]
+check("photo hidden in hammond keeps its link (for Home Assistant)", s == 200 and vv.get("photoHidden") is True and vv.get("photoUrl") == photo, (s, vv.get("photoHidden")))
+s, r = upload_photo(f"/api/vehicles/{vid}/photo", b"<svg onload=alert(1)>", "car.png", tok)
+check("a non-image is refused (bytes, not the name)", s == 422, (s, r))
+s, _ = call("GET", "/api/public/photo/" + "0" * 32)
+check("unknown photo link is 404", s == 404, s)
 s, k = call("POST", "/api/me/apikeys", {"name": "Home Assistant"}, token=tok)
 check("create API key (shown once)", s == 201 and k["key"].startswith("hmd_"), (s, k))
 key = k["key"]
@@ -267,6 +299,10 @@ for path in ("", "/stats", "/fillups", "/expenses", f"/fillups/{fid}", "/attachm
 s, _ = call("DELETE", f"/api/vehicles/{vid}/fillups/{fid}", token=ptok)
 check("other user can't delete the fill-up (404, still there)", s == 404
       and call("GET", f"/api/vehicles/{vid}/fillups/{fid}", token=tok)[0] == 200, s)
+s, _ = upload_photo(f"/api/vehicles/{vid}/photo", png, "car.png", ptok)
+s2, _ = call("DELETE", f"/api/vehicles/{vid}/photo", token=ptok)
+check("other user can't change or delete my car photo (404)", s == 404 and s2 == 404
+      and call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("photoUrl") == photo, (s, s2))
 s, v2 = call("POST", "/api/vehicles", {"nickname": "Second", "registration": "LJ SMOKE2", "make": "Fiat", "model": "Panda",
                                       "fuelUnit": 0, "fuelType": 1}, token=tok)
 v2 = v2["id"]

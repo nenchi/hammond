@@ -313,6 +313,13 @@ export default {
   <Layout>
     <div class="columns box">
       <div class="column is-two-thirds" :class="isMobile ? 'has-text-centered' : ''">
+        <img
+          v-if="vehicle.photoUrl && !vehicle.photoHidden"
+          :src="vehicle.photoUrl"
+          alt="Car photo"
+          style="max-height: 160px; border-radius: 6px; display: block; margin-bottom: 0.75rem"
+          :style="isMobile ? 'margin-left: auto; margin-right: auto' : ''"
+        />
         <p class="title">{{ vehicle.nickname }} - {{ vehicle.registration }}</p>
         <p class="subtitle">
           {{ [vehicle.make, vehicle.model, vehicle.fuelTypeDetail.long].join(' | ') }}

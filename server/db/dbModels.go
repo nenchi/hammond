@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type User struct {
@@ -126,13 +127,20 @@ type Vehicle struct {
 	// vehicle name in EVCC (its title): EVCC sessions of that vehicle are imported for this one
 	EvccVehicle string `json:"evccVehicle"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
-	GaugeSegments int          `gorm:"default:4" json:"gaugeSegments"`
-	GaugeResetAt  *time.Time   `json:"gaugeResetAt"`
-	Users         []User       `gorm:"many2many:user_vehicles;" json:"users"`
-	Fillups       []Fillup     `json:"fillups"`
-	Expenses      []Expense    `json:"expenses"`
-	Attachments   []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
-	IsOwner       bool         `gorm:"->" json:"isOwner"`
+	GaugeSegments int        `gorm:"default:4" json:"gaugeSegments"`
+	GaugeResetAt  *time.Time `json:"gaugeResetAt"`
+	// car photo: an attachment, shown via a random link (an <img> and Home Assistant can't log in);
+	// PhotoOrigin = the address the browser used when uploading, for Home Assistant's absolute link
+	PhotoID     string       `json:"-"`
+	PhotoToken  string       `json:"-"`
+	PhotoOrigin string       `json:"-"`
+	PhotoURL    string       `gorm:"-" json:"photoUrl"` // relative, "" = no photo
+	PhotoHidden bool         `json:"photoHidden"`       // only for Home Assistant, not shown in hammond
+	Users       []User       `gorm:"many2many:user_vehicles;" json:"users"`
+	Fillups     []Fillup     `json:"fillups"`
+	Expenses    []Expense    `json:"expenses"`
+	Attachments []Attachment `gorm:"many2many:vehicle_attachments;" json:"attachments"`
+	IsOwner     bool         `gorm:"->" json:"isOwner"`
 }
 
 func (b *Vehicle) MarshalJSON() ([]byte, error) {
@@ -467,4 +475,14 @@ type NotifyChannel struct {
 	MatrixUser string `json:"-"`
 	// telegram: also answer the fuel commands (prices, graph, trips…) in the linked chat
 	Commands bool `json:"commands"`
+}
+
+// PhotoPath: public link of a vehicle photo, + its random token (no login: <img> tags and Home Assistant)
+const PhotoPath = "/api/public/photo/"
+
+func (v *Vehicle) AfterFind(tx *gorm.DB) error {
+	if v.PhotoToken != "" {
+		v.PhotoURL = PhotoPath + v.PhotoToken
+	}
+	return nil
 }
