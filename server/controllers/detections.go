@@ -77,6 +77,29 @@ func RegisterDetectionController(router *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, service.Calibrate(v))
 	})
+	// litres per segment by hand ({"segmentLitres": [8, 10, 11, 14]}); null/[] = back to learned
+	router.PUT("/vehicles/:id/gauge/manual", func(c *gin.Context) {
+		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		var req struct {
+			SegmentLitres []float64 `json:"segmentLitres"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))
+			return
+		}
+		if len(req.SegmentLitres) == 0 {
+			req.SegmentLitres = nil
+		}
+		if err := service.SetGaugeManual(c.Param("id"), req.SegmentLitres); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		v, _ := service.GetVehicleById(c.Param("id"))
+		c.JSON(http.StatusOK, service.Calibrate(v))
+	})
 	router.POST("/vehicles/:id/gauge/reset", func(c *gin.Context) {
 		if !service.UserCanAccessVehicle(c.MustGet("userId").(string), c.Param("id")) {
 			c.JSON(http.StatusNotFound, gin.H{})

@@ -350,3 +350,41 @@ func TestGaugeCalibrationUsesTripComputer(t *testing.T) {
 		}
 	}
 }
+
+// litres per segment by hand: used at once (estimates, tank sum), wrong counts refused, cleared = learned again
+func TestGaugeManualOverride(t *testing.T) {
+	setupDB(t)
+	_, v := mkUserVehicle(t, "", 43)
+	if err := SetGaugeManual(v.ID, []float64{8, 10, 11}); err == nil {
+		t.Fatal("3 values for 4 segments must be refused")
+	}
+	if err := SetGaugeManual(v.ID, []float64{8, 10, 0, 14}); err == nil {
+		t.Fatal("a 0 l segment must be refused")
+	}
+	if err := SetGaugeManual(v.ID, []float64{8, 10, 11, 14}); err != nil {
+		t.Fatal(err)
+	}
+	v2, _ := db.GetVehicleById(v.ID)
+	c := Calibrate(v2)
+	if !c.Manual || !c.Calibrated || c.TankCapacity != 43 || c.SegmentLitres[3] != 14 {
+		t.Fatalf("manual: %+v", c)
+	}
+	// 62 → 100 %: 13 % of the third quarter (11 l) + the top quarter (14 l)
+	if got := EstimateLitres(v2, 62, 100); math.Abs(float64(got)-(11*13/25.0+14)) > 0.05 {
+		t.Fatalf("62→100 with the manual gauge: %v", got)
+	}
+	// a vehicle update keeps it
+	if err := db.DB.Omit("Users", "Fillups", "Expenses", "Attachments").Save(v2).Error; err != nil {
+		t.Fatal(err)
+	}
+	if v3, _ := db.GetVehicleById(v.ID); len(v3.GaugeManual) != 4 {
+		t.Fatalf("lost on save: %v", v3.GaugeManual)
+	}
+	if err := SetGaugeManual(v.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	v4, _ := db.GetVehicleById(v.ID)
+	if c := Calibrate(v4); c.Manual || c.SegmentLitres[3] != 10.8 {
+		t.Fatalf("cleared: want learned/linear again, got %+v", c)
+	}
+}

@@ -527,6 +527,16 @@ describe('hammond UI', () => {
     cy.contains('.field', 'Gauge segments').find('input').should('have.value', '4')
     cy.get('.gauge-calibration').should('contain', 'Gauge calibration').find('.gauge-segment').should('have.length', 4)
     cy.get('.gauge-calibration').contains(/linear|learned from/)
+    // by hand: litres per bar, saved, shown as "set by hand"; back to learned
+    cy.get('.gauge-calibration .edit-gauge').click()
+    ;[8, 10, 11, 14].forEach((l, i) => cy.get('.gauge-calibration .gauge-edit input').eq(i).clear().type(String(l)))
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}/gauge/manual`).as('manual')
+    cy.get('.gauge-calibration .save-gauge').click()
+    cy.wait('@manual').its('response.body.segmentLitres').should('deep.eq', [8, 10, 11, 14])
+    cy.get('.gauge-calibration').should('contain', 'set by hand').and('contain', 'Sum 43')
+    cy.get('.gauge-calibration .use-learned').click()
+    cy.wait('@manual').its('response.body.manual').should('eq', false)
+    cy.get('.gauge-calibration').should('not.contain', 'set by hand')
     noConsoleErrors()
   })
 

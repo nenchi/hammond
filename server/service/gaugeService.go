@@ -1,6 +1,8 @@
 package service
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -22,6 +24,7 @@ type GaugeCalibration struct {
 	Samples          int       `json:"samples"`          // confirmed fill-ups
 	DriveSamples     int       `json:"driveSamples"`     // stretches of drives (≥ 5 % of the gauge each)
 	LitresPerKm      float64   `json:"litresPerKm"`      // average of the full-tank fill-ups, for drives without trip computer
+	Manual           bool      `json:"manual"`           // the user's litres per segment (GaugeManual), not learned
 	Calibrated       bool      `json:"calibrated"`       // ≥ 2 samples (fill-ups and drives); else linear
 	LitresPerPercent []float64 `json:"litresPerPercent"` // per segment, bottom (0 %) first
 	SegmentLitres    []float64 `json:"segmentLitres"`    // litres each segment holds
@@ -199,7 +202,13 @@ func Calibrate(v *db.Vehicle) GaugeCalibration {
 	c.LitresPerKm = math.Round(c.LitresPerKm*10000) / 10000
 	samples = append(samples, drives...)
 	k := make([]float64, n)
-	if len(samples) >= minCalibrationSamples && k0 > 0 {
+	w := 100 / float64(n)
+	if len(v.GaugeManual) == n { // set by hand: wins (the samples are still counted, to compare)
+		for i, l := range v.GaugeManual {
+			k[i] = l / w
+		}
+		c.Manual, c.Calibrated = true, true
+	} else if len(samples) >= minCalibrationSamples && k0 > 0 {
 		k = solveCalibration(samples, n, k0)
 		c.Calibrated = true
 	} else {
@@ -207,7 +216,6 @@ func Calibrate(v *db.Vehicle) GaugeCalibration {
 			k[i] = k0
 		}
 	}
-	w := 100 / float64(n)
 	c.TankCapacity = 0
 	for _, ki := range k {
 		c.LitresPerPercent = append(c.LitresPerPercent, math.Round(ki*1000)/1000)
@@ -237,6 +245,26 @@ func EstimateLitres(v *db.Vehicle, from, to float64) float32 {
 		sum += o * c.LitresPerPercent[i]
 	}
 	return round1(float32(sum))
+}
+
+// SetGaugeManual: litres per segment by hand (bottom first, one per segment); nil = back to learned
+func SetGaugeManual(vehicleID string, litres []float64) error {
+	v, err := db.GetVehicleById(vehicleID)
+	if err != nil {
+		return err
+	}
+	if litres != nil {
+		if len(litres) != gaugeSegments(v) {
+			return fmt.Errorf("enter %d values, one per gauge segment", gaugeSegments(v))
+		}
+		for _, l := range litres {
+			if l <= 0 || l > 500 || math.IsNaN(l) {
+				return errors.New("every segment needs a value above 0")
+			}
+		}
+	}
+	// through the struct: Update("gauge_manual", litres) would skip the JSON serializer
+	return db.DB.Model(&db.Vehicle{Base: db.Base{ID: vehicleID}}).Select("GaugeManual").Updates(&db.Vehicle{GaugeManual: litres}).Error
 }
 
 func ResetGaugeCalibration(vehicleID string) error {
