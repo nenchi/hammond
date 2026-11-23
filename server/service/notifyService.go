@@ -140,8 +140,10 @@ func (in ChannelInput) apply(c *db.NotifyChannel) error {
 		if !httpURL(c.URL) {
 			return errors.New("Matrix: the homeserver URL, e.g. https://matrix.example.com")
 		}
-		if !strings.HasPrefix(c.Room, "!") && !strings.HasPrefix(c.Room, "#") || !strings.Contains(c.Room, ":") || len(c.Room) > 255 {
-			return errors.New("Matrix: the room ID (Element → room settings → Advanced → Internal room ID: !abc:example.com) or alias (#fuel:example.com)")
+		// room IDs of room version 12 have no ":server" any more (!abc…); aliases always do (#fuel:example.com)
+		if len(c.Room) < 2 || len(c.Room) > 255 || strings.ContainsAny(c.Room, " /") ||
+			!(strings.HasPrefix(c.Room, "!") || strings.HasPrefix(c.Room, "#") && strings.Contains(c.Room, ":")) {
+			return errors.New("Matrix: the room ID (Element → room settings → Advanced → Internal room ID, starts with !) or an address (#fuel:example.com)")
 		}
 		if c.Secret == "" {
 			return errors.New("Matrix: the access token of the account that posts (Element → Settings → Help & About)")

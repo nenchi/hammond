@@ -215,3 +215,16 @@ func TestMatrixRoomInput(t *testing.T) {
 		}
 	}
 }
+
+// room version 12: IDs without ":server"
+func TestMatrixRoomV12(t *testing.T) {
+	setupDB(t)
+	u, _ := mkUserVehicle(t, "", 43)
+	for room, ok := range map[string]bool{"!31hneApxJ_1o-63DmFrpeqnkFfWppnzWso1JvH3ogLM": true, "!abc:m.example.com": true,
+		"#fuel:m.example.com": true, "#fuel": false, "Fuel": false, "!": false} {
+		_, err := CreateChannel(u.ID, ChannelInput{Kind: "matrix", URL: "https://m.example.com", Room: room, Secret: "t", Enabled: true})
+		if (err == nil) != ok {
+			t.Errorf("%q: %v", room, err)
+		}
+	}
+}
