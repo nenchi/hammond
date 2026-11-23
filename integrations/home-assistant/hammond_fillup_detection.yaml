@@ -99,6 +99,15 @@ variables:
   level: "{{ states(level_sensor) | float(-1) }}"
   previous: "{{ states(last_level_helper) | float(-1) }}"
   previous_odometer: "{{ states(last_odometer_helper) | int(0) }}"
+  # the moment of the fill-up, taken when the jump arrives (not after the wait: you may be driving by
+  # then): odometer and position now, time = the level sensor's "timestamp" attribute when it has one
+  # (Mercedes: when the car measured it, local time without offset), else now
+  odometer: "{{ states(odometer_sensor) | int(previous_odometer) }}"
+  fill_lat: "{{ state_attr(location_entity, 'latitude') if location_entity else none }}"
+  fill_lng: "{{ state_attr(location_entity, 'longitude') if location_entity else none }}"
+  fill_date: >-
+    {% set t = as_datetime(state_attr(level_sensor, 'timestamp') | string, none) %}
+    {{ (t if t.tzinfo else t.replace(tzinfo=now().tzinfo)).isoformat() if t else now().isoformat() }}
 
 condition:
   - condition: template
@@ -114,16 +123,15 @@ action:
           minutes: "{{ settle_minutes }}"
       - variables:
           level_after: "{{ [states(level_sensor) | float(level), level] | max }}"
-          odometer: "{{ states(odometer_sensor) | int(previous_odometer) }}"
           payload:
             source: Home Assistant
             odoReading: "{{ odometer }}"
             odoAtBefore: "{{ previous_odometer }}"
             levelBefore: "{{ previous }}"
             levelAfter: "{{ level_after }}"
-            date: "{{ now().isoformat() }}"
-            lat: "{{ state_attr(location_entity, 'latitude') if location_entity else none }}"
-            lng: "{{ state_attr(location_entity, 'longitude') if location_entity else none }}"
+            date: "{{ fill_date }}"
+            lat: "{{ fill_lat }}"
+            lng: "{{ fill_lng }}"
       - service: rest_command.hammond_detection
         data:
           vehicle_id: "{{ vehicle_id }}"
