@@ -142,7 +142,9 @@ to every channel that is on; tapping it opens Google Maps navigation to the stat
 - **Telegram**: your own bot (@BotFather → `/newbot` → token). Link your chat by sending `/start <code>` (the code is
   shown in the settings); only that chat is answered. hammond asks Telegram for new messages (no webhook, no open port);
   without a Telegram channel nothing connects to Telegram.
-- **Matrix as a bot, like Telegram**: a bot account (e.g. `@hammond`) and its access token, an unencrypted room
+- **Matrix as a bot, like Telegram**: a bot account (e.g. `@hammond`; Continuwuity/Conduit admin room:
+  `!admin users create-user hammond`) and its access token (the form's *Get the token* logs in once with the bot's
+  username and password and fills it in; the password isn't saved), an unencrypted room
   with the bot invited, *Answer the fuel commands in this room* on. hammond joins and reads that room (sync, outgoing
   only), you link yourself with `/start <code>`; then the same commands, charts, PDF/CSV files, "fill-up detected →
   answer with the price" and receipt pictures (→ Quick Entry) as on Telegram. Other people in the room are ignored.

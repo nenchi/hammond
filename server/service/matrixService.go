@@ -314,3 +314,33 @@ func mxHandle(c *db.NotifyChannel, roomID string, ev mxEvent) {
 		log.Printf("matrix (%s): %v", c.ID[:8], err)
 	}
 }
+
+// MatrixLogin: the access token of a bot account from its username and password (for the settings form, which
+// then saves only the token; the password is used for this one login and not stored)
+func MatrixLogin(homeserver, user, password string) (token, userID string, err error) {
+	homeserver = strings.TrimRight(strings.TrimSpace(homeserver), "/")
+	if !httpURL(homeserver) || strings.TrimSpace(user) == "" || password == "" {
+		return "", "", errors.New("homeserver URL, username and password, please")
+	}
+	user = strings.TrimPrefix(strings.TrimSpace(user), "@")
+	if i := strings.Index(user, ":"); i > 0 { // "@hammond:m.example.com" → "hammond"
+		user = user[:i]
+	}
+	b, _ := json.Marshal(map[string]any{"type": "m.login.password", "identifier": map[string]string{"type": "m.id.user", "user": user},
+		"password": password, "initial_device_display_name": "hammond"})
+	resp, err := mxClient.Post(homeserver+"/_matrix/client/v3/login", "application/json", bytes.NewReader(b))
+	if err != nil {
+		return "", "", fmt.Errorf("Matrix not reachable: %s", err)
+	}
+	defer resp.Body.Close()
+	var r struct {
+		AccessToken string `json:"access_token"`
+		UserID      string `json:"user_id"`
+		Error       string `json:"error"`
+	}
+	json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&r)
+	if resp.StatusCode != http.StatusOK || r.AccessToken == "" {
+		return "", "", fmt.Errorf("Matrix: %s (HTTP %d)", first(r.Error, "login failed"), resp.StatusCode)
+	}
+	return r.AccessToken, r.UserID, nil
+}

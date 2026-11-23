@@ -85,6 +85,7 @@ export default {
         .then(({ data }) => (this.channels = data));
     },
     add(kind) {
+      this.mxLogin = null;
       this.editing = null;
       this.form = blank(kind);
     },
@@ -149,6 +150,23 @@ export default {
             .then(() => this.load())
             .catch((ex) => this.toast(this.errorText(ex), false)),
       });
+    },
+    // Matrix: the bot account's token from username + password (the password isn't saved)
+    getMatrixToken() {
+      this.mxBusy = true;
+      axios
+        .post("/api/me/notifications/matrixLogin", {
+          homeserver: this.form.url,
+          user: this.mxLogin.user,
+          password: this.mxLogin.password,
+        })
+        .then(({ data }) => {
+          this.form.secret = data.token;
+          this.mxLogin = null;
+          this.toast(`Token of ${data.userId} filled in: save the channel`);
+        })
+        .catch((ex) => this.toast(this.errorText(ex), false))
+        .finally(() => (this.mxBusy = false));
     },
     unlink(c) {
       axios
@@ -264,6 +282,44 @@ export default {
       >
         <b-input v-model.trim="form.room" />
       </b-field>
+      <div v-if="form.kind === 'matrix'" class="mb-3 matrix-login">
+        <a
+          v-if="!mxLogin"
+          class="get-token"
+          @click="mxLogin = { user: 'hammond', password: '' }"
+          >Get the token from the bot's username and password</a
+        >
+        <div v-else class="box">
+          <p class="help mb-2">
+            hammond logs in once as the bot and fills in its token. The password
+            isn't saved. No bot yet? In Element's admin room:
+            <code>!admin users create-user hammond</code>
+          </p>
+          <b-field grouped group-multiline>
+            <b-field label="Bot username" expanded
+              ><b-input v-model.trim="mxLogin.user" placeholder="hammond"
+            /></b-field>
+            <b-field label="Password" expanded
+              ><b-input
+                v-model="mxLogin.password"
+                type="password"
+                password-reveal
+                autocomplete="off"
+            /></b-field>
+          </b-field>
+          <div class="buttons">
+            <b-button
+              size="is-small"
+              type="is-primary"
+              :loading="mxBusy"
+              :disabled="!form.url || !mxLogin.password"
+              @click="getMatrixToken"
+              >Get token</b-button
+            >
+            <b-button size="is-small" @click="mxLogin = null">Cancel</b-button>
+          </div>
+        </div>
+      </div>
       <b-field
         :label="kinds[form.kind].secret"
         :message="

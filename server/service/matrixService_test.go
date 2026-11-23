@@ -25,6 +25,20 @@ type fakeHS struct {
 func newFakeHS(t *testing.T) *fakeHS {
 	f := &fakeHS{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_matrix/client/v3/login" {
+			var req struct {
+				Identifier struct{ User string }
+				Password   string
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			if req.Identifier.User == "hammond" && req.Password == `p"w\$x` {
+				w.Write([]byte(`{"access_token":"bot-token","user_id":"@hammond:ci"}`))
+				return
+			}
+			w.WriteHeader(403)
+			w.Write([]byte(`{"errcode":"M_FORBIDDEN","error":"Invalid identifier or password."}`))
+			return
+		}
 		if r.Header.Get("Authorization") != "Bearer bot-token" {
 			w.WriteHeader(401)
 			w.Write([]byte(`{"errcode":"M_UNKNOWN_TOKEN","error":"Unknown token"}`))
@@ -177,5 +191,17 @@ func TestMatrixPoller(t *testing.T) {
 	}
 	if c.MatrixUser != "@nenad:ci" {
 		t.Fatalf("not linked by the poller: %q, sent %v", c.MatrixUser, hs.sent)
+	}
+}
+
+func TestMatrixLogin(t *testing.T) {
+	hs := newFakeHS(t)
+	defer hs.srv.Close()
+	// a password with quotes and backslashes (what broke the curl by hand), the user given as a full Matrix ID
+	if tok, user, err := MatrixLogin(hs.srv.URL+"/", "@hammond:ci", `p"w\$x`); err != nil || tok != "bot-token" || user != "@hammond:ci" {
+		t.Fatalf("login: %q %q %v", tok, user, err)
+	}
+	if _, _, err := MatrixLogin(hs.srv.URL, "hammond", "wrong"); err == nil || !strings.Contains(err.Error(), "Invalid identifier or password. (HTTP 403)") {
+		t.Fatalf("wrong password: %v", err)
 	}
 }
