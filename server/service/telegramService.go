@@ -144,6 +144,19 @@ func sendTelegram(c *db.NotifyChannel, title, message, click string) error {
 	return tgSend(c.Secret, c.ChatID, chat.Reply{Text: text})
 }
 
+// SendToCommandChats: to the user's chats where a reply can act on it: linked Telegram chats that answer
+// commands, and Matrix rooms marked as homebot's Fuel room
+func SendToCommandChats(u *db.User, title, message string) {
+	var cs []db.NotifyChannel
+	db.DB.Where("user_id = ? AND enabled = ? AND commands = ? AND ((kind = ? AND chat_id <> 0) OR kind = ?)",
+		u.ID, true, true, "telegram", "matrix").Find(&cs)
+	for i := range cs {
+		if err := sendChannel(&cs[i], title, message, ""); err != nil {
+			log.Printf("telegram (%s): %v", cs[i].ID[:8], err)
+		}
+	}
+}
+
 // TelegramCode: the code to send to the bot as "/start <code>" (one per channel, until linked or restart)
 func TelegramCode(channelID string) string {
 	tgMu.Lock()
@@ -190,14 +203,43 @@ func tgRunning(channelID, token string) bool {
 	return tgPollers[channelID] == token
 }
 
+type tgMessage struct {
+	Text    string `json:"text"`
+	Caption string `json:"caption"`
+	Chat    struct {
+		ID int64 `json:"id"`
+	} `json:"chat"`
+	Photo []struct {
+		FileID   string `json:"file_id"`
+		FileSize int    `json:"file_size"`
+	} `json:"photo"` // sizes of one picture, the largest last
+	Document *struct {
+		FileID   string `json:"file_id"`
+		FileName string `json:"file_name"`
+		MimeType string `json:"mime_type"`
+	} `json:"document"`
+}
+
 type tgUpdate struct {
-	UpdateID int64 `json:"update_id"`
-	Message  *struct {
-		Text string `json:"text"`
-		Chat struct {
-			ID int64 `json:"id"`
-		} `json:"chat"`
-	} `json:"message"`
+	UpdateID int64      `json:"update_id"`
+	Message  *tgMessage `json:"message"`
+}
+
+// tgDownload: a file the user sent (photo or document), at most 20 MB (the Bot API's limit)
+func tgDownload(token, fileID string) ([]byte, string, error) {
+	var f struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := tgCall(token, "getFile", map[string]any{"file_id": fileID}, &f); err != nil {
+		return nil, "", err
+	}
+	resp, err := tgClient.Get(TelegramAPI + "/file/bot" + token + "/" + f.FilePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("Telegram not reachable: %s", strings.ReplaceAll(err.Error(), token, "***"))
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
+	return data, f.FilePath[strings.LastIndex(f.FilePath, "/")+1:], err
 }
 
 func tgPoll(channelID, token string) {
@@ -214,12 +256,13 @@ func tgPoll(channelID, token string) {
 			if up.Message == nil || !tgRunning(channelID, token) {
 				continue
 			}
-			tgHandle(channelID, token, up.Message.Chat.ID, up.Message.Text)
+			tgHandle(channelID, token, up.Message)
 		}
 	}
 }
 
-func tgHandle(channelID, token string, chatID int64, text string) {
+func tgHandle(channelID, token string, m *tgMessage) {
+	chatID, text := m.Chat.ID, m.Text
 	var c db.NotifyChannel
 	if db.DB.Where("id = ?", channelID).Limit(1).Find(&c); c.ID == "" || c.Secret != token {
 		return
@@ -253,7 +296,26 @@ func tgHandle(channelID, token string, chatID int64, text string) {
 		return // someone else found the bot: ignored
 	}
 	reply := chat.Reply{Text: "Commands are off for this channel (hammond → Settings → Notifications)."}
-	if c.Commands {
+	switch {
+	case !c.Commands:
+	case len(m.Photo) > 0 || (m.Document != nil && (strings.HasPrefix(m.Document.MimeType, "image/") || m.Document.MimeType == "application/pdf")):
+		// a receipt or the pump's display → a Quick Entry, completed later in hammond
+		id := ""
+		if len(m.Photo) > 0 {
+			id = m.Photo[len(m.Photo)-1].FileID
+		} else {
+			id = m.Document.FileID
+		}
+		data, name, err := tgDownload(token, id)
+		if err != nil {
+			reply = chat.Reply{Text: "⚠️ " + err.Error()}
+			break
+		}
+		if m.Document != nil && m.Document.FileName != "" {
+			name = m.Document.FileName
+		}
+		reply = chat.QuickEntry(c.UserID, name, data, m.Caption)
+	default:
 		reply = chat.Command(c.UserID, text)
 	}
 	if err := tgSend(token, chatID, reply); err != nil {

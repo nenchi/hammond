@@ -5,9 +5,11 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -51,9 +53,14 @@ type Reply struct {
 	FileType string `json:"fileType,omitempty"`
 }
 
-var Help = []string{"prices — watched stations, cheapest first", "watched — numbered stations",
+var Help = []string{"cars — your cars, numbered", "car 2 — default car for fill/cost",
+	"fill 40.5 1.759 — fill-up (km from HA, or add them)", "cost toll 12.50 A3 — on today's trip",
+	"purpose Customer X — of the last trip", "business / private — the last trip", "undo — the last fill-up or cost",
+	"1.759 — price for a detected fill-up",
+	"prices — watched stations, cheapest first", "watched — numbered stations",
 	"price <n> [7|30|3m|1y] — price history", "cheap-time [e10|n] [days] — cheapest hours",
 	"stats [car] — fill-up, month, l/100 km", "graph fuel|costs|other [30|6m|1y|all] [car] — chart",
+	"[car] — its number, name or plate (left out: all cars)",
 	"trips [today|yesterday|10|20.11.] [car] — trip log", "trips 30 pdf — as a file (or csv)"}
 
 // Command: one chat message of the user → the answer
@@ -68,7 +75,30 @@ func Command(userID, text string) Reply {
 	b := &bot{hammond: &hammond{userID: userID}}
 	var r string
 	var err error
+	if len(f) == 1 { // a bare price answers a detected fill-up
+		if msg, ok, derr := b.detectionPrice(f[0]); ok || derr != nil {
+			if derr != nil {
+				return Reply{Text: "⚠️ " + derr.Error()}
+			}
+			return Reply{Text: msg}
+		}
+	}
 	switch f[0] {
+	case "cars":
+		r, err = b.carList()
+	case "car":
+		r, err = b.setDefaultCar(strings.Join(f[1:], " "))
+	case "fill", "fillup", "tank":
+		r, err = b.fill(f[1:])
+	case "cost", "expense":
+		r, err = b.cost(strings.Fields(strings.TrimLeft(strings.TrimSpace(text), "!/"))[1:]) // the comment keeps its case
+	case "purpose":
+		_, rest, _ := strings.Cut(strings.TrimSpace(text), " ") // keep the case: "Customer Müller"
+		r, err = b.tripFlag("purpose", strings.Fields(rest))
+	case "business", "private":
+		r, err = b.tripFlag(f[0], nil)
+	case "undo":
+		r, err = b.undo()
 	case "start", "help", "?":
 		var out []string
 		out = append(out, "**hammond")
@@ -131,4 +161,22 @@ func first(s ...string) string {
 
 func mapsSearch(q string) string {
 	return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(q)
+}
+
+// QuickEntry: a photo (receipt, pump display) or PDF as a Quick Entry, to complete later in hammond
+func QuickEntry(userID, name string, data []byte, caption string) Reply {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	w.WriteField("comments", first(strings.TrimSpace(caption), "from the chat"))
+	fw, _ := w.CreateFormFile("file", first(name, "photo.jpg"))
+	fw.Write(data)
+	w.Close()
+	req, _ := http.NewRequestWithContext(context.WithValue(context.Background(), ctxKey{}, userID), "POST", "/api/quickEntries", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	rec := httptest.NewRecorder()
+	Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		return Reply{Text: fmt.Sprintf("⚠️ couldn't save the picture (HTTP %d)", rec.Code)}
+	}
+	return Reply{Text: "**📸 Saved as a Quick Entry\nComplete it in hammond → Quick Entries (fill-up or expense)."}
 }

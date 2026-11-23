@@ -27,21 +27,18 @@ type watch struct {
 func (b *bot) fuelStats(filter string) (string, error) {
 	h := b.hammond
 	var me struct{ Currency, DistanceUnitShort string }
-	var vs []struct{ ID, Nickname, FuelUnit string }
 	if err := h.get("/me", &me); err != nil {
 		return "", err
 	}
-	if err := h.get("/vehicles", &vs); err != nil {
-		return "", err
+	vs, msg, err := b.readCars(filter)
+	if msg != "" || err != nil {
+		return msg, err
 	}
 	now := time.Now()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 	since := url.QueryEscape(now.AddDate(0, 0, -90).UTC().Format(time.RFC3339))
 	var out []string
 	for _, v := range vs {
-		if filter != "" && !strings.Contains(strings.ToLower(v.Nickname), filter) {
-			continue
-		}
 		var fills []struct {
 			Date                                    time.Time
 			FuelQuantity, PerUnitPrice, TotalAmount float64

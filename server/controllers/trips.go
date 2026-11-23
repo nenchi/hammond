@@ -156,6 +156,23 @@ func RegisterTripController(router *gin.RouterGroup) {
 			c.JSON(http.StatusOK, gin.H{})
 		}
 	})
+	// the car the chat commands use by default ("" = ask when there are several)
+	router.POST("/me/defaultVehicle", func(c *gin.Context) {
+		var req struct {
+			VehicleID string `json:"vehicleId"`
+		}
+		userID := c.MustGet("userId").(string)
+		if err := c.ShouldBindJSON(&req); fail(c, err) {
+			return
+		}
+		if req.VehicleID != "" && !service.UserCanAccessVehicle(userID, req.VehicleID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "vehicle not found"})
+			return
+		}
+		if !fail(c, db.DB.Model(&db.User{}).Where("id = ?", userID).Update("default_vehicle_id", req.VehicleID).Error) {
+			c.JSON(http.StatusOK, gin.H{"defaultVehicleId": req.VehicleID})
+		}
+	})
 	router.POST("/me/tripSettings", func(c *gin.Context) {
 		var req struct {
 			MergeMinutes int `json:"mergeMinutes" binding:"min=0,max=1440"`

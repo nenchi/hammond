@@ -45,6 +45,8 @@ type User struct {
 	EvccSyncMinutes int        `json:"evccSyncMinutes"` // 0 = only "Sync now"
 	EvccPlaceID     string     `json:"evccPlaceId"`
 	EvccSince       *time.Time `json:"evccSince"` // sessions that started before aren't imported
+	// the car chat commands use when none is named and the user has several (`car 2`); "" = ask
+	DefaultVehicleID string `json:"defaultVehicleId"`
 	// own MQTT broker: dashboard values to Home Assistant (discovery); the password is write-only
 	MqttURL      string `json:"mqttUrl"`
 	MqttUser     string `json:"mqttUser"`

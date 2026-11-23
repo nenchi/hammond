@@ -200,7 +200,7 @@ export default {
       </div>
       <p class="help">
         <span v-if="c.url">{{ c.url }}</span
-        ><span v-if="c.room"> · {{ c.room }}</span>
+        ><span v-if="c.room"> · {{ c.room }}</span><span v-if="c.kind === 'matrix' && c.commands"> · Fuel room (homebot)</span>
         <template v-if="c.kind === 'telegram'">
           <span v-if="c.bot">{{ c.bot }} · </span>
           <span v-if="c.linked"
@@ -274,6 +274,11 @@ export default {
         ><b-switch v-model="form.commands"
           >Answer the fuel commands in the linked chat</b-switch
         ></b-field
+      >
+      <b-field
+        v-if="form.kind === 'matrix'"
+        message="homebot relays that room to hammond: you can answer there, e.g. with the price"
+        ><b-switch v-model="form.commands">This is homebot's Fuel room: "fill-up detected" goes here too</b-switch></b-field
       >
       <div class="buttons">
         <b-button

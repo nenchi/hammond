@@ -185,6 +185,52 @@ check("v1: history of a foreign watch is 404", s == 404, s)
 s, sm = call("GET", "/api/v1/summary", token=key)
 check("v1: summary per vehicle and watch", s == 200 and [v["id"] for v in sm["vehicles"]] == [vid] and "monthFuel" in sm["vehicles"][0]
       and "tripsToday" in sm["vehicles"][0] and isinstance(sm["watches"], list), (s, sm))
+# chat commands (Telegram / homebot) through /api/v1/command, writing through the UI API in-process
+cmd = lambda text: call("POST", "/api/v1/command", {"text": text}, token=key)[1]["text"]
+check("chat: cars", cmd("cars").startswith("**🚗 Cars\n1 · Smoke · LJ SMOKE1"), cmd("cars"))
+check("chat: fill without km and no Home Assistant asks for them", cmd("fill 40.5 1.759").startswith("I need the odometer"), cmd("fill 40.5 1.759"))
+r = cmd("/fill 40,5 1.759 11500 partial")
+s, fl = call("GET", f"/api/vehicles/{vid}/fillups", token=tok)
+new_f = [x for x in fl if x["odoReading"] == 11500]
+check("chat: fill saves a fill-up (one car: no need to name it)", r.startswith("**✓ Fill-up saved · Smoke\n40.50 l × 1.759 = 71.24")
+      and len(new_f) == 1 and new_f[0]["isTankFull"] is False and new_f[0]["comments"] == "from the chat", (r, new_f))
+r = cmd("undo")
+s, fl = call("GET", f"/api/vehicles/{vid}/fillups", token=tok)
+check("chat: undo deletes it", r.startswith("↩️ deleted: fill-up 40.50 l") and not [x for x in fl if x["odoReading"] == 11500], (r, len(fl)))
+check("chat: nothing left to undo", cmd("undo").startswith("nothing to undo"), cmd("undo"))
+r = cmd("cost parking 3.50 Hbf Frankfurt")
+s, ex = call("GET", f"/api/vehicles/{vid}/expenses", token=tok)
+check("chat: cost without a trip today = an expense (comment keeps its case)", r.startswith("**✓ Parking 3.50 saved")
+      and any(e["expenseType"] == "Parking" and e["amount"] == 3.5 and e["comments"] == "Hbf Frankfurt" for e in ex), (r, ex))
+cmd("undo")
+check("chat: purpose without trips", cmd("purpose Kunde Müller") == "no trip in the last 7 days", cmd("purpose x"))
+s, v2c = call("POST", "/api/vehicles", {"nickname": "Panda", "registration": "LJ-CHAT 2", "make": "Fiat", "model": "Panda",
+                                       "yearOfManufacture": 2020, "engineSize": 1200, "fuelUnit": 0, "fuelType": 0}, token=tok)
+v2id = v2c["id"]
+r = cmd("fill 10 1.5 11600")
+check("chat: two cars and no default: fill asks which", r.startswith("Which car?\n1 · Panda · LJ-CHAT 2\n2 · Smoke"), r)
+r = cmd("fill 10 1.5 900 ljchat2")
+s, fl2 = call("GET", f"/api/vehicles/{v2id}/fillups", token=tok)
+check("chat: a car by its plate (spaces and dashes ignored)", r.startswith("**✓ Fill-up saved · Panda") and len(fl2) == 1, (r, fl2))
+cmd("undo")
+check("chat: car 2 = default", cmd("car 2").startswith("⭐ default car: 2 · Smoke"), cmd("car 2"))
+r = cmd("fill 10 1.5 11600")
+check("chat: fill uses the default car", r.startswith("**✓ Fill-up saved · Smoke"), r)
+cmd("undo")
+check("chat: stats of one car by number", cmd("stats 1").startswith("**🚗 Panda") and "Smoke" not in cmd("stats 1"), cmd("stats 1"))
+check("chat: stats of all cars", "**🚗 Panda" in cmd("stats") and "**🚗 Smoke" in cmd("stats"), cmd("stats"))
+check("chat: unknown car lists them", cmd("stats golf").startswith("no vehicle matches golf\n1 · Panda"), cmd("stats golf"))
+cmd("car none")
+call("DELETE", f"/api/vehicles/{v2id}", token=tok)
+s, d = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 11700, "fuelQuantity": 30.5, "source": "Home Assistant"}, token=key)
+r = cmd("1,699")
+s2, pend = call("GET", "/api/detections", token=tok)
+s3, fl = call("GET", f"/api/vehicles/{vid}/fillups", token=tok)
+done_f = [x for x in fl if x["odoReading"] == 11700]
+check("chat: a bare price completes the detected fill-up", r.startswith("**✓ Detected fill-up saved · Smoke\n30.50 l × 1.699 = 51.82")
+      and pend == [] and len(done_f) == 1 and done_f[0]["perUnitPrice"] == 1.699, (r, pend, done_f))
+cmd("undo")
+check("chat: a bare number without a detection is just unknown", cmd("1.5").startswith("unknown command"), cmd("1.5"))
 kid = keys[0]["id"]
 s, _ = call("DELETE", f"/api/me/apikeys/{kid}", token=tok)
 s2, _ = call("GET", "/api/v1/vehicles", token=key)
@@ -368,6 +414,20 @@ s2, r = call("POST", f"/api/me/notifications/{mch['id']}/test", token=tok)
 msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())
 check("matrix: alias resolved, message posted to the room", s == 201 and r["ok"] and msgs[-1].get("via") == "matrix"
       and msgs[-1]["room"] == "!fuel:ci" and msgs[-1]["formatted_body"].startswith("<b>hammond</b>"), (s, mch, r, msgs[-1:]))
+# a Matrix channel marked as homebot's Fuel room also gets "fill-up detected" (answer there with the price)
+s, mf = call("POST", "/api/me/notifications", {"kind": "matrix", "url": "http://127.0.0.1:3999", "room": "!fuel:ci", "secret": "ci-matrix",
+                                               "enabled": True, "commands": True}, token=tok)
+s2, k3 = call("POST", "/api/me/apikeys", {"name": "det"}, token=tok)
+before = len(json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read()))
+s3, d = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 12900, "fuelQuantity": 33, "source": "Home Assistant"}, token=k3["key"])
+time.sleep(1)  # sent in the background
+msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())[before:]
+det = [m for m in msgs if m.get("via") == "matrix" and "Fill-up detected" in m.get("body", "")]
+check("matrix Fuel room: fill-up detected, answer with the price", s == 201 and mf["commands"] and s3 == 201 and len(det) == 1
+      and "Answer with the price" in det[0]["body"] and det[0]["room"] == "!fuel:ci", (s, mf.get("commands"), s3, msgs))
+call("POST", f"/api/detections/{d['detection']['id']}/discard", token=tok)
+call("DELETE", f"/api/me/apikeys/{k3['apiKey']['id']}", token=tok)
+call("DELETE", f"/api/me/notifications/{mf['id']}", token=tok)
 # edit: off + new name keeps the token; delete
 s, e = call("PUT", f"/api/me/notifications/{mch['id']}", {**mch, "enabled": False, "name": "Fuel room", "secret": ""}, token=tok)
 s2, lst = call("GET", "/api/me/notifications", token=tok)
@@ -439,6 +499,23 @@ s, r = call("POST", f"/api/trips/{trips[0]['id']}/join", token=tok)
 s2, trips = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
 check("trips: join again = 1 trip, purpose and cost kept", s == 200 and len(trips) == 1 and trips[0]["purpose"] == "Customer A, Frankfurt"
       and trips[0]["extraCost"] == 12.5, (s, r, trips))
+# the chat on a real trip: purpose / private, and a cost lands on today's trip
+s, k2 = call("POST", "/api/me/apikeys", {"name": "chat"}, token=tok)
+cmd2 = lambda text: call("POST", "/api/v1/command", {"text": text}, token=k2["key"])[1]["text"]
+r = cmd2("purpose Kunde Müller (Vertrag)")
+r2 = cmd2("private")
+s, tr = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
+check("chat: purpose and private on the latest trip", r.startswith("**✓ Trip") and "📝 Kunde Müller (Vertrag)" in r and "private ·" in r2
+      and tr[0]["purpose"] == "Kunde Müller (Vertrag)" and tr[0]["business"] is False, (r, r2, tr[0]["purpose"], tr[0]["business"]))
+today_trip = tr[0]["start"][:10] == time.strftime("%Y-%m-%d", time.gmtime())  # the fake drives are 4 h ago: yesterday just after midnight
+r = cmd2("cost toll 4.20 A5")
+s, tr = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
+check("chat: a cost lands on today's trip", (r.startswith("**✓ Toll 4.20 on today's trip") and tr[0]["extraCost"] == 12.5 + 4.2)
+      if today_trip else r.startswith("**✓ Toll 4.20 saved"), (today_trip, r, tr[0]["extraCost"]))
+cmd2("undo")
+cmd2("business")
+cmd2("purpose Customer A, Frankfurt")  # back to what the checks below expect
+call("DELETE", f"/api/me/apikeys/{k2['apiKey']['id']}", token=tok)
 s, csv_text = call("GET", f"/api/vehicles/{vid}/trips.csv", token=tok, raw=True)
 check("trips: CSV export", s == 200 and "Customer A" in str(csv_text) and "Toll 12.50 A3" in str(csv_text), (s, csv_text))
 s, _ = call("DELETE", f"/api/trips/{trips[0]['id']}", token=tok)
