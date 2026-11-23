@@ -95,7 +95,8 @@ func (in ChannelInput) apply(c *db.NotifyChannel) error {
 	if len(c.Name) > 60 {
 		return errors.New("name too long")
 	}
-	c.Enabled, c.Commands = in.Enabled, in.Commands && c.Kind == "telegram"
+	// telegram: hammond answers in the chat; matrix: the room is homebot's Fuel room (homebot relays to hammond)
+	c.Enabled, c.Commands = in.Enabled, in.Commands && (c.Kind == "telegram" || c.Kind == "matrix")
 	c.URL, c.Room = strings.TrimRight(strings.TrimSpace(in.URL), "/"), strings.TrimSpace(in.Room)
 	switch secret := strings.TrimSpace(in.Secret); secret {
 	case "":

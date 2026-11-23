@@ -414,6 +414,20 @@ s2, r = call("POST", f"/api/me/notifications/{mch['id']}/test", token=tok)
 msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())
 check("matrix: alias resolved, message posted to the room", s == 201 and r["ok"] and msgs[-1].get("via") == "matrix"
       and msgs[-1]["room"] == "!fuel:ci" and msgs[-1]["formatted_body"].startswith("<b>hammond</b>"), (s, mch, r, msgs[-1:]))
+# a Matrix channel marked as homebot's Fuel room also gets "fill-up detected" (answer there with the price)
+s, mf = call("POST", "/api/me/notifications", {"kind": "matrix", "url": "http://127.0.0.1:3999", "room": "!fuel:ci", "secret": "ci-matrix",
+                                               "enabled": True, "commands": True}, token=tok)
+s2, k3 = call("POST", "/api/me/apikeys", {"name": "det"}, token=tok)
+before = len(json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read()))
+s3, d = call("POST", f"/api/v1/vehicles/{vid}/detections", {"odoReading": 12900, "fuelQuantity": 33, "source": "Home Assistant"}, token=k3["key"])
+time.sleep(1)  # sent in the background
+msgs = json.loads(urllib.request.urlopen("http://127.0.0.1:3999/messages", timeout=5).read())[before:]
+det = [m for m in msgs if m.get("via") == "matrix" and "Fill-up detected" in m.get("body", "")]
+check("matrix Fuel room: fill-up detected, answer with the price", s == 201 and mf["commands"] and s3 == 201 and len(det) == 1
+      and "Answer with the price" in det[0]["body"] and det[0]["room"] == "!fuel:ci", (s, mf.get("commands"), s3, msgs))
+call("POST", f"/api/detections/{d['detection']['id']}/discard", token=tok)
+call("DELETE", f"/api/me/apikeys/{k3['apiKey']['id']}", token=tok)
+call("DELETE", f"/api/me/notifications/{mf['id']}", token=tok)
 # edit: off + new name keeps the token; delete
 s, e = call("PUT", f"/api/me/notifications/{mch['id']}", {**mch, "enabled": False, "name": "Fuel room", "secret": ""}, token=tok)
 s2, lst = call("GET", "/api/me/notifications", token=tok)

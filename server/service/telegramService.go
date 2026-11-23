@@ -144,12 +144,14 @@ func sendTelegram(c *db.NotifyChannel, title, message, click string) error {
 	return tgSend(c.Secret, c.ChatID, chat.Reply{Text: text})
 }
 
-// SendToCommandChats: to the user's linked Telegram chats that answer commands (where a reply can act on it)
+// SendToCommandChats: to the user's chats where a reply can act on it: linked Telegram chats that answer
+// commands, and Matrix rooms marked as homebot's Fuel room
 func SendToCommandChats(u *db.User, title, message string) {
 	var cs []db.NotifyChannel
-	db.DB.Where("user_id = ? AND kind = ? AND enabled = ? AND commands = ? AND chat_id <> 0", u.ID, "telegram", true, true).Find(&cs)
+	db.DB.Where("user_id = ? AND enabled = ? AND commands = ? AND ((kind = ? AND chat_id <> 0) OR kind = ?)",
+		u.ID, true, true, "telegram", "matrix").Find(&cs)
 	for i := range cs {
-		if err := sendTelegram(&cs[i], title, message, ""); err != nil {
+		if err := sendChannel(&cs[i], title, message, ""); err != nil {
 			log.Printf("telegram (%s): %v", cs[i].ID[:8], err)
 		}
 	}
