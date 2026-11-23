@@ -93,7 +93,7 @@ export default {
     nearDetection() {
       const d = this.detection
       if (this.loaded && d && d.lat !== null && d.lng !== null && d.lat !== undefined && this.mode === 'location') {
-        this.load(d.lat, d.lng, 'Stations near the detected location')
+        this.load(d.lat, d.lng, 'Stations near the detected location', this.source, true)
       }
     },
     nearMe() {
@@ -206,7 +206,10 @@ export default {
     },
     // profile empty = the server asks the profiles in order, the first with stations nearby answers
     // source '' = the server picks the profile of the point's country
-    load(lat, lng, heading, profile = this.source) {
+    // autoPick: a detection's position → take the station you're standing at (and its live price);
+    // none that close: the list stays and the form keeps the last fill-up's price.
+    // ponytail: 300 m, phone GPS at a pump is well inside; a big station on a motorway too
+    load(lat, lng, heading, profile = this.source, autoPick = false) {
       if (!this.enabled) return
       this.loading = true
       this.error = ''
@@ -217,6 +220,8 @@ export default {
           this.result = data
           this.heading = heading
           this.drawStations()
+          const here = data.stations.filter((st) => st.price && st.dist <= 0.3).sort((a, b) => a.dist - b.dist)[0]
+          if (autoPick && here) return this.pick(here)
           if (!data.stations.length)
             this.error =
               (data.country ? data.country + ': n' : 'N') +
