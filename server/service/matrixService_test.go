@@ -205,3 +205,13 @@ func TestMatrixLogin(t *testing.T) {
 		t.Fatalf("wrong password: %v", err)
 	}
 }
+
+func TestMatrixRoomInput(t *testing.T) {
+	for in, want := range map[string]string{" !AbC:m.example.com ": "!AbC:m.example.com",
+		"https://matrix.to/#/!AbC:m.example.com?via=m.example.com": "!AbC:m.example.com",
+		"https://matrix.to/#/%23fuel%3Am.example.com": "#fuel:m.example.com", "#fuel:m.example.com": "#fuel:m.example.com"} {
+		if got := matrixRoom(in); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
+	}
+}
