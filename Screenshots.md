@@ -1,29 +1,45 @@
-## Home Page / Summary
+# Screenshots
 
-![Product Name Screen Shot][product-screenshot]
+All with made-up demo data (`scripts/demo_data.py`): a "Golf", plate "DEMO 123", invented prices and drives.
 
-## Create Vehicle
+## Home
 
-![Podcast Episodes](images/vehicles_add.jpg)
+![Home](images/screenshot.jpg)
 
-## Vehicle Detail
+## Vehicle: fill-ups, expenses, stats
 
-![All Episodes](images/vehicle_detail.jpg)
+![Vehicle](images/vehicle_detail.jpg)
 
-## Create Fillup
+## Edit vehicle: photo, tank, accepted grades, gauge calibration
 
-![Podcast Episodes](images/create_fillup.jpg)
+![Edit vehicle](images/vehicle_edit.jpg)
 
-## Create Expense
+## New fill-up with stations nearby and their prices
 
-![Player](images/create_expense.jpg)
+![New fill-up](images/create_fillup.jpg)
 
-## User Management
+## Trips: routes on a map, addresses, business/private, fuel cost per trip
 
-![Player](images/users.jpg)
+![Trips](images/trips.jpg)
 
-## Settings
+## Price watch: price history, your limit, cheapest hours of the day
 
-![Podcast Episodes](images/settings.jpg)
+![Price watch](images/price_watch.jpg)
 
-[product-screenshot]: images/screenshot.jpg
+## New expense
+
+![New expense](images/create_expense.jpg)
+
+## Settings: notifications, Home Assistant, MQTT, EVCC, API keys
+
+![Settings](images/settings.jpg)
+
+## Admin: site settings and users
+
+![Site settings](images/site_settings.jpg)
+
+![Users](images/users.jpg)
+
+## On a phone
+
+![Home on a phone](images/phone_home.jpg) ![Trips on a phone](images/phone_trips.jpg)

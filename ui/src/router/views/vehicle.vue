@@ -101,7 +101,7 @@ export default {
           },
           {
             label: 'Avg Fillup Qty',
-            value: `${x.avgFuelQty} ${this.vehicle.fuelUnitDetail.short}`,
+            value: `${Number(x.avgFuelQty).toFixed(2)} ${this.vehicle.fuelUnitDetail.short}`,
           },
           {
             label: 'Avg Fuel Cost',
@@ -384,11 +384,12 @@ export default {
         ></b-button>
       </div>
     </div>
-    <div v-for="(currencyLevel, index) in summaryObject" :key="index" class="level box">
-      <div v-for="item in currencyLevel" :key="item.label" class="level-item has-text-centered">
+    <!-- wraps instead of running the values into each other when they don't fit in one row -->
+    <div v-for="(currencyLevel, index) in summaryObject" :key="index" class="level box vehicle-stats" style="flex-wrap: wrap; gap: 1rem">
+      <div v-for="item in currencyLevel" :key="item.label" class="level-item has-text-centered" style="flex: 1 1 9rem">
         <div>
           <p class="heading">{{ item.label }}</p>
-          <p class="title is-4">{{ item.value }}</p>
+          <p class="title is-5">{{ item.value }}</p>
         </div>
       </div>
     </div>

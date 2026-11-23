@@ -268,7 +268,7 @@ export default {
   <Layout>
     <div class="columns">
       <div class="column is-three-quarters">
-        <h1 class="title">Create Vehicle</h1>
+        <h1 class="title">{{ vehicle && vehicle.id ? 'Edit Vehicle' : 'Create Vehicle' }}</h1>
       </div>
       <div class="column is-one-quarter">
         <router-link tag="b-button" type="is-primary" to="/">
@@ -440,7 +440,7 @@ export default {
 
       <br />
       <b-field>
-        <b-button tag="input" native-type="submit" :disabled="tryingToCreate" type="is-primary" label="Create Vehicle" expanded>
+        <b-button tag="input" native-type="submit" :disabled="tryingToCreate" type="is-primary" :label="vehicle && vehicle.id ? 'Save' : 'Create Vehicle'" expanded>
           <BaseIcon v-if="tryingToCreate" name="sync" spin />
         </b-button>
         <p v-if="authError">

@@ -17,9 +17,13 @@ export default {
     return { points: null }
   },
   computed: {
+    // oldest left, newest right (the API lists the newest first)
+    sorted() {
+      return [...(this.points || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    },
     chartData() {
       return {
-        labels: this.points.map((x) => x.date.substr(0, 10)),
+        labels: this.sorted.map((x) => x.date.substr(0, 10)),
         datasets: [
           {
             label: `Mileage (${this.user.distanceUnitDetail.short}/${this.vehicle.fuelUnitDetail.short})`,
@@ -30,7 +34,7 @@ export default {
             borderWidth: 2,
             pointBackgroundColor: '#39a275',
             pointRadius: 3,
-            data: this.points.map((x) => x.mileage),
+            data: this.sorted.map((x) => x.mileage),
           },
         ],
       }
