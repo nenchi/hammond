@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/akhilrex/hammond/chat"
 	"net/http"
 	"strings"
 
@@ -52,6 +53,12 @@ func UpdateContextUserModel(c *gin.Context, my_user_id string) {
 //	r.Use(AuthMiddleware(true))
 func AuthMiddleware(auto401 bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// the chat commands (Telegram, /api/v1/command) call the UI API in-process as the chatting user: the same
+		// validation and access checks as the web app (a context value: no header can set it)
+		if id := chat.UserFromContext(c.Request.Context()); id != "" {
+			UpdateContextUserModel(c, id)
+			return
+		}
 		UpdateContextUserModel(c, "")
 		token, err := request.ParseFromRequest(c.Request, MyAuth2Extractor, func(token *jwt.Token) (interface{}, error) {
 			return common.JWTSecret(), nil

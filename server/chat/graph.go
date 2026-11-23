@@ -160,19 +160,16 @@ func (b *bot) graphOf(args []string) (g graphData, msg string, err error) {
 	}
 	h := b.hammond
 	var me struct{ Currency string }
-	var vs []struct{ ID, Nickname string }
 	if err := h.get("/me", &me); err != nil {
 		return g, "", err
 	}
-	if err := h.get("/vehicles", &vs); err != nil {
-		return g, "", err
+	vs, msg, err := b.readCars(car)
+	if msg != "" || err != nil {
+		return g, msg, err
 	}
 	var es []entry
 	var names []string
 	for _, v := range vs {
-		if car != "" && !strings.Contains(strings.ToLower(v.Nickname), car) {
-			continue
-		}
 		names = append(names, v.Nickname)
 		if kind != "other" {
 			var fills []struct {

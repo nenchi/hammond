@@ -103,19 +103,16 @@ func (b *bot) tripsData(args []string) (r tripReport, msg string, err error) {
 	r.from, r.to, r.label, _ = tripDays(rng, time.Now())
 	h := b.hammond
 	var me struct{ Currency, DistanceUnitShort string }
-	var vs []struct{ ID, Nickname string }
 	if err := h.get("/me", &me); err != nil {
 		return r, "", err
 	}
-	if err := h.get("/vehicles", &vs); err != nil {
-		return r, "", err
+	vs, msg, err := b.readCars(car)
+	if msg != "" || err != nil {
+		return r, msg, err
 	}
 	r.cur, r.curCode, r.km = money(me.Currency), first(me.Currency, "EUR"), strings.ToLower(first(me.DistanceUnitShort, "km"))
 	q := "?from=" + url.QueryEscape(r.from.Format("2006-01-02")) + "&to=" + url.QueryEscape(r.to.Format("2006-01-02"))
 	for _, v := range vs {
-		if car != "" && !strings.Contains(strings.ToLower(v.Nickname), car) {
-			continue
-		}
 		c := carTrips{name: v.Nickname}
 		if err := h.get("/vehicles/"+v.ID+"/trips"+q, &c.trips); err != nil {
 			return r, "", err
