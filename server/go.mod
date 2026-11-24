@@ -3,7 +3,7 @@ module github.com/akhilrex/hammond
 go 1.27
 
 require (
-	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/eclipse/paho.mqtt.golang v1.5.2
 	github.com/gin-contrib/location/v2 v2.0.5
 	github.com/gin-contrib/static v1.1.10
 	github.com/gin-gonic/gin v1.12.0
