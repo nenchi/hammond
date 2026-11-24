@@ -643,12 +643,15 @@ describe('hammond UI', () => {
     cy.get('.navbar').should('not.contain', 'Trips')
     cy.contains('a.button, .button', /^\s*Trips\s*$/).should('not.exist')
     cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showTrips: true } })
+    // a car with an ignition sensor: Setup starts closed (without one it opens by itself once the car has
+    // loaded, and a click racing that would close it again)
+    cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}/tripEntities`, headers: apiHeaders, body: { ignition: 'sensor.cypress_ignition' } })
+    cy.intercept('GET', `/api/vehicles/${vehicleId}`).as('vehicle')
     visit(`/vehicles/${vehicleId}/trips`)
+    cy.wait('@vehicle')
     cy.contains('.navbar', 'Trips', { timeout: 10000 })
-    // Setup opens by itself when the car has no sensors yet: click it only when it's closed
-    cy.get('.trips-page').then(($p) => {
-      if (!$p.find('.record-trips').length) cy.contains('button', 'Setup').click()
-    })
+    cy.contains('button', 'Setup').click()
+    cy.get('.trips-page .record-trips').should('be.visible')
     cy.intercept('PUT', `/api/vehicles/${vehicleId}/tripsPaused`).as('pause')
     cy.get('.trips-page .record-trips').click()
     cy.wait('@pause').its('request.body.paused').should('eq', true)
@@ -662,6 +665,7 @@ describe('hammond UI', () => {
     cy.wait('@days').its('request.body.days').should('eq', '1111110')
     cy.get('.trips-page .trip-days').contains('button', 'Sun').should('have.attr', 'aria-pressed', 'false').click()
     cy.wait('@days').its('request.body.days').should('eq', '1111111')
+    cy.request({ method: 'PUT', url: `/api/vehicles/${vehicleId}/tripEntities`, headers: apiHeaders, body: {} })
     noConsoleErrors()
   })
 
