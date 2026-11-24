@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -115,6 +116,20 @@ func RegisterTripController(router *gin.RouterGroup) {
 		}
 		if err := c.ShouldBindJSON(&req); !fail(c, err) && !fail(c, service.SetTripDays(c.Param("id"), req.Days)) {
 			c.JSON(http.StatusOK, gin.H{"days": req.Days})
+		}
+	})
+	// a trip by hand: road distance, driving time and route between two points (from=lat,lng&to=lat,lng)
+	router.GET("/route", func(c *gin.Context) {
+		var p [4]float64
+		_, e1 := fmt.Sscanf(c.Query("from"), "%f,%f", &p[0], &p[1])
+		_, e2 := fmt.Sscanf(c.Query("to"), "%f,%f", &p[2], &p[3])
+		if e1 != nil || e2 != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "from and to: lat,lng"})
+			return
+		}
+		r, err := service.RouteBetween(p[0], p[1], p[2], p[3])
+		if !fail(c, err) {
+			c.JSON(http.StatusOK, r)
 		}
 	})
 	router.POST("/vehicles/:id/trips", ownVehicle, kmAllowed, func(c *gin.Context) {

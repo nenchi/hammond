@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -780,6 +782,8 @@ type LegInput struct {
 	EndOdo   float64   `json:"endOdo" binding:"min=0"`
 	Distance *float64  `json:"distance"` // nil = EndOdo − StartOdo
 	FuelUsed *float64  `json:"fuelUsed"`
+	From     *Place    `json:"from"` // a trip by hand: where it started/ended (address search) → addresses, route
+	To       *Place    `json:"to"`
 }
 
 func (in LegInput) check() error {
@@ -807,7 +811,74 @@ func AddTrip(userID, vehicleID string, in LegInput, business bool, purpose strin
 	}
 	l := db.TripLeg{VehicleID: vehicleID, TripID: t.ID, Start: in.Start, End: in.End, StartOdo: in.StartOdo,
 		EndOdo: in.EndOdo, Distance: in.distance(), FuelUsed: in.FuelUsed, Source: "manual"}
+	if in.From != nil && in.To != nil && (in.From.Lat != 0 || in.From.Lng != 0) && (in.To.Lat != 0 || in.To.Lng != 0) {
+		f, to := *in.From, *in.To
+		l.StartLat, l.StartLng, l.EndLat, l.EndLng = &f.Lat, &f.Lng, &to.Lat, &to.Lng
+		l.StartAddress, l.EndAddress, l.LocationFrom = trim(f.Name, 200), trim(to.Name, 200), "manual"
+		l.Route = [][2]float64{{f.Lat, f.Lng}, {to.Lat, to.Lng}} // straight, unless the routing service answers
+		if r, err := RouteBetween(f.Lat, f.Lng, to.Lat, to.Lng); err == nil && len(r.Route) > 1 {
+			l.Route = r.Route
+		}
+	}
+	if l.FuelUsed == nil && l.Distance > 0 { // no litres typed: km × the average of the full-tank fill-ups
+		if v, err := GetVehicleById(vehicleID); err == nil {
+			if lpk := litresPerKm(v); lpk > 0 {
+				est := math.Round(l.Distance*lpk*100) / 100
+				l.FuelUsed, l.FuelEstimated = &est, true
+			}
+		}
+	}
 	return t.ID, db.DB.Create(&l).Error
+}
+
+// RoutingURL: OSRM's route service (OpenStreetMap routing) for trips by hand; ROUTING_URL replaces it (your
+// own OSRM), "" turns routing off (a straight line)
+var RoutingURL = func() string {
+	if u, ok := os.LookupEnv("ROUTING_URL"); ok {
+		return strings.TrimRight(u, "/")
+	}
+	return "https://router.project-osrm.org/route/v1/driving"
+}()
+
+type RouteResult struct {
+	Km      float64      `json:"km"`
+	Minutes float64      `json:"minutes"`
+	Route   [][2]float64 `json:"route"` // [[lat, lng], …]
+}
+
+// RouteBetween: the road route by car between two points. ponytail: OSRM's public demo server, one request per
+// trip entered by hand; run your own (ROUTING_URL) if many people use it
+func RouteBetween(lat1, lng1, lat2, lng2 float64) (*RouteResult, error) {
+	if RoutingURL == "" {
+		return nil, errors.New("routing is off")
+	}
+	u := fmt.Sprintf("%s/%f,%f;%f,%f?overview=simplified&geometries=geojson", RoutingURL, lng1, lat1, lng2, lat2)
+	req, _ := http.NewRequest("GET", u, nil)
+	req.Header.Set("User-Agent", "hammond (https://github.com/nenchi/hammond)")
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("routing service not reachable: %v", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Code   string `json:"code"`
+		Routes []struct {
+			Distance float64 `json:"distance"` // m
+			Duration float64 `json:"duration"` // s
+			Geometry struct {
+				Coordinates [][2]float64 `json:"coordinates"` // [lng, lat]
+			} `json:"geometry"`
+		} `json:"routes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil || body.Code != "Ok" || len(body.Routes) == 0 {
+		return nil, fmt.Errorf("no route found (HTTP %d %s)", resp.StatusCode, body.Code)
+	}
+	r := body.Routes[0]
+	out := &RouteResult{Km: math.Round(r.Distance/100) / 10, Minutes: math.Round(r.Duration / 60)}
+	for _, c := range r.Geometry.Coordinates {
+		out.Route = append(out.Route, [2]float64{c[1], c[0]})
+	}
+	return out, nil
 }
 
 func UpdateLeg(legID string, in LegInput) error {

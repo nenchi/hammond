@@ -266,3 +266,53 @@ func TestTripDays(t *testing.T) {
 		t.Errorf("every day is stored as \"\", got %q", v2.TripDays)
 	}
 }
+
+// a trip by hand with From/To: addresses, the road route (fake OSRM), fuel estimated from the fill-ups;
+// routing down = a straight line
+func TestManualTripRouteAndFuel(t *testing.T) {
+	setupDB(t)
+	u, v := mkUserVehicle(t, "", 50)
+	up := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !up {
+			http.Error(w, "down", 503)
+			return
+		}
+		fmt.Fprint(w, `{"code":"Ok","routes":[{"distance":7140,"duration":780,"geometry":{"coordinates":[[8.7621,50.1036],[8.73,50.105],[8.6821,50.1109]]}}]}`)
+	}))
+	defer srv.Close()
+	old := RoutingURL
+	RoutingURL = srv.URL
+	defer func() { RoutingURL = old }()
+	// two full tanks 1000 km apart, 65 l: 6.5 l/100 km
+	manualFillup(t, u, v, 10000, 40, "")
+	manualFillup(t, u, v, 11000, 65, "")
+	from, to := &Place{Name: "Kaiserstraße 50, Offenbach", Lat: 50.1036, Lng: 8.7621}, &Place{Name: "Neue Mainzer Straße 52, Frankfurt", Lat: 50.1109, Lng: 8.6821}
+	r, err := RouteBetween(from.Lat, from.Lng, to.Lat, to.Lng)
+	if err != nil || r.Km != 7.1 || r.Minutes != 13 || len(r.Route) != 3 || r.Route[0] != [2]float64{50.1036, 8.7621} {
+		t.Fatalf("route: %+v %v", r, err)
+	}
+	id, err := AddTrip(u.ID, v.ID, LegInput{Start: at, End: at.Add(15 * time.Minute), StartOdo: 11000, EndOdo: 11008, From: from, To: to}, true, "Customer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var l db.TripLeg
+	db.DB.First(&l, "trip_id = ?", id)
+	if l.StartAddress != from.Name || l.EndAddress != to.Name || len(l.Route) != 3 || l.FuelUsed == nil || *l.FuelUsed != 0.52 || !l.FuelEstimated {
+		t.Fatalf("leg: %+v fuel %v", l, l.FuelUsed)
+	}
+	up = false
+	id, _ = AddTrip(u.ID, v.ID, LegInput{Start: at.Add(time.Hour), End: at.Add(80 * time.Minute), StartOdo: 11008, EndOdo: 11016, From: to, To: from}, false, "")
+	var l2 db.TripLeg // a fresh struct: GORM would also filter by the old one's ID
+	db.DB.First(&l2, "trip_id = ?", id)
+	if len(l2.Route) != 2 || l2.EndAddress != from.Name {
+		t.Fatalf("routing down: want a straight line, got %v", l2.Route)
+	}
+	litres := 3.0 // typed litres win over the estimate
+	id, _ = AddTrip(u.ID, v.ID, LegInput{Start: at.Add(2 * time.Hour), End: at.Add(150 * time.Minute), StartOdo: 11016, EndOdo: 11030, FuelUsed: &litres}, false, "")
+	var l3 db.TripLeg
+	db.DB.First(&l3, "trip_id = ?", id)
+	if *l3.FuelUsed != 3 || l3.FuelEstimated {
+		t.Fatalf("typed litres: %+v", l3)
+	}
+}

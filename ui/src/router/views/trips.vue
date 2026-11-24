@@ -55,7 +55,13 @@ export default {
         endOdo: null,
         purpose: "",
         business: true,
+        fuel: null, // litres, empty = estimated from the fill-ups
+        from: null, // { name, lat, lng } from the address search
+        to: null,
       },
+      placeText: { from: "", to: "" },
+      placeHits: { from: [], to: [] },
+      route: null, // { km, minutes } by road between from and to
     };
   },
   computed: {
@@ -364,6 +370,59 @@ export default {
         })
         .catch(this.err);
     },
+    // a trip by hand: from/to by address search → addresses, the road route and an estimate of km and time
+    searchPlace(kind) {
+      const q = this.placeText[kind].trim();
+      if (!q) return;
+      axios
+        .get("/api/places", { params: { q } })
+        .then(({ data }) => {
+          this.placeHits[kind] = data || [];
+          if (this.placeHits[kind].length === 1)
+            this.pickPlace(kind, this.placeHits[kind][0]);
+        })
+        .catch(this.err);
+    },
+    pickPlace(kind, p) {
+      const name = p.name.split(", ").slice(0, 3).join(", ");
+      this.manual[kind] = { name, lat: p.lat, lng: p.lng };
+      this.placeText[kind] = name;
+      this.placeHits[kind] = [];
+      this.routePreview();
+    },
+    routePreview() {
+      const { from, to } = this.manual;
+      this.route = null;
+      if (!from || !to) return;
+      axios
+        .get("/api/route", {
+          params: {
+            from: `${from.lat},${from.lng}`,
+            to: `${to.lat},${to.lng}`,
+          },
+        })
+        .then(({ data }) => {
+          this.route = data;
+          const m = this.manual;
+          // only empty fields: what you typed stays
+          if (m.startOdo !== null && m.startOdo !== "" && !m.endOdo)
+            m.endOdo = Math.round(Number(m.startOdo) + data.km);
+          if (m.start && !m.end) {
+            const end = new Date(
+              new Date(m.start).getTime() + data.minutes * 60000
+            );
+            const p2 = (n) => String(n).padStart(2, "0");
+            m.end = `${ymd(end)}T${p2(end.getHours())}:${p2(end.getMinutes())}`;
+          }
+        })
+        .catch(() => (this.route = { error: true })); // no routing: a straight line
+    },
+    startAdding() {
+      this.adding = !this.adding;
+      // the odometer goes on from the newest trip
+      if (this.adding && this.manual.startOdo === null && this.trips.length)
+        this.manual.startOdo = Math.round(this.trips[0].endOdo);
+    },
     addManual() {
       const m = this.manual;
       axios
@@ -374,9 +433,24 @@ export default {
           endOdo: Number(m.endOdo),
           purpose: m.purpose,
           business: m.business,
+          fuelUsed: m.fuel ? Number(m.fuel) : null,
+          from: m.from,
+          to: m.to,
         })
         .then(() => {
           this.adding = false;
+          Object.assign(this.manual, {
+            start: "",
+            end: "",
+            startOdo: null,
+            endOdo: null,
+            purpose: "",
+            fuel: null,
+            from: null,
+            to: null,
+          });
+          this.placeText = { from: "", to: "" };
+          this.route = null;
           this.toast("Trip added");
           this.load();
         })
@@ -486,7 +560,7 @@ export default {
               @click="print"
               >Print / PDF</b-button
             >
-            <b-button v-if="!locked" icon-left="plus" @click="adding = !adding"
+            <b-button v-if="!locked" icon-left="plus" @click="startAdding"
               >Add trip</b-button
             >
             <b-button icon-left="cog" @click="setupOpen = !setupOpen"
@@ -619,9 +693,54 @@ export default {
               ><b-input v-model.number="manual.endOdo" type="number"
             /></b-field>
           </div>
-          <div class="column is-9">
+          <div v-for="kind in ['from', 'to']" :key="kind" class="column is-6">
+            <b-field
+              :label="kind === 'from' ? 'From (optional)' : 'To (optional)'"
+            >
+              <b-input
+                v-model="placeText[kind]"
+                :class="`manual-${kind}`"
+                placeholder="Address or place"
+                expanded
+                @keydown.native.enter.prevent="searchPlace(kind)"
+              />
+              <p class="control">
+                <b-button @click="searchPlace(kind)">Search</b-button>
+              </p>
+            </b-field>
+            <div v-if="placeHits[kind].length" class="place-hits">
+              <a
+                v-for="(p, i) in placeHits[kind]"
+                :key="i"
+                class="is-block"
+                @click="pickPlace(kind, p)"
+                >{{ p.name }}</a
+              >
+            </div>
+          </div>
+          <div v-if="route" class="column is-12 route-preview">
+            <span v-if="route.error" class="has-text-grey"
+              >No road route found: the map shows a straight line.</span
+            >
+            <span v-else
+              >≈ {{ route.km.toFixed(1) }} {{ km }} ·
+              {{ dur(route.minutes) }} by road (empty odometer end and end time
+              filled in from it)</span
+            >
+          </div>
+          <div class="column is-6">
             <b-field label="Purpose"
               ><b-input v-model="manual.purpose" maxlength="200"
+            /></b-field>
+          </div>
+          <div class="column is-3">
+            <b-field label="Fuel (litres, optional)"
+              ><b-input
+                v-model.number="manual.fuel"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="estimated"
             /></b-field>
           </div>
           <div class="column is-3">
@@ -687,7 +806,9 @@ export default {
                   >
                 </p>
                 <p>
-                  ⛽ {{ t.fuelUsed ? t.fuelUsed.toFixed(2) + " l" : "–"
+                  ⛽
+                  {{ t.legs.some((l) => l.fuelEstimated) ? "≈ " : ""
+                  }}{{ t.fuelUsed ? t.fuelUsed.toFixed(2) + " l" : "–"
                   }}<span v-if="!t.fuelKnown && t.fuelUsed"> (part)</span> ·
                   {{ money(t.fuelCost)
                   }}<span v-if="t.distance && t.fuelUsed">

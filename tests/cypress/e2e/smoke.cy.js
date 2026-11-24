@@ -636,6 +636,27 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  it('trips: a trip by hand with From/To gets the road distance and the route (search and routing stubbed)', () => {
+    cy.intercept('GET', '/api/places*', (req) => {
+      const home = /home/i.test(req.query.q)
+      req.reply([{ name: home ? 'Kaiserstraße 50, Offenbach, Hessen, Germany' : 'Neue Mainzer Straße 52, Frankfurt, Hessen, Germany',
+        lat: home ? 50.1036 : 50.1109, lng: home ? 8.7621 : 8.6821 }])
+    })
+    cy.intercept('GET', '/api/route*', { km: 7.1, minutes: 13, route: [[50.1036, 8.7621], [50.105, 8.73], [50.1109, 8.6821]] }).as('route')
+    visit(`/vehicles/${vehicleId}/trips`)
+    cy.contains('button', 'Add trip', { timeout: 10000 }).click()
+    cy.get('.manual-from input').clear().type('Home{enter}')
+    cy.get('.manual-to input').clear().type('Office{enter}')
+    cy.wait('@route')
+    cy.get('.route-preview').should('contain', '7.1').and('contain', 'by road')
+    cy.contains('.field', 'Odometer start').find('input').clear().type('7000')
+    cy.contains('.field', 'Odometer end').find('input').clear() // only an empty end is filled in from the route
+    cy.get('.manual-to input').clear().type('Office{enter}')
+    cy.wait('@route')
+    cy.contains('.field', 'Odometer end').find('input').should('have.value', '7007')
+    noConsoleErrors()
+  })
+
   it('trips: Show Trips off hides the menu and the button; recording can be paused per car', () => {
     cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showTrips: false } })
     visit(`/vehicles/${vehicleId}`)

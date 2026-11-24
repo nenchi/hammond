@@ -31,6 +31,18 @@ hammond reads new drives every 10 minutes (**Sync now** for at once; the first s
   Home Assistant and the trip chat commands (`cost` then always saves a plain expense). The car keeps recording for
   other users.
 
+## Trips by hand
+
+When something wasn't recorded (phone off, Home Assistant down, a day without recording): **Add trip**. Start and
+end time and odometer (the start is taken from the newest trip), purpose, business/private, and optionally:
+
+- **From / To**: search an address or place. The trip gets both addresses and its route by road on the map, and
+  the road distance and driving time fill in an empty odometer end and end time. Routing uses OSRM
+  (OpenStreetMap; only the two points are sent); `ROUTING_URL` points hammond at your own OSRM, empty turns it off
+  (a straight line).
+- **Fuel**: the litres if you know them; empty = estimated from kilometres × your average consumption (full-tank
+  fill-ups), shown with ≈ and priced like recorded trips.
+
 ## Use
 
 - Per trip: **business/private**, purpose, notes, costs (toll, vignette, parking…), **map** to zoom to it. Join or
