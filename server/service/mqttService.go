@@ -276,7 +276,17 @@ func PublishMqtt(userID string) (*MqttResult, error) {
 		device := map[string]any{"identifiers": []string{"hammond_" + v.ID},
 			"name": "hammond " + v.Nickname, "manufacturer": strings.TrimSpace(v.Make + " " + v.Model), "model": v.Registration}
 		// the photo only on its image entity: as every sensor's entity_picture it replaced their icons in HA's lists
-		announce(v.ID, st, vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit)), device, "") // every value is its own sensor
+		ents := vehicleEntities(s.Currency, strings.ToLower(s.DistanceUnit))
+		if !u.ShowTrips { // Trips hidden in the user's settings: no trip sensors (HA removes them)
+			kept := ents[:0]
+			for _, e := range ents {
+				if !strings.HasPrefix(e.key, "trips_") {
+					kept = append(kept, e)
+				}
+			}
+			ents = kept
+		}
+		announce(v.ID, st, ents, device, "") // every value is its own sensor
 		pub(st, vehicleState(v))
 		if pic != "" { // the photo as an image entity (image.hammond_<car>_photo): a picture card shows it, a new photo updates it
 			topic := fmt.Sprintf("%s/image/hammond_%s/photo/config", prefix, v.ID)

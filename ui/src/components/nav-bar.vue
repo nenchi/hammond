@@ -86,6 +86,11 @@ export default {
     ...authComputed,
     ...mapGetters('vehicles', ['unprocessedQuickEntries']),
     ...mapState('vehicles', ['detections']),
+    ...mapState('users', ['me']),
+    // Trips hidden in the user's settings: no menu entry
+    visibleNavRoutes() {
+      return this.loggedInNavRoutes.filter((r) => r.name !== 'trips' || !this.me || this.me.showTrips !== false)
+    },
     isAdmin() {
       return this.loggedIn && this.currentUser.role === 'ADMIN'
     },
@@ -104,7 +109,7 @@ export default {
       <template v-slot:end>
         <NavBarRoutes :routes="persistentNavRoutes" />
         <NavBarRoutes v-if="loggedIn && detections.length" :routes="detectionNavRoutes" />
-        <NavBarRoutes v-if="loggedIn" :routes="loggedInNavRoutes" />
+        <NavBarRoutes v-if="loggedIn" :routes="visibleNavRoutes" />
         <NavBarRoutes v-else :routes="loggedOutNavRoutes" />
         <b-navbar-dropdown v-if="loggedIn && isAdmin" label="Admin">
           <NavBarRoutes :routes="adminNavRoutes" />

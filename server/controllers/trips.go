@@ -99,6 +99,15 @@ func RegisterTripController(router *gin.RouterGroup) {
 			c.JSON(http.StatusOK, e)
 		}
 	})
+	// automatic recording on/off; with trips locked only admins (a pause would leave gaps in the log)
+	router.PUT("/vehicles/:id/tripsPaused", ownVehicle, kmAllowed, func(c *gin.Context) {
+		var req struct {
+			Paused bool `json:"paused"`
+		}
+		if err := c.ShouldBindJSON(&req); !fail(c, err) && !fail(c, service.SetTripsPaused(c.Param("id"), req.Paused)) {
+			c.JSON(http.StatusOK, gin.H{"paused": req.Paused})
+		}
+	})
 	router.POST("/vehicles/:id/trips", ownVehicle, kmAllowed, func(c *gin.Context) {
 		var req struct {
 			service.LegInput

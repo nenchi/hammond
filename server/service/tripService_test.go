@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,5 +211,29 @@ func TestFillAddresses(t *testing.T) {
 	fillAddresses(v.ID, 20) // nothing left to look up
 	if calls != 2 {
 		t.Fatalf("want 2 lookups, got %d", calls)
+	}
+}
+
+// paused: no sync (also not "Sync now"); back on, recording starts then, the paused days aren't read
+func TestTripsPaused(t *testing.T) {
+	setupDB(t)
+	_, v := mkUserVehicle(t, "", 43)
+	db.DB.Model(&v).Updates(map[string]any{"odometer_entity": "sensor.odo"})
+	if err := SetTripEntities(v.ID, db.TripEntities{Ignition: "sensor.ign"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTripsPaused(v.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncTrips(v.ID); err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("paused: want a 'paused' error, got %v", err)
+	}
+	before := time.Now()
+	if err := SetTripsPaused(v.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	v2, _ := db.GetVehicleById(v.ID)
+	if v2.TripsPaused || v2.TripsSyncedTo == nil || v2.TripsSyncedTo.Before(before.Add(-time.Second)) {
+		t.Fatalf("resumed: want not paused and synced from now, got paused=%v syncedTo=%v", v2.TripsPaused, v2.TripsSyncedTo)
 	}
 }

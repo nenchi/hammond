@@ -372,6 +372,9 @@ func SyncTrips(vehicleID string) (int, error) {
 	if v.TripEntities.Ignition == "" || v.OdometerEntity == "" {
 		return 0, errors.New("set the ignition and odometer entities of the vehicle first")
 	}
+	if v.TripsPaused {
+		return 0, errors.New("recording drives is paused (Trips → Setup → Record drives automatically)")
+	}
 	userID := tripUser(vehicleID)
 	if userID == "" {
 		return 0, errors.New("no user of this vehicle has Home Assistant set up")
@@ -446,7 +449,7 @@ func TripTimer() {
 		var vs []db.Vehicle
 		db.DB.Find(&vs)
 		for _, v := range vs {
-			if v.TripEntities.Ignition != "" {
+			if v.TripEntities.Ignition != "" && !v.TripsPaused {
 				if _, err := SyncTrips(v.ID); err != nil {
 					fmt.Printf("trips %s: %v\n", v.Nickname, err)
 				}
@@ -655,6 +658,16 @@ func SetTripsLocked(locked bool) error {
 
 func SetTripMergeMinutes(userID string, m int) error {
 	return db.DB.Model(&db.User{}).Where("id = ?", userID).Update("trip_merge_minutes", m).Error
+}
+
+// SetTripsPaused: automatic recording off/on. Back on, it starts at that moment: the drives of the pause
+// aren't read afterwards (that's what pausing is for)
+func SetTripsPaused(vehicleID string, paused bool) error {
+	up := map[string]any{"trips_paused": paused}
+	if !paused {
+		up["trips_synced_to"] = time.Now()
+	}
+	return db.DB.Model(&db.Vehicle{}).Where("id = ?", vehicleID).Updates(up).Error
 }
 
 func SetTripEntities(vehicleID string, e db.TripEntities) error {

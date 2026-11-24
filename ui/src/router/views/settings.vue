@@ -34,6 +34,7 @@ export default {
         prefillFillup: this.me.prefillFillup !== false,
         detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
         showFillupTime: this.me.showFillupTime !== false,
+        showTrips: this.me.showTrips !== false,
         stationSuggestions: this.me.stationSuggestions || 'location',
         stationRadiusKm: this.me.stationRadiusKm || 2,
         customFuelSubtypes: this.me.customFuelSubtypes || '',
@@ -233,6 +234,11 @@ export default {
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </b-select>
+          </b-field>
+          <b-field>
+            <b-checkbox v-model="settingsModel.showTrips" class="show-trips"
+              >Show Trips (the trip log, its sensors in Home Assistant and its chat commands; the car keeps recording)</b-checkbox
+            >
           </b-field>
           <b-field>
             <b-checkbox v-model="settingsModel.showFillupTime">Show the time of fill-ups (e.g. several on one day)</b-checkbox>

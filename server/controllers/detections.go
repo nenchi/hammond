@@ -168,7 +168,8 @@ func RegisterApiV1(router *gin.RouterGroup) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"name": u.Name, "currency": u.Currency, "distanceUnit": u.DistanceUnit,
-			"distanceUnitShort": db.DistanceUnitDetails[u.DistanceUnit].Short, "defaultVehicleId": u.DefaultVehicleID})
+			"distanceUnitShort": db.DistanceUnitDetails[u.DistanceUnit].Short, "defaultVehicleId": u.DefaultVehicleID,
+			"showTrips": u.ShowTrips})
 	})
 	router.GET("/vehicles/:id/stats", ownVehicle, getVehicleStats)
 	router.GET("/vehicles/:id/fillups", ownVehicle, getFillupsByVehicleId)

@@ -191,9 +191,11 @@ func (b *bot) cost(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	trips, err := b.recentTrips(vs, 1)
-	if err != nil {
-		return "", err
+	var trips []tripRef
+	if b.tripsOn() { // Trips hidden in the settings: a cost is a plain expense
+		if trips, err = b.recentTrips(vs, 1); err != nil {
+			return "", err
+		}
 	}
 	today := time.Now().Format("2006-01-02")
 	if len(trips) > 0 && trips[0].Start.Local().Format("2006-01-02") == today {
@@ -222,7 +224,23 @@ func (b *bot) cost(args []string) (string, error) {
 }
 
 // purpose <text> / business / private: the latest trip (last 7 days, all cars)
+// tripsOn: the user shows Trips (Settings → Show Trips); unknown = on
+func (b *bot) tripsOn() bool {
+	var me struct {
+		ShowTrips *bool `json:"showTrips"`
+	}
+	if err := b.hammond.get("/me", &me); err != nil || me.ShowTrips == nil {
+		return true
+	}
+	return *me.ShowTrips
+}
+
+const tripsOffText = "Trips are off in your settings (Settings → Show Trips)."
+
 func (b *bot) tripFlag(cmd string, args []string) (string, error) {
+	if !b.tripsOn() {
+		return tripsOffText, nil
+	}
 	vs, err := b.cars()
 	if err != nil {
 		return "", err

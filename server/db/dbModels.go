@@ -29,6 +29,8 @@ type User struct {
 	DetectionDuplicateMode string `json:"detectionDuplicateMode"`
 	// show the time of fill-ups in lists (entries without a time always show the date only)
 	ShowFillupTime bool `gorm:"default:true" json:"showFillupTime"`
+	// Trips for this user: menu, trip sensors over MQTT, trip chat commands (the car still records)
+	ShowTrips bool `gorm:"default:true" json:"showTrips"`
 	// station prices in the fill-up form: "" = button + stations near a detection's location,
 	// "button" = only the "stations nearby" button, "off"
 	StationSuggestions string `json:"stationSuggestions"`
@@ -124,6 +126,8 @@ type Vehicle struct {
 	TripEntities TripEntities `gorm:"serializer:json" json:"tripEntities"`
 	// HA history is read from here on: drives starting before it are done (a deleted trip stays deleted)
 	TripsSyncedTo *time.Time `json:"-"`
+	// automatic recording from Home Assistant paused (Trips → Setup); trips by hand still work
+	TripsPaused bool `json:"tripsPaused"`
 	// vehicle name in EVCC (its title): EVCC sessions of that vehicle are imported for this one
 	EvccVehicle string `json:"evccVehicle"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset

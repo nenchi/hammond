@@ -578,6 +578,11 @@ s, _ = call("DELETE", f"/api/trips/{trips[0]['id']}", token=tok)
 s2, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
 s3, left = call("GET", f"/api/vehicles/{vid}/trips", token=tok)
 check("trips: a deleted trip stays deleted after the next sync", s == 200 and s2 == 200 and r["added"] == 0 and left == [], (s, s2, r, left))
+s, _ = call("PUT", f"/api/vehicles/{vid}/tripsPaused", {"paused": True}, token=tok)
+s2, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
+s3, _ = call("PUT", f"/api/vehicles/{vid}/tripsPaused", {"paused": False}, token=tok)
+check("trips: recording paused (no sync, also not Sync now), then on again", s == 200 and s2 == 422 and "paused" in str(r)
+      and s3 == 200 and call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tripsPaused") is False, (s, s2, r, s3))
 s, r = call("POST", "/api/settings/trips", {"locked": True}, token=tok)
 s2, st = call("GET", "/api/settings", token=tok)
 s3, _ = call("POST", "/api/settings/trips", {"locked": False}, token=ptok)
@@ -617,6 +622,18 @@ check("mqtt: the car photo as an image entity (absolute link from the upload's o
       img.get("url_topic") == f"{base}/vehicle/{vid}/photo" and fake_mqtt().get(f"{base}/vehicle/{vid}/photo", "").startswith("https://fuel.example.com/api/public/photo/"), img)
 check("mqtt: a late last will (offline) is overwritten by the next publish", s == 200 and fake_mqtt().get(f"{base}/status") == "online",
       fake_mqtt().get(f"{base}/status"))
+# Trips hidden in the user's settings: trip sensors leave HA, the chat says so; then shown again
+call("POST", "/api/me/settings", {**base_settings, "showTrips": False}, token=tok)
+s, _ = call("POST", "/api/me/mqtt/publish", token=tok)
+trip_cfg = fake_mqtt().get(f"homeassistant/sensor/hammond_{vid}/trips_today_distance/config")
+s2, k3 = call("POST", "/api/me/apikeys", {"name": "trips off"}, token=tok)
+off = call("POST", "/api/v1/command", {"text": "trips"}, token=k3["key"])[1]["text"]
+call("DELETE", f"/api/me/apikeys/{k3['apiKey']['id']}", token=tok)
+check("Show Trips off: saved, trip sensors removed from HA, chat says trips are off", s == 200 and trip_cfg == ""
+      and call("GET", "/api/me", token=tok)[1].get("showTrips") is False and off.startswith("Trips are off"), (s, trip_cfg, off))
+call("POST", "/api/me/settings", {**base_settings, "showTrips": True}, token=tok)
+s, _ = call("POST", "/api/me/mqtt/publish", token=tok)
+check("Show Trips on again: trip sensors back", json.loads(fake_mqtt().get(f"homeassistant/sensor/hammond_{vid}/trips_today_distance/config") or "{}").get("name") == "Trips today", s)
 mt = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/month_total/config", "{}"))
 l30 = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/last30_total/config", "{}"))
 check("mqtt: last 30 days + this year; monthly totals tell HA when they start over",

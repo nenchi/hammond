@@ -129,6 +129,15 @@ export default {
     this.load();
   },
   methods: {
+    setPaused(paused) {
+      axios
+        .put(this.url("/tripsPaused"), { paused })
+        .then(() => {
+          this.vehicle = { ...this.vehicle, tripsPaused: paused };
+          this.toast(paused ? "Recording paused" : "Recording drives again");
+        })
+        .catch(this.err);
+    },
     loadVehicle() {
       try {
         localStorage.setItem("tripsVehicle", this.$route.params.vehicleId); // /trips opens it next time
@@ -410,6 +419,15 @@ export default {
           </option>
         </b-select>
       </b-field>
+      <b-notification
+        v-if="vehicle && vehicle.tripsPaused"
+        type="is-warning"
+        :closable="false"
+        class="no-print trips-paused"
+      >
+        Recording drives is paused for this car.
+        <a @click="setupOpen = true">Setup</a> turns it back on.
+      </b-notification>
       <p class="subtitle is-6 no-print">
         Drives from Home Assistant (engine on → off), joined into one trip when
         the stop between them is short. Fuel is priced first in, first out: the
@@ -464,6 +482,23 @@ export default {
       </div>
 
       <div v-if="setupOpen" class="box no-print setup">
+        <b-field v-if="vehicle">
+          <b-switch
+            :value="!vehicle.tripsPaused"
+            :disabled="locked"
+            class="record-trips"
+            @input="setPaused(!$event)"
+            >Record drives automatically</b-switch
+          >
+        </b-field>
+        <p class="help mb-4">
+          Off pauses reading drives from Home Assistant (holiday, someone else
+          drives); the sensors and your trips stay, trips by hand still work.
+          Back on, recording starts from then.
+          <span v-if="locked"
+            >Trips are locked: only an admin can change it.</span
+          >
+        </p>
         <h2 class="subtitle">Home Assistant sensors</h2>
         <p class="help mb-3">
           Uses your Home Assistant from Settings and the odometer entity of the

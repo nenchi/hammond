@@ -636,6 +636,29 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  it('trips: Show Trips off hides the menu and the button; recording can be paused per car', () => {
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showTrips: false } })
+    visit(`/vehicles/${vehicleId}`)
+    cy.contains('.navbar', 'Price watch', { timeout: 10000 })
+    cy.get('.navbar').should('not.contain', 'Trips')
+    cy.contains('a.button, .button', /^\s*Trips\s*$/).should('not.exist')
+    cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showTrips: true } })
+    visit(`/vehicles/${vehicleId}/trips`)
+    cy.contains('.navbar', 'Trips', { timeout: 10000 })
+    // Setup opens by itself when the car has no sensors yet: click it only when it's closed
+    cy.get('.trips-page').then(($p) => {
+      if (!$p.find('.record-trips').length) cy.contains('button', 'Setup').click()
+    })
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}/tripsPaused`).as('pause')
+    cy.get('.trips-page .record-trips').click()
+    cy.wait('@pause').its('request.body.paused').should('eq', true)
+    cy.get('.trips-page .trips-paused').should('contain', 'paused')
+    cy.get('.trips-page .record-trips').click()
+    cy.wait('@pause').its('request.body.paused').should('eq', false)
+    cy.get('.trips-page .trips-paused').should('not.exist')
+    noConsoleErrors()
+  })
+
   it('trips: the Trips menu opens the trips of a car (the one picked last time)', () => {
     visit(`/vehicles/${vehicleId}/trips`)
     cy.get('.trips-page', { timeout: 10000 })
