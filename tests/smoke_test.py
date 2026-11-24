@@ -581,6 +581,16 @@ check("trips: a deleted trip stays deleted after the next sync", s == 200 and s2
 s, _ = call("PUT", f"/api/vehicles/{vid}/tripsPaused", {"paused": True}, token=tok)
 s2, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
 s3, _ = call("PUT", f"/api/vehicles/{vid}/tripsPaused", {"paused": False}, token=tok)
+# a trip by hand without litres: fuel estimated from the fill-ups (km × their average); deleted again
+y = time.strftime("%Y-%m-%dT", time.gmtime(time.time() - 3 * 86400))
+s, mt_ = call("POST", f"/api/vehicles/{vid}/trips", {"start": y + "08:00:00Z", "end": y + "08:30:00Z", "startOdo": 20000,
+                                                     "endOdo": 20020, "purpose": "by hand", "business": False}, token=tok)
+leg = next((l for t in call("GET", f"/api/vehicles/{vid}/trips?from={y[:10]}&to={y[:10]}", token=tok)[1] for l in t["legs"]
+            if t["id"] == (mt_ or {}).get("id")), {})
+s2, _ = call("GET", "/api/route?from=x&to=1,2", token=tok)
+check("trip by hand: fuel estimated from the fill-ups (≈), bad route request refused", s == 201 and leg.get("fuelEstimated") is True
+      and 0.3 < (leg.get("fuelUsed") or 0) < 3 and s2 == 422, (s, leg, s2))
+call("DELETE", f"/api/trips/{(mt_ or {}).get('id')}", token=tok)
 s, _ = call("PUT", f"/api/vehicles/{vid}/tripDays", {"days": "1111100"}, token=tok)
 s2, _ = call("PUT", f"/api/vehicles/{vid}/tripDays", {"days": "0000000"}, token=tok)
 wd = call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tripDays")

@@ -455,6 +455,8 @@ type TripLeg struct {
 	EndAddress   string   `json:"endAddress"`
 	// the positions during the drive, [[lat, lng], …] for the map (same source as LocationFrom)
 	Route [][2]float64 `gorm:"serializer:json" json:"route"`
+	// FuelUsed estimated (a trip by hand: km × the fill-ups' average consumption), shown with "≈"
+	FuelEstimated bool `json:"fuelEstimated"`
 }
 
 // Trip: drives with short stops between them; purpose and notes for a business log
