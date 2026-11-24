@@ -372,6 +372,9 @@ func SyncTrips(vehicleID string) (int, error) {
 	if v.TripEntities.Ignition == "" || v.OdometerEntity == "" {
 		return 0, errors.New("set the ignition and odometer entities of the vehicle first")
 	}
+	if v.TripsPaused {
+		return 0, errors.New("recording drives is paused (Trips → Setup → Record drives automatically)")
+	}
 	userID := tripUser(vehicleID)
 	if userID == "" {
 		return 0, errors.New("no user of this vehicle has Home Assistant set up")
@@ -407,6 +410,9 @@ func SyncTrips(vehicleID string) (int, error) {
 	n := 0
 	legs, pending := legsFromHistory(h, v.TripEntities, v.OdometerEntity, Calibrate(v), now)
 	for _, l := range legs {
+		if !tripDayOn(v.TripDays, l.Start) { // not a recording day (Trips → Setup): skipped for good
+			continue
+		}
 		locate(&l, car, phone)
 		var dup int64 // "Sync now" and the timer at the same time
 		if db.DB.Model(&db.TripLeg{}).Where("vehicle_id = ? AND started_at = ?", vehicleID, l.Start).Count(&dup); dup > 0 || !l.Start.After(from) {
@@ -446,7 +452,7 @@ func TripTimer() {
 		var vs []db.Vehicle
 		db.DB.Find(&vs)
 		for _, v := range vs {
-			if v.TripEntities.Ignition != "" {
+			if v.TripEntities.Ignition != "" && !v.TripsPaused {
 				if _, err := SyncTrips(v.ID); err != nil {
 					fmt.Printf("trips %s: %v\n", v.Nickname, err)
 				}
@@ -655,6 +661,38 @@ func SetTripsLocked(locked bool) error {
 
 func SetTripMergeMinutes(userID string, m int) error {
 	return db.DB.Model(&db.User{}).Where("id = ?", userID).Update("trip_merge_minutes", m).Error
+}
+
+// SetTripsPaused: automatic recording off/on. Back on, it starts at that moment: the drives of the pause
+// aren't read afterwards (that's what pausing is for)
+func SetTripsPaused(vehicleID string, paused bool) error {
+	up := map[string]any{"trips_paused": paused}
+	if !paused {
+		up["trips_synced_to"] = time.Now()
+	}
+	return db.DB.Model(&db.Vehicle{}).Where("id = ?", vehicleID).Updates(up).Error
+}
+
+// tripDayOn: a drive starting at t is recorded with these days ("1111100": Monday first; "" = every day)
+func tripDayOn(days string, t time.Time) bool {
+	if len(days) != 7 {
+		return true
+	}
+	return days[(int(t.Local().Weekday())+6)%7] == '1' // Go's week starts on Sunday
+}
+
+// SetTripDays: the weekdays to record on, e.g. "1111100" for working days; "1111111" is stored as "" (every day)
+func SetTripDays(vehicleID, days string) error {
+	if len(days) != 7 || strings.Trim(days, "01") != "" {
+		return errors.New("days: 7 characters 0/1, Monday first, e.g. 1111100")
+	}
+	if !strings.Contains(days, "1") {
+		return errors.New("pick at least one day (or pause recording)")
+	}
+	if days == "1111111" {
+		days = ""
+	}
+	return db.DB.Model(&db.Vehicle{}).Where("id = ?", vehicleID).Update("trip_days", days).Error
 }
 
 func SetTripEntities(vehicleID string, e db.TripEntities) error {

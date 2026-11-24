@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,5 +211,58 @@ func TestFillAddresses(t *testing.T) {
 	fillAddresses(v.ID, 20) // nothing left to look up
 	if calls != 2 {
 		t.Fatalf("want 2 lookups, got %d", calls)
+	}
+}
+
+// paused: no sync (also not "Sync now"); back on, recording starts then, the paused days aren't read
+func TestTripsPaused(t *testing.T) {
+	setupDB(t)
+	_, v := mkUserVehicle(t, "", 43)
+	db.DB.Model(&v).Updates(map[string]any{"odometer_entity": "sensor.odo"})
+	if err := SetTripEntities(v.ID, db.TripEntities{Ignition: "sensor.ign"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTripsPaused(v.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncTrips(v.ID); err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("paused: want a 'paused' error, got %v", err)
+	}
+	before := time.Now()
+	if err := SetTripsPaused(v.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	v2, _ := db.GetVehicleById(v.ID)
+	if v2.TripsPaused || v2.TripsSyncedTo == nil || v2.TripsSyncedTo.Before(before.Add(-time.Second)) {
+		t.Fatalf("resumed: want not paused and synced from now, got paused=%v syncedTo=%v", v2.TripsPaused, v2.TripsSyncedTo)
+	}
+}
+
+// recording days: Monday first, "" = every day; a drive counts by its start
+func TestTripDays(t *testing.T) {
+	mon := time.Date(2026, 11, 23, 9, 0, 0, 0, time.Local) // a Monday
+	sat, sun := mon.AddDate(0, 0, 5), mon.AddDate(0, 0, 6)
+	for _, c := range []struct {
+		days string
+		t    time.Time
+		want bool
+	}{{"", sun, true}, {"1111100", mon, true}, {"1111100", sat, false}, {"1111100", sun, false},
+		{"1111110", sat, true}, {"1111110", sun, false}, {"0000001", sun, true}, {"0000001", mon, false}} {
+		if got := tripDayOn(c.days, c.t); got != c.want {
+			t.Errorf("%s on %s: want %v", c.days, c.t.Weekday(), c.want)
+		}
+	}
+	setupDB(t)
+	_, v := mkUserVehicle(t, "", 43)
+	for _, bad := range []string{"11111", "11111x0", "0000000"} {
+		if err := SetTripDays(v.ID, bad); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+	if err := SetTripDays(v.ID, "1111111"); err != nil {
+		t.Fatal(err)
+	}
+	if v2, _ := db.GetVehicleById(v.ID); v2.TripDays != "" {
+		t.Errorf("every day is stored as \"\", got %q", v2.TripDays)
 	}
 }

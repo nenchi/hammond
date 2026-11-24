@@ -129,6 +129,9 @@ func Command(userID, text string) Reply {
 		}
 		return Reply{Text: g.title + "\n" + strings.Join(g.foot, "\n"), Image: png}
 	case "trips":
+		if !b.tripsOn() {
+			return Reply{Text: tripsOffText}
+		}
 		rep, msg, terr := b.tripsData(f[1:])
 		if msg != "" || terr != nil {
 			r, err = msg, terr
