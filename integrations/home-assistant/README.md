@@ -1,5 +1,7 @@
 # hammond in Home Assistant
 
+![The example dashboard with demo data](../../images/home_assistant.jpg)
+
 - [`hammond_fillup_detection.yaml`](hammond_fillup_detection.yaml): blueprint, the car's fuel level jumps → a
   detected fill-up in hammond (see the main README).
 - [`dashboard.yaml`](dashboard.yaml): an example dashboard (built-in cards only) for hammond's MQTT sensors:

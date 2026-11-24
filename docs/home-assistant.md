@@ -36,6 +36,8 @@ itself (MQTT discovery), no YAML:
   year, consumption, trips today and this month, and the car photo as `image.hammond_<vehicle>_photo`.
 - **hammond <station> <grade>** per watched station: price, your limit, *below limit*, last check.
 
+![Example dashboard](../images/home_assistant.jpg)
+
 Sent after every change and every 5 minutes. An example dashboard with built-in cards:
 [`integrations/home-assistant/dashboard.yaml`](../integrations/home-assistant/dashboard.yaml) (replace `a_class`
 with your vehicle's nickname). Long-term graphs: [Grafana](../integrations/grafana/README.md).

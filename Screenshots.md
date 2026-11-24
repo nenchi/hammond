@@ -40,6 +40,10 @@ All with made-up demo data (`scripts/demo_data.py`): a "Golf", plate "DEMO 123",
 
 ![Users](images/users.jpg)
 
+## Home Assistant (integrations/home-assistant/dashboard.yaml)
+
+![Home Assistant](images/home_assistant.jpg)
+
 ## Grafana (integrations/grafana, made-up history)
 
 ![Grafana](images/grafana.jpg)
