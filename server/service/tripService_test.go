@@ -237,3 +237,32 @@ func TestTripsPaused(t *testing.T) {
 		t.Fatalf("resumed: want not paused and synced from now, got paused=%v syncedTo=%v", v2.TripsPaused, v2.TripsSyncedTo)
 	}
 }
+
+// recording days: Monday first, "" = every day; a drive counts by its start
+func TestTripDays(t *testing.T) {
+	mon := time.Date(2026, 11, 23, 9, 0, 0, 0, time.Local) // a Monday
+	sat, sun := mon.AddDate(0, 0, 5), mon.AddDate(0, 0, 6)
+	for _, c := range []struct {
+		days string
+		t    time.Time
+		want bool
+	}{{"", sun, true}, {"1111100", mon, true}, {"1111100", sat, false}, {"1111100", sun, false},
+		{"1111110", sat, true}, {"1111110", sun, false}, {"0000001", sun, true}, {"0000001", mon, false}} {
+		if got := tripDayOn(c.days, c.t); got != c.want {
+			t.Errorf("%s on %s: want %v", c.days, c.t.Weekday(), c.want)
+		}
+	}
+	setupDB(t)
+	_, v := mkUserVehicle(t, "", 43)
+	for _, bad := range []string{"11111", "11111x0", "0000000"} {
+		if err := SetTripDays(v.ID, bad); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+	if err := SetTripDays(v.ID, "1111111"); err != nil {
+		t.Fatal(err)
+	}
+	if v2, _ := db.GetVehicleById(v.ID); v2.TripDays != "" {
+		t.Errorf("every day is stored as \"\", got %q", v2.TripDays)
+	}
+}

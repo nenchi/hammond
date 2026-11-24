@@ -656,6 +656,12 @@ describe('hammond UI', () => {
     cy.get('.trips-page .record-trips').click()
     cy.wait('@pause').its('request.body.paused').should('eq', false)
     cy.get('.trips-page .trips-paused').should('not.exist')
+    // recording days: Sunday off, then on again
+    cy.intercept('PUT', `/api/vehicles/${vehicleId}/tripDays`).as('days')
+    cy.get('.trips-page .trip-days').contains('button', 'Sun').click()
+    cy.wait('@days').its('request.body.days').should('eq', '1111110')
+    cy.get('.trips-page .trip-days').contains('button', 'Sun').should('have.attr', 'aria-pressed', 'false').click()
+    cy.wait('@days').its('request.body.days').should('eq', '1111111')
     noConsoleErrors()
   })
 

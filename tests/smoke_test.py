@@ -581,6 +581,12 @@ check("trips: a deleted trip stays deleted after the next sync", s == 200 and s2
 s, _ = call("PUT", f"/api/vehicles/{vid}/tripsPaused", {"paused": True}, token=tok)
 s2, r = call("POST", f"/api/vehicles/{vid}/trips/sync", token=tok)
 s3, _ = call("PUT", f"/api/vehicles/{vid}/tripsPaused", {"paused": False}, token=tok)
+s, _ = call("PUT", f"/api/vehicles/{vid}/tripDays", {"days": "1111100"}, token=tok)
+s2, _ = call("PUT", f"/api/vehicles/{vid}/tripDays", {"days": "0000000"}, token=tok)
+wd = call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tripDays")
+s3, _ = call("PUT", f"/api/vehicles/{vid}/tripDays", {"days": "1111111"}, token=tok)
+check("trips: recording days (working days saved, no day refused, every day = \"\")", s == 200 and s2 == 422 and wd == "1111100"
+      and s3 == 200 and call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tripDays") == "", (s, s2, wd, s3))
 check("trips: recording paused (no sync, also not Sync now), then on again", s == 200 and s2 == 422 and "paused" in str(r)
       and s3 == 200 and call("GET", f"/api/vehicles/{vid}", token=tok)[1].get("tripsPaused") is False, (s, s2, r, s3))
 s, r = call("POST", "/api/settings/trips", {"locked": True}, token=tok)

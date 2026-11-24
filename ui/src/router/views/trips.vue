@@ -42,6 +42,7 @@ export default {
       },
       mergeMinutes: 15,
       vehicles: [], // the user's cars: a picker when there are several
+      weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
       trackers: [], // HA device_trackers/persons with a position, offered for the location fields
       focus: "", // trip id shown on the map
       edit: {}, // trip id → { purpose, notes, business }
@@ -129,6 +130,27 @@ export default {
     this.load();
   },
   methods: {
+    // recording days: "1111100" = Monday to Friday; "" = every day
+    dayOn(i) {
+      const d = (this.vehicle && this.vehicle.tripDays) || "1111111";
+      return d[i] === "1";
+    },
+    toggleDay(i) {
+      const d = ((this.vehicle && this.vehicle.tripDays) || "1111111").split(
+        ""
+      );
+      d[i] = d[i] === "1" ? "0" : "1";
+      const days = d.join("");
+      axios
+        .put(this.url("/tripDays"), { days })
+        .then(() => {
+          this.vehicle = {
+            ...this.vehicle,
+            tripDays: days === "1111111" ? "" : days,
+          };
+        })
+        .catch(this.err);
+    },
     setPaused(paused) {
       axios
         .put(this.url("/tripsPaused"), { paused })
@@ -491,6 +513,22 @@ export default {
             >Record drives automatically</b-switch
           >
         </b-field>
+        <div v-if="vehicle" class="buttons has-addons mb-1 trip-days">
+          <b-button
+            v-for="(d, i) in weekdays"
+            :key="d"
+            size="is-small"
+            :type="dayOn(i) ? 'is-primary' : ''"
+            :disabled="locked || !!vehicle.tripsPaused"
+            :aria-pressed="dayOn(i) ? 'true' : 'false'"
+            @click="toggleDay(i)"
+            >{{ d }}</b-button
+          >
+        </div>
+        <p class="help mb-1">
+          Days to record (a drive counts by the day it starts); drives on the
+          other days aren't recorded.
+        </p>
         <p class="help mb-4">
           Off pauses reading drives from Home Assistant (holiday, someone else
           drives); the sensors and your trips stay, trips by hand still work.

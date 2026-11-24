@@ -25,6 +25,8 @@ hammond reads new drives every 10 minutes (**Sync now** for at once; the first s
   Home Assistant, e.g. on holiday or when someone else drives. Sensors and trips stay; trips by hand still work.
   Back on, recording starts from that moment (the paused days aren't filled in). When an admin has locked trips,
   only an admin can pause.
+- **Days to record** (Trips → Setup, per car): Mon … Sun, e.g. only working days. A drive counts by the day it
+  starts; drives on the other days aren't recorded (like a pause). Trips by hand work on any day.
 - **Show Trips** (Settings, per user): off hides Trips for you: the menu entry and buttons, the trip sensors in
   Home Assistant and the trip chat commands (`cost` then always saves a plain expense). The car keeps recording for
   other users.

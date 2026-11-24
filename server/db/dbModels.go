@@ -128,6 +128,8 @@ type Vehicle struct {
 	TripsSyncedTo *time.Time `json:"-"`
 	// automatic recording from Home Assistant paused (Trips → Setup); trips by hand still work
 	TripsPaused bool `json:"tripsPaused"`
+	// the weekdays drives are recorded on, Monday first ("1111100" = working days); "" = every day
+	TripDays string `json:"tripDays"`
 	// vehicle name in EVCC (its title): EVCC sessions of that vehicle are imported for this one
 	EvccVehicle string `json:"evccVehicle"`
 	// fuel gauge calibration: number of segments (default 4) and when learning was last reset
