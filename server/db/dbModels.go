@@ -31,6 +31,8 @@ type User struct {
 	ShowFillupTime bool `gorm:"default:true" json:"showFillupTime"`
 	// Trips for this user: menu, trip sensors over MQTT, trip chat commands (the car still records)
 	ShowTrips bool `gorm:"default:true" json:"showTrips"`
+	// trip fuel cost at the average price of the tank instead of first in, first out
+	TripCostAverage bool `json:"tripCostAverage"`
 	// station prices in the fill-up form: "" = button + stations near a detection's location,
 	// "button" = only the "stations nearby" button, "off"
 	StationSuggestions string `json:"stationSuggestions"`

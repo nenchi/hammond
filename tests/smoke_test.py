@@ -649,6 +649,11 @@ check("Show Trips off: saved, trip sensors removed from HA, chat says trips are 
       and call("GET", "/api/me", token=tok)[1].get("showTrips") is False and off.startswith("Trips are off"), (s, trip_cfg, off))
 call("POST", "/api/me/settings", {**base_settings, "showTrips": True}, token=tok)
 s, _ = call("POST", "/api/me/mqtt/publish", token=tok)
+call("POST", "/api/me/settings", {**base_settings, "showTrips": True, "tripCostAverage": True}, token=tok)
+s, me_avg = call("GET", "/api/me", token=tok)
+call("POST", "/api/me/settings", {**base_settings, "showTrips": True, "tripCostAverage": False}, token=tok)
+check("trip cost at the average price: saved per user, off again", me_avg.get("tripCostAverage") is True
+      and call("GET", "/api/me", token=tok)[1].get("tripCostAverage") is False, me_avg.get("tripCostAverage"))
 check("Show Trips on again: trip sensors back", json.loads(fake_mqtt().get(f"homeassistant/sensor/hammond_{vid}/trips_today_distance/config") or "{}").get("name") == "Trips today", s)
 mt = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/month_total/config", "{}"))
 l30 = json.loads(m.get(f"homeassistant/sensor/hammond_{vid}/last30_total/config", "{}"))

@@ -30,7 +30,7 @@ func tripRange(c *gin.Context) (time.Time, time.Time) {
 
 func listTrips(c *gin.Context) {
 	from, to := tripRange(c)
-	trips, err := service.ListTrips(c.Param("id"), from, to)
+	trips, err := service.ListTrips(c.MustGet("userId").(string), c.Param("id"), from, to)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
@@ -40,7 +40,7 @@ func listTrips(c *gin.Context) {
 
 func tripsCSV(c *gin.Context) {
 	from, to := tripRange(c)
-	trips, err := service.ListTrips(c.Param("id"), from, to)
+	trips, err := service.ListTrips(c.MustGet("userId").(string), c.Param("id"), from, to)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return

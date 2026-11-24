@@ -471,6 +471,12 @@ type fuelLot struct{ qty, price float64 }
 // as its level says with the learned gauge, else the last fill-up); every fill-up adds a lot, a full-tank one sets the content to
 // the tank size; a leg takes from the oldest lot. With nothing left, the last price is used.
 func fifoCosts(fills []db.Fillup, legs []db.TripLeg, g GaugeCalibration) map[string]float64 {
+	return tripCosts(fills, legs, g, false)
+}
+
+// tripCosts: fuel cost per leg ID. average: every drive at the average price of what's in the tank (fuel mixes;
+// a fill-up mixes in at its price, a drive takes from all of it equally), else first in, first out.
+func tripCosts(fills []db.Fillup, legs []db.TripLeg, g GaugeCalibration, average bool) map[string]float64 {
 	tank := g.TankCapacity
 	out := map[string]float64{}
 	if len(legs) == 0 || len(fills) == 0 {
@@ -508,7 +514,13 @@ func fifoCosts(fills []db.Fillup, legs []db.TripLeg, g GaugeCalibration) map[str
 			lots = append(lots, fuelLot{float64(f.FuelQuantity), float64(f.PerUnitPrice)})
 			last = float64(f.PerUnitPrice)
 			if f.IsTankFull != nil && *f.IsTankFull && tank > 0 {
-				lots = trimTo(lots, tank)
+				if total, _ := lotsTotal(lots); average && total > 1e-9 {
+					for i := range lots { // mixed fuel: a full tank scales all of it, the average stays
+						lots[i].qty *= tank / total
+					}
+				} else {
+					lots = trimTo(lots, tank)
+				}
 			}
 			fi++
 		}
@@ -516,6 +528,13 @@ func fifoCosts(fills []db.Fillup, legs []db.TripLeg, g GaugeCalibration) map[str
 			continue
 		}
 		need, cost := *l.FuelUsed, 0.0
+		if total, value := lotsTotal(lots); average && total > 1e-9 && need > 1e-9 {
+			q := minF(need, total)
+			cost, need = q*value/total, need-q
+			for i := range lots { // every lot gives its share: the mix keeps its average
+				lots[i].qty -= lots[i].qty * q / total
+			}
+		}
 		for need > 1e-9 && len(lots) > 0 {
 			q := minF(need, lots[0].qty)
 			cost += q * lots[0].price
@@ -530,6 +549,13 @@ func fifoCosts(fills []db.Fillup, legs []db.TripLeg, g GaugeCalibration) map[str
 }
 
 // trimTo: a full tank holds exactly tank litres: drop the oldest beyond that, or top up the oldest lot
+func lotsTotal(lots []fuelLot) (litres, value float64) {
+	for _, l := range lots {
+		litres, value = litres+l.qty, value+l.qty*l.price
+	}
+	return
+}
+
 func trimTo(lots []fuelLot, tank float64) []fuelLot {
 	total := 0.0
 	for _, l := range lots {
@@ -577,8 +603,9 @@ type TripView struct {
 	To        string       `json:"to"`       // end address of the last drive
 }
 
-// ListTrips: the vehicle's trips that started in [from, to), newest first
-func ListTrips(vehicleID string, from, to time.Time) ([]TripView, error) {
+// ListTrips: the vehicle's trips that started in [from, to), newest first; fuel priced the way the user chose
+// (Settings: first in, first out, or the average price of the tank)
+func ListTrips(userID, vehicleID string, from, to time.Time) ([]TripView, error) {
 	v, err := GetVehicleById(vehicleID)
 	if err != nil {
 		return nil, err
@@ -589,7 +616,11 @@ func ListTrips(vehicleID string, from, to time.Time) ([]TripView, error) {
 	}
 	var fills []db.Fillup
 	db.DB.Where("vehicle_id = ?", vehicleID).Find(&fills)
-	costs := fifoCosts(fills, append([]db.TripLeg(nil), all...), Calibrate(v))
+	average := false
+	if u, err := db.GetUserById(userID); err == nil {
+		average = u.TripCostAverage
+	}
+	costs := tripCosts(fills, append([]db.TripLeg(nil), all...), Calibrate(v), average)
 	byTrip := map[string][]db.TripLeg{}
 	for _, l := range all {
 		byTrip[l.TripID] = append(byTrip[l.TripID], l)

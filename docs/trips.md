@@ -47,7 +47,10 @@ end time and odometer (the start is taken from the newest trip), purpose, busine
 
 - Per trip: **business/private**, purpose, notes, costs (toll, vignette, parking…), **map** to zoom to it. Join or
   split trips by hand.
-- **Fuel cost, first in, first out:** a trip burns the oldest fuel in the tank at the price it was bought for.
+- **Fuel cost:** by default *first in, first out*: a trip burns the oldest fuel in the tank at the price it was
+  bought for (after a cheap fill-up, drives cost the older price until that fuel is used up). *Settings → Trip fuel
+  cost at the average price of the tank*: every drive at the average price of what's in the tank, as the fuel
+  mixes; each fill-up moves it a little. Over time both add up to the same.
 - **CSV** and **Print / PDF** for any period, with from/to addresses.
 - *Admin → Site settings*: **lock** times and kilometres so only admins change them (a tax log); users still add
   purpose, notes and costs.
