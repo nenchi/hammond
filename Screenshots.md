@@ -40,6 +40,10 @@ All with made-up demo data (`scripts/demo_data.py`): a "Golf", plate "DEMO 123",
 
 ![Users](images/users.jpg)
 
+## Grafana (integrations/grafana, made-up history)
+
+![Grafana](images/grafana.jpg)
+
 ## On a phone
 
 ![Home on a phone](images/phone_home.jpg) ![Trips on a phone](images/phone_trips.jpg)

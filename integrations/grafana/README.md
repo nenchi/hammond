@@ -1,5 +1,7 @@
 # hammond in Grafana
 
+![Grafana dashboard with demo data](../../images/grafana.jpg)
+
 [`hammond-car.json`](hammond-car.json): costs, consumption, watched station prices, kilometres per day and,
 optionally, the car's own sensors (fuel level, range, trip computer, tyres) over any period Grafana's time
 picker allows.

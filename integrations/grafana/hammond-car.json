@@ -43,9 +43,9 @@
         },
         "refresh": 2,
         "hide": 0,
-        "definition": "label_values({__name__=~\"sensor.hammond_.+_costs_this_month_value\"}, entity_id)",
+        "definition": "label_values({__name__=~\"sensor.hammond_.+_costs_this_year_value\"}, entity_id)",
         "query": {
-          "query": "label_values({__name__=~\"sensor.hammond_.+_costs_this_month_value\"}, entity_id)",
+          "query": "label_values({__name__=~\"sensor.hammond_.+_costs_this_year_value\"}, entity_id)",
           "refId": "car"
         },
         "regex": "/^hammond_(.+)_costs_this_year$/",
