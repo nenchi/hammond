@@ -35,6 +35,7 @@ export default {
         detectionDuplicateMode: this.me.detectionDuplicateMode || 'ask',
         showFillupTime: this.me.showFillupTime !== false,
         showTrips: this.me.showTrips !== false,
+        tripCostAverage: !!this.me.tripCostAverage,
         stationSuggestions: this.me.stationSuggestions || 'location',
         stationRadiusKm: this.me.stationRadiusKm || 2,
         customFuelSubtypes: this.me.customFuelSubtypes || '',
@@ -238,6 +239,12 @@ export default {
           <b-field>
             <b-checkbox v-model="settingsModel.showTrips" class="show-trips"
               >Show Trips (the trip log, its sensors in Home Assistant and its chat commands; the car keeps recording)</b-checkbox
+            >
+          </b-field>
+          <b-field>
+            <b-checkbox v-model="settingsModel.tripCostAverage" class="trip-cost-average"
+              >Trip fuel cost at the average price of the tank (fuel mixes; off: first in, first out, the oldest fuel
+              first)</b-checkbox
             >
           </b-field>
           <b-field>

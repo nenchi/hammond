@@ -156,7 +156,7 @@ func GetSummary(userID string) (*Summary, error) {
 				vsum.Consumption = &c
 			}
 		}
-		if ts, err := ListTrips(v.ID, month, today.AddDate(0, 0, 1)); err == nil {
+		if ts, err := ListTrips(userID, v.ID, month, today.AddDate(0, 0, 1)); err == nil {
 			vsum.TripsMonth = tripTotals(ts)
 			var td []TripView
 			for _, t := range ts {

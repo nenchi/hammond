@@ -316,3 +316,30 @@ func TestManualTripRouteAndFuel(t *testing.T) {
 		t.Fatalf("typed litres: %+v", l3)
 	}
 }
+
+// a real tank: older fuel at 2.06 / 1.97 / 1.87, then 19.53 l at 1.789 (full). First in, first out burns the
+// 1.97 fuel first (1.61 €); the average of the mixed tank is ≈ 1.87 €/l (≈ 1.53 €)
+func TestTripCostAverage(t *testing.T) {
+	loc, _ := time.LoadLocation("Europe/Berlin")
+	d := func(day, h int) time.Time { return time.Date(2026, 11, day, h, 0, 0, 0, loc) }
+	full, f := true, func(v float64) *float64 { return &v }
+	fills := []db.Fillup{{FuelQuantity: 30.25, PerUnitPrice: 2.059, Date: d(3, 18).AddDate(0, -1, 0), IsTankFull: &full},
+		{FuelQuantity: 27.27, PerUnitPrice: 1.969, Date: d(30, 20).AddDate(0, -1, 0), IsTankFull: &full},
+		{FuelQuantity: 12.14, PerUnitPrice: 1.869, Date: d(7, 18), IsTankFull: &full},
+		{FuelQuantity: 19.53, PerUnitPrice: 1.789, Date: d(23, 19), IsTankFull: &full}}
+	legs := []db.TripLeg{{Base: db.Base{ID: "a"}, Start: d(22, 12), FuelStart: f(63), FuelUsed: f(0.3)},
+		{Base: db.Base{ID: "b"}, Start: d(23, 18), FuelStart: f(63), FuelUsed: f(0.4)},
+		{Base: db.Base{ID: "c"}, Start: d(24, 18), FuelStart: f(100), FuelUsed: f(0.82)}}
+	g := linear(43)
+	fifo := tripCosts(append([]db.Fillup(nil), fills...), append([]db.TripLeg(nil), legs...), g, false)
+	avg := tripCosts(append([]db.Fillup(nil), fills...), append([]db.TripLeg(nil), legs...), g, true)
+	if math.Abs(fifo["c"]-0.82*1.969) > 0.005 {
+		t.Errorf("first in, first out: want %.2f (the 1.969 fuel), got %.3f", 0.82*1.969, fifo["c"])
+	}
+	if p := avg["c"] / 0.82; p < 1.85 || p > 1.88 {
+		t.Errorf("average: want ≈ 1.866 €/l, got %.3f (%.2f €)", p, avg["c"])
+	}
+	if p := avg["a"] / 0.3; p < 1.91 || p > 1.94 { // before the fill-up: the 1.97 and 1.87 fuel mixed
+		t.Errorf("average before the fill-up: want ≈ 1.924 €/l, got %.3f", p)
+	}
+}
