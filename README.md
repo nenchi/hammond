@@ -324,6 +324,7 @@ Although personally I feel that using the docker container is the best way of us
 | ---- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
 | JWT_SECRET | The secret used to sign the JWT token. Optional. If unset, a random secret is generated once and stored in `/config/jwt_secret`| A super strong secret that needs to be changed | 
 | PORT | Change the internal port of the application. If you change this you might have to change your docker configuration as well | (empty) |
+| ROUTING_URL | OSRM route service for trips entered by hand (road route, distance, time). Your own OSRM: `http://osrm:5000/route/v1/driving`; empty = straight lines | `https://router.project-osrm.org/route/v1/driving` |
 
 ### Setup
 
