@@ -30,6 +30,15 @@ func getMileageForVehicle(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("getMileageForVehicle", err))
 			return
 		}
+		if !model.Until.IsZero() { // a custom range: only the fill-ups up to its end
+			in := fillups[:0]
+			for _, f := range fillups {
+				if !f.Date.After(model.Until) {
+					in = append(in, f)
+				}
+			}
+			fillups = in
+		}
 		c.JSON(http.StatusOK, fillups)
 	} else {
 		c.JSON(http.StatusUnprocessableEntity, common.NewValidatorError(err))

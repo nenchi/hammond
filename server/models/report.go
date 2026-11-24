@@ -35,4 +35,5 @@ func (b *MileageModel) MarshalJSON() ([]byte, error) {
 
 type MileageQueryModel struct {
 	Since time.Time `json:"since" query:"since" form:"since"`
+	Until time.Time `json:"until" query:"until" form:"until"` // zero = up to now (a custom range in the UI)
 }

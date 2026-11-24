@@ -14,6 +14,10 @@
 > - Base images pinned by digest, end-to-end smoke test in CI (`tests/smoke_test.py`)
 
 
+**Guides:** step by step in [`docs/`](docs/README.md) (getting started, fuel prices and Price watch,
+notifications and chat, API keys, Home Assistant, trips, gauge calibration, electric/EVCC, Grafana).
+Screenshots: [Screenshots.md](Screenshots.md).
+
 ## Automatic fill-up detection (Home Assistant / API)
 
 hammond can take **detected fill-ups** from Home Assistant, Node-RED, an OBD script or anything else that can
@@ -57,6 +61,10 @@ the level and odometer sensors, the two helpers, the hammond vehicle ID and your
 level jumps by at least 10 % it waits until the value is stable, sends the detection and notifies you with a link
 to complete it. If the last reading before the fill-up was taken many km earlier, hammond marks the estimate
 *check quantity*.
+
+**Dashboards:** an example Home Assistant dashboard for hammond's MQTT sensors
+([`integrations/home-assistant/dashboard.yaml`](integrations/home-assistant/dashboard.yaml)) and a Grafana dashboard
+for longer statistics ([`integrations/grafana`](integrations/grafana/README.md)).
 
 **Station prices (optional):** with *Admin → Site settings → Fuel prices* set up (Germany: free key from
 [Tankerkönig](https://creativecommons.tankerkoenig.de); Austria: E-Control, Slovenia: goriva.si, Croatia: MZOE,

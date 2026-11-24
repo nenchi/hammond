@@ -4,6 +4,9 @@ import currencyFormtter from 'currency-formatter'
 import { mapState } from 'vuex'
 
 import axios from 'axios'
+// "2026-11-24" in local time, for <input type="date">
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 export default {
   props: {
     user: {
@@ -20,8 +23,11 @@ export default {
         { label: 'Past 3 months', value: 'past_3_months' },
         { label: 'This year', value: 'this_year' },
         { label: 'All Time', value: 'all_time' },
+        { label: 'Custom…', value: 'custom' },
       ],
       dateRangeOption: 'past_30_days',
+      customFrom: ymd(new Date(Date.now() - 30 * 864e5)),
+      customTo: ymd(new Date()),
       stats: [],
     }
   },
@@ -71,6 +77,12 @@ export default {
       }
       this.getStats()
     },
+    customFrom() {
+      if (this.dateRangeOption === 'custom') this.getStats()
+    },
+    customTo() {
+      if (this.dateRangeOption === 'custom') this.getStats()
+    },
   },
   mounted() {
     this.getStats()
@@ -87,7 +99,7 @@ export default {
         .get('/api/me/stats', {
           params: {
             start: this.getStartDate(),
-            end: new Date(),
+            end: this.dateRangeOption === 'custom' ? new Date(this.customTo + 'T23:59:59') : new Date(),
           },
         })
         .then((data) => {
@@ -118,6 +130,8 @@ export default {
           return new Date(toDate.getFullYear(), 0, 1)
         case 'all_time':
           return new Date(1969, 4, 20)
+        case 'custom':
+          return new Date(this.customFrom + 'T00:00:00')
         default:
           return new Date(1969, 4, 20)
       }
@@ -135,7 +149,11 @@ export default {
           <option v-for="option in dateRangeOptions" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
-        </b-select></div
+        </b-select>
+        <div v-if="dateRangeOption === 'custom'" class="is-flex is-justify-content-flex-end stats-custom" style="gap: 0.5rem; clear: both; padding-top: 0.5rem">
+          <input v-model="customFrom" class="input" type="date" :max="customTo" title="From" style="width: auto" />
+          <input v-model="customTo" class="input" type="date" :min="customFrom" title="To" style="width: auto" />
+        </div></div
       >
     </div>
     <div v-for="(currencyLevel, index) in summaryObject" :key="index" class="level box">

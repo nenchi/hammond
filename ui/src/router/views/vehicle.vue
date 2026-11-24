@@ -10,6 +10,9 @@ import store from '@state/store'
 import ShareVehicle from '@components/shareVehicle.vue'
 import MileageChart from '@components/mileageChart.vue'
 
+// "2026-11-24" in local time, for <input type="date">
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 export default {
   page() {
     return {
@@ -47,8 +50,11 @@ export default {
         { label: 'Past 3 months', value: 'past_3_months' },
         { label: 'This year', value: 'this_year' },
         { label: 'All Time', value: 'all_time' },
+        { label: 'Custom…', value: 'custom' },
       ],
       dateRangeOption: 'past_30_days',
+      customFrom: ymd(new Date(Date.now() - 90 * 864e5)),
+      customTo: ymd(new Date()),
     }
   },
   computed: {
@@ -56,6 +62,10 @@ export default {
     // on every render, which made the chart refetch and redraw in a loop
     startDate() {
       return this.getStartDate()
+    },
+    // the end of a custom range (its last day included); null = up to now
+    endDate() {
+      return this.dateRangeOption === 'custom' ? new Date(this.customTo + 'T23:59:59') : null
     },
     suspicious() {
       return suspiciousFillups(this.fillups)
@@ -91,7 +101,7 @@ export default {
           },
           {
             label: 'Avg Fillup Qty',
-            value: `${x.avgFuelQty} ${this.vehicle.fuelUnitDetail.short}`,
+            value: `${Number(x.avgFuelQty).toFixed(2)} ${this.vehicle.fuelUnitDetail.short}`,
           },
           {
             label: 'Avg Fuel Cost',
@@ -301,6 +311,8 @@ export default {
           return new Date(toDate.getFullYear(), 0, 1)
         case 'all_time':
           return new Date(1969, 4, 20)
+        case 'custom':
+          return new Date(this.customFrom + 'T00:00:00')
         default:
           return new Date(1969, 4, 20)
       }
@@ -372,11 +384,12 @@ export default {
         ></b-button>
       </div>
     </div>
-    <div v-for="(currencyLevel, index) in summaryObject" :key="index" class="level box">
-      <div v-for="item in currencyLevel" :key="item.label" class="level-item has-text-centered">
+    <!-- wraps instead of running the values into each other when they don't fit in one row -->
+    <div v-for="(currencyLevel, index) in summaryObject" :key="index" class="level box vehicle-stats" style="flex-wrap: wrap; gap: 1rem">
+      <div v-for="item in currencyLevel" :key="item.label" class="level-item has-text-centered" style="flex: 1 1 9rem">
         <div>
           <p class="heading">{{ item.label }}</p>
-          <p class="title is-4">{{ item.value }}</p>
+          <p class="title is-5">{{ item.value }}</p>
         </div>
       </div>
     </div>
@@ -579,10 +592,14 @@ export default {
             <option v-for="option in dateRangeOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
-          </b-select></div
+          </b-select>
+          <template v-if="dateRangeOption === 'custom'">
+            <input v-model="customFrom" class="input is-medium stats-from" type="date" :max="customTo" title="From" style="width: auto; margin-left: 0.5rem" />
+            <input v-model="customTo" class="input is-medium stats-to" type="date" :min="customFrom" title="To" style="width: auto; margin-left: 0.5rem" />
+          </template></div
         >
       </div>
-      <MileageChart :vehicle="vehicle" :since="startDate" :user="me" :styles="{ position: 'relative', height: '300px' }" />
+      <MileageChart :vehicle="vehicle" :since="startDate" :until="endDate" :user="me" :styles="{ position: 'relative', height: '300px' }" />
     </div>
   </Layout>
 </template>

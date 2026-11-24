@@ -9,6 +9,7 @@ export default {
   props: {
     vehicle: { type: Object, required: true },
     since: { type: Date, default: '' },
+    until: { type: Date, default: null }, // end of a custom range; null = up to now
     user: { type: Object, required: true },
     styles: { type: Object, default: () => ({}) },
   },
@@ -16,9 +17,13 @@ export default {
     return { points: null }
   },
   computed: {
+    // oldest left, newest right (the API lists the newest first)
+    sorted() {
+      return [...(this.points || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    },
     chartData() {
       return {
-        labels: this.points.map((x) => x.date.substr(0, 10)),
+        labels: this.sorted.map((x) => x.date.substr(0, 10)),
         datasets: [
           {
             label: `Mileage (${this.user.distanceUnitDetail.short}/${this.vehicle.fuelUnitDetail.short})`,
@@ -29,7 +34,7 @@ export default {
             borderWidth: 2,
             pointBackgroundColor: '#39a275',
             pointRadius: 3,
-            data: this.points.map((x) => x.mileage),
+            data: this.sorted.map((x) => x.mileage),
           },
         ],
       }
@@ -50,6 +55,10 @@ export default {
       if (newOne && old && newOne.getTime() === old.getTime()) return
       this.fetchMileage()
     },
+    until(newOne, old) {
+      if (newOne && old && newOne.getTime() === old.getTime()) return
+      this.fetchMileage()
+    },
   },
   mounted() {
     this.fetchMileage()
@@ -57,7 +66,7 @@ export default {
   methods: {
     fetchMileage() {
       axios
-        .get(`/api/vehicles/${this.vehicle.id}/mileage`, { params: { since: this.since } })
+        .get(`/api/vehicles/${this.vehicle.id}/mileage`, { params: this.until ? { since: this.since, until: this.until } : { since: this.since } })
         .then((response) => (this.points = response.data || []))
         .catch((err) => console.log(err))
     },

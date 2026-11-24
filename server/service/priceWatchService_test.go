@@ -78,11 +78,17 @@ func TestPriceWatchHistory(t *testing.T) {
 	for _, st := range []string{"aral, frankfurter str. 12, 63067 offenbach", "Shell"} {
 		db.DB.Create(&db.Fillup{VehicleID: v.ID, UserID: u.ID, FillingStation: st, PerUnitPrice: 1.749, Date: now.AddDate(0, 0, -3)})
 	}
-	h, err := PriceWatchHistory(u.ID, w.ID, now.AddDate(0, 0, -7))
+	h, err := PriceWatchHistory(u.ID, w.ID, now.AddDate(0, 0, -7), time.Time{})
 	if err != nil || len(h.Prices) != 3 || h.Prices[0].Price != 1.80 || len(h.Fillups) != 1 || h.Fillups[0].Price != 1.749 {
 		t.Fatalf("got %+v %v", h, err)
 	}
-	if _, err := PriceWatchHistory("someone-else", w.ID, now); err == nil {
+	// a custom range 7 → 4 days ago: the price valid at its start, the change 6 days ago; not the later
+	// change (2 days ago) nor the fill-up (3 days ago)
+	h, err = PriceWatchHistory(u.ID, w.ID, now.AddDate(0, 0, -7), now.AddDate(0, 0, -4))
+	if err != nil || len(h.Prices) != 2 || h.Prices[1].Price != 1.75 || len(h.Fillups) != 0 {
+		t.Fatalf("range: got %+v %v", h, err)
+	}
+	if _, err := PriceWatchHistory("someone-else", w.ID, now, time.Time{}); err == nil {
 		t.Fatal("other users' watches are not found")
 	}
 }
