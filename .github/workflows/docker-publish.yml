@@ -10,7 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  CYPRESS_IMAGE: cypress/included:16.3.0@sha256:90d7eaf6762f3050b4137d0c4214b6a2fde993e319d4632197725e2d11db6a6e
+  CYPRESS_IMAGE: cypress/included:16.4.0@sha256:f41352ed0cddbc88619935b62834d81c01be6084937d5157ddc126bac8000927
 
 jobs:
   test:
