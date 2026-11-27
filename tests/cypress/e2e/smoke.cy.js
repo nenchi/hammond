@@ -657,6 +657,35 @@ describe('hammond UI', () => {
     noConsoleErrors()
   })
 
+  it('trips: the map picker shows all trips or only the picked one; "map" on a trip picks it (trips stubbed)', () => {
+    const now = Date.now()
+    const leg = (id, mins, route) => ({ id, start: new Date(now - mins * 60000).toISOString(), end: new Date(now - (mins - 15) * 60000).toISOString(),
+      startOdo: 1000, endOdo: 1009, distance: 9, route, source: 'ha', startAddress: '', endAddress: '' })
+    const trip = (id, mins, from, to, route) => ({ id, start: new Date(now - mins * 60000).toISOString(), end: new Date(now - (mins - 15) * 60000).toISOString(),
+      startOdo: 1000, endOdo: 1009, distance: 9, driveMinutes: 15, fuelUsed: 0, fuelCost: 0, extraCost: 0, purpose: '', business: false,
+      from, to, legs: [leg(id + '-l', mins, route)], costs: [], legCosts: [0] })
+    // there and back on the same road: in "All trips" the newer one lies on top
+    const out = [[50.0794, 8.769], [50.1002, 8.7401], [50.129, 8.7179]]
+    cy.intercept('GET', `/api/vehicles/${vehicleId}/trips*`, [
+      trip('trip-back', 60, 'Office', 'Home', [...out].reverse()),
+      trip('trip-out', 300, 'Home', 'Office', out),
+    ]).as('trips')
+    visit(`/vehicles/${vehicleId}/trips`)
+    cy.wait('@trips')
+    const paths = '.trips-page .trips-map path.leaflet-interactive' // per trip: its line + start ● + end ■
+    cy.get('.trips-page .trips-map select option').should('have.length', 3).first().should('contain', 'All trips (2)')
+    cy.get(paths).should('have.length', 6)
+    cy.get('.trips-page .trips-map select').select(2) // the older trip only
+    cy.get(paths).should('have.length', 3)
+    cy.get('.trips-page .trips-map select option:selected').should('contain', 'Home → Office')
+    cy.get('.trips-page .trip').first().contains('a', 'map').click() // the newer trip's "map" link picks it
+    cy.get('.trips-page .trips-map select').should('have.value', 'trip-back')
+    cy.get(paths).should('have.length', 3)
+    cy.get('.trips-page .trips-map select').select(0)
+    cy.get(paths).should('have.length', 6)
+    noConsoleErrors()
+  })
+
   it('trips: Show Trips off hides the menu and the button; recording can be paused per car', () => {
     cy.request({ method: 'POST', url: '/api/me/settings', headers: apiHeaders, body: { ...baseSettings, showTrips: false } })
     visit(`/vehicles/${vehicleId}`)
