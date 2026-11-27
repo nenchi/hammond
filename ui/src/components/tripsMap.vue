@@ -1,6 +1,6 @@
 <script>
 // The trips' routes on one map: a line per drive (positions from the car's tracker, else the phone),
-// start ● and end ■ of each trip; tapping a line shows the trip. The picker shows all trips (the newest on
+// start (green dot) and finish (🏁) of each trip; tapping a line shows the trip. The picker shows all trips (the newest on
 // top) or only one; focus = a trip id to pick (the "· map" link of a trip).
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -13,6 +13,13 @@ const colors = [
   "#8e5bd1",
   "#d6336c",
 ];
+
+const finishIcon = L.divIcon({
+  className: "trip-finish",
+  html: '<span style="font-size:20px;line-height:1">🏁</span>',
+  iconSize: [20, 20],
+  iconAnchor: [4, 19], // the foot of the flag pole
+});
 
 export default {
   props: {
@@ -75,15 +82,21 @@ export default {
             L.polyline(l.route, { color, weight: 4, opacity: 0.8 }).addTo(
               group
             );
-        L.circleMarker(pts[0], { radius: 6, color, fillOpacity: 1 }).addTo(
-          group
-        );
-        L.circleMarker(pts[pts.length - 1], {
-          radius: 6,
-          color,
-          fillColor: "#fff",
+        // start = green dot, finish = 🏁; hover/tap names them with time and address
+        const first = t.legs[0];
+        const last = t.legs[t.legs.length - 1];
+        L.circleMarker(pts[0], {
+          radius: 7,
+          color: "#fff",
+          weight: 2,
+          fillColor: "#23a55a",
           fillOpacity: 1,
-        }).addTo(group);
+        })
+          .bindTooltip(this.tip("Start", t.start, first.startAddress || t.from))
+          .addTo(group);
+        L.marker(pts[pts.length - 1], { icon: finishIcon })
+          .bindTooltip(this.tip("Finish", t.end, last.endAddress || t.to))
+          .addTo(group);
         const box = document.createElement("div");
         for (const line of this.summary(t)) {
           const p = document.createElement("div");
@@ -99,6 +112,15 @@ export default {
           padding: [30, 30],
           maxZoom: 15,
         });
+    },
+    tip(what, at, address) {
+      const el = document.createElement("div");
+      const time = new Date(at).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      el.textContent = [what, time, address].filter(Boolean).join(" · "); // addresses: text, not HTML
+      return el;
     },
     label(t) {
       const day = new Date(t.start).toLocaleDateString([], {

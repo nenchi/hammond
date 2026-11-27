@@ -672,17 +672,21 @@ describe('hammond UI', () => {
     ]).as('trips')
     visit(`/vehicles/${vehicleId}/trips`)
     cy.wait('@trips')
-    const paths = '.trips-page .trips-map path.leaflet-interactive' // per trip: its line + start ● + end ■
+    const paths = '.trips-page .trips-map path.leaflet-interactive' // per trip: its line + the start dot
+    const flags = '.trips-page .trips-map .trip-finish' // per trip: the finish flag
     cy.get('.trips-page .trips-map select option').should('have.length', 3).first().should('contain', 'All trips (2)')
-    cy.get(paths).should('have.length', 6)
+    cy.get(paths).should('have.length', 4)
+    cy.get(flags).should('have.length', 2)
     cy.get('.trips-page .trips-map select').select(2) // the older trip only
-    cy.get(paths).should('have.length', 3)
+    cy.get(paths).should('have.length', 2)
+    cy.get(flags).should('have.length', 1).trigger('mouseover')
+    cy.get('.trips-page .trips-map .leaflet-tooltip').should('contain', 'Finish').and('contain', 'Office')
     cy.get('.trips-page .trips-map select option:selected').should('contain', 'Home → Office')
     cy.get('.trips-page .trip').first().contains('a', 'map').click() // the newer trip's "map" link picks it
     cy.get('.trips-page .trips-map select').should('have.value', 'trip-back')
-    cy.get(paths).should('have.length', 3)
+    cy.get(paths).should('have.length', 2)
     cy.get('.trips-page .trips-map select').select(0)
-    cy.get(paths).should('have.length', 6)
+    cy.get(paths).should('have.length', 4)
     noConsoleErrors()
   })
 
